@@ -1,9 +1,7 @@
-import { createClient } from "@supabase/supabase-js";
 import { writeFileSync, existsSync, mkdirSync } from "fs";
 import path from "path";
+import { localQuery, API_BASE } from "./lib/localQuery.mjs";
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const BASE_URL = "https://bonplaninfos.net";
 
 const STATIC_PAGES = [
@@ -17,32 +15,29 @@ const STATIC_PAGES = [
 const LANGUAGES = ["fr", "en"];
 const AFRICAN_COUNTRIES = ["ci","sn","cm","ml","bf","bj","tg","ga","cg","cd","gn","ne","td","cf","mg","gh","ng","ke"];
 
-if (!SUPABASE_URL || !SUPABASE_KEY) {
+function writeStaticSitemap() {
   console.log("🔒 Mode sécurité : génération sitemap statique");
   const today = new Date().toISOString().split("T")[0];
   let xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
   STATIC_PAGES.forEach(page => {
-    xml += `  <url>\n    <loc>${BASE_URL}${page}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>${page === "/" ? "1.0" : "0.7"}</priority>\n  </url>\n`;
+    xml += `  <url>\n    <loc>${BASE_URL}${page === "/" ? "" : page}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>${page === "/" ? "1.0" : "0.7"}</priority>\n  </url>\n`;
   });
   xml += "</urlset>";
-  writeFileSync(path.join(process.cwd(), "dist", "sitemap.xml"), xml.trim());
-  process.exit(0);
+  const distDir = path.join(process.cwd(), "dist");
+  if (!existsSync(distDir)) mkdirSync(distDir, { recursive: true });
+  writeFileSync(path.join(distDir, "sitemap.xml"), xml.trim());
 }
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 async function fetchDynamicRoutes() {
   const routes = [];
 
-  // Events
-  const { data: events } = await supabase.from("events").select("id, updated_at, created_at").eq("status", "active").limit(10000);
-  events?.forEach(ev => {
+  const eventsRes = await localQuery("events").select("id, updated_at, created_at").eq("status", "active").limit(10000);
+  eventsRes.data?.forEach(ev => {
     routes.push({ path: `/event/${ev.id}`, lastmod: ev.updated_at || ev.created_at });
   });
 
-  // Promotion packs
-  const { data: promos } = await supabase.from("promotion_packs").select("id, created_at").limit(10000);
-  promos?.forEach(p => {
+  const promosRes = await localQuery("promotion_packs").select("id, created_at").limit(10000);
+  promosRes.data?.forEach(p => {
     routes.push({ path: `/promotion/${p.id}`, lastmod: p.created_at });
   });
 
@@ -63,23 +58,29 @@ ${alternatesXml}
 
 async function generateSitemap() {
   const today = new Date().toISOString().split("T")[0];
-  const dynamicRoutes = await fetchDynamicRoutes();
+  let dynamicRoutes = [];
+  try {
+    dynamicRoutes = await fetchDynamicRoutes();
+    console.log(`✅ Sitemap dynamique depuis le moteur local (${API_BASE})`);
+  } catch (err) {
+    console.log(`⚠️ Moteur local indisponible (${API_BASE}), sitemap statique`);
+    writeStaticSitemap();
+    return;
+  }
 
   let sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
         xmlns:xhtml="http://www.w3.org/1999/xhtml">`;
 
-  // Static pages
   STATIC_PAGES.forEach(page => {
     const alternates = [];
     LANGUAGES.forEach(lang => AFRICAN_COUNTRIES.forEach(c => {
-      alternates.push({ hreflang: `${lang}-${c.toUpperCase()}`, href: `${BASE_URL}/${lang}/${c}${page}` });
+      alternates.push({ hreflang: `${lang}-${c.toUpperCase()}`, href: `${BASE_URL}/${lang}/${c}${page === "/" ? "" : page}` });
     }));
-    alternates.push({ hreflang: "x-default", href: `${BASE_URL}/fr/ci${page}` });
-    sitemapXml += generateUrlEntry(`${BASE_URL}${page}`, today, alternates, page === "/" ? "1.0" : "0.7");
+    alternates.push({ hreflang: "x-default", href: `${BASE_URL}/fr/ci${page === "/" ? "" : page}` });
+    sitemapXml += generateUrlEntry(`${BASE_URL}${page === "/" ? "" : page}`, today, alternates, page === "/" ? "1.0" : "0.7");
   });
 
-  // Dynamic pages
   dynamicRoutes.forEach(route => {
     const alternates = [];
     LANGUAGES.forEach(lang => AFRICAN_COUNTRIES.forEach(c => {

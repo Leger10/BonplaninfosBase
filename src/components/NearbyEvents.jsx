@@ -60,70 +60,103 @@ const NearbyEvents = () => {
     return { text: message.text(city), Icon: message.icon, color: message.color };
   }, [headerMessages]);
 
+  // Base de requête : events de la zone où la participation est encore possible
+  // (statut actif/protégé, non annulés, date de fin dans le futur), triés
+  // priorités promus puis date de début croissante.
+  const buildLocalQuery = useCallback(({ city, country }) => {
+    const now = new Date().toISOString();
+    let query = supabase
+      .from('events')
+      .select(`
+        id,
+        title,
+        event_start_at,
+        event_end_at,
+        city,
+        country,
+        full_address,
+        cover_image,
+        event_type,
+        is_promoted,
+        interactions_count,
+        created_at,
+        organizer_id,
+        category:event_categories (name, slug),
+        organizer:profiles!organizer_id (full_name)
+      `)
+      .in('status', ['active', 'protected'])
+      .eq('is_cancelled', false)
+      .gte('event_end_at', now)
+      .order('is_promoted', { ascending: false })
+      .order('event_start_at', { ascending: true })
+      .limit(8);
+    if (city) query = query.ilike('city', `%${city.trim().toLowerCase()}%`);
+    if (country) query = query.ilike('country', `%${country.trim().toLowerCase()}%`);
+    return query;
+  }, []);
+
+  const transformEvents = useCallback((events) => events.map((event) => ({
+    event_id: event.id,
+    title: event.title,
+    event_start_at: event.event_start_at,
+    event_end_at: event.event_end_at,
+    city: event.city,
+    country: event.country,
+    full_address: event.full_address,
+    cover_image: event.cover_image,
+    category_name: event.category?.name,
+    category_slug: event.category?.slug,
+    organizer_id: event.organizer_id,
+    organizer_name: event.organizer?.full_name,
+    event_type: event.event_type,
+    is_promoted: event.is_promoted,
+    interactions_count: event.interactions_count,
+    created_at: event.created_at,
+    id: event.id,
+  })), []);
+
   const fetchLocalEvents = useCallback(async (city, country) => {
     setLoading(true);
     setError(null);
     try {
-      const normalizedCity = city.trim().toLowerCase();
-      const normalizedCountry = country.trim().toLowerCase();
-      
-      const { data, error } = await fetchWithRetry(() =>
-        supabase
-          .from('events')
-          .select(`
-            id,
-            title,
-            event_start_at,
-            event_end_at,
-            city,
-            country,
-            full_address,
-            cover_image,
-            event_type,
-            is_promoted,
-            interactions_count,
-            created_at,
-            organizer_id,
-            category:event_categories (name, slug),
-            organizer:profiles!organizer_id (full_name)
-          `)
-          .in('status', ['active', 'protected'])
-          .eq('is_cancelled', false)
-          .gte('event_end_at', new Date().toISOString())
-          .ilike('city', `%${normalizedCity}%`)
-          .ilike('country', `%${normalizedCountry}%`)
-          .order('is_promoted', { ascending: false })
-          .order('event_start_at', { ascending: true })
-          .limit(4)
+      // 1) Events de la ville exacte de l'utilisateur
+      let { data, error } = await fetchWithRetry(() =>
+        buildLocalQuery({ city, country }).limit(8)
       );
-
       if (error) throw error;
 
-      const transformedEvents = data.map(event => ({
-        event_id: event.id,
-        title: event.title,
-        event_start_at: event.event_start_at,
-        event_end_at: event.event_end_at,
-        city: event.city,
-        country: event.country,
-        full_address: event.full_address,
-        cover_image: event.cover_image,
-        category_name: event.category?.name,
-        category_slug: event.category?.slug,
-        organizer_id: event.organizer_id,
-        organizer_name: event.organizer?.full_name,
-        event_type: event.event_type,
-        is_promoted: event.is_promoted,
-        interactions_count: event.interactions_count,
-        created_at: event.created_at,
-        id: event.id,
-      }));
+      // 2) Fallback : si rien dans la ville, chercher dans tout le pays
+      //    (la ville où les tendances sont actives s'affiche alors en priorité)
+      let fallbackCity = null;
+      if (!data || data.length === 0) {
+        const { data: countryData, error: countryError } = await fetchWithRetry(() =>
+          buildLocalQuery({ city: null, country }).limit(8)
+        );
+        if (countryError) throw countryError;
+        if (countryData && countryData.length > 0) {
+          fallbackCity = countryData[0].city;
+          data = countryData;
+        }
+      }
 
+      const transformedEvents = transformEvents(data || []);
       setLocalEvents(transformedEvents);
 
-      if (city) {
-        const newMessage = getRandomHeaderMessage(city);
+      if (transformedEvents.length > 0) {
+        const displayCity = fallbackCity || city;
+        const newMessage = getRandomHeaderMessage(displayCity);
+        if (fallbackCity) {
+          newMessage.fallback = true;
+          newMessage.userCity = city;
+        }
         setHeaderMessage(newMessage);
+      } else if (city) {
+        // Rien dans la ville ni dans le pays : message neutre, pas d'erreur
+        setHeaderMessage({
+          text: `Aucun événement à proximité de ${city} pour le moment`,
+          Icon: MapPin,
+          color: 'text-muted-foreground',
+        });
       }
     } catch (err) {
       console.error('Erreur lors de la récupération des événements locaux:', err);
@@ -132,7 +165,7 @@ const NearbyEvents = () => {
     } finally {
       setLoading(false);
     }
-  }, [getRandomHeaderMessage]);
+  }, [buildLocalQuery, transformEvents, getRandomHeaderMessage]);
   
   const fetchUnlockedEvents = useCallback(async () => {
     if (!user) return;
@@ -285,8 +318,20 @@ const NearbyEvents = () => {
     );
   }
 
-  // 🔄 Aucun événement
-  if (localEvents.length === 0) return null;
+  // 🔄 Aucun événement : on affiche le message neutre si l'utilisateur a une zone
+  if (localEvents.length === 0) {
+    if (headerMessage.text && location?.city) {
+      return (
+        <section className="mb-12">
+          <h2 className="text-2xl font-bold flex items-center font-heading mb-4">
+            {headerMessage.Icon && <headerMessage.Icon className={`mr-2 ${headerMessage.color}`} />}
+            {headerMessage.text}
+          </h2>
+        </section>
+      );
+    }
+    return null;
+  }
 
   // ✅ Rendu principal
   return (
@@ -308,7 +353,14 @@ const NearbyEvents = () => {
           </button>
           <h2 className="text-2xl font-bold flex items-center font-heading">
             {headerMessage.Icon && <headerMessage.Icon className={`mr-2 ${headerMessage.color}`} />}
-            {headerMessage.text || `À la une à ${location?.city}`}
+            <span>
+              {headerMessage.text || `À la une à ${location?.city}`}
+              {headerMessage.fallback && (
+                <span className="block text-sm font-normal text-muted-foreground mt-1">
+                  Aucun événement à {headerMessage.userCity}, voici les tendances
+                </span>
+              )}
+            </span>
           </h2>
         </div>
       </div>

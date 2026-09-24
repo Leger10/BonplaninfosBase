@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { supabase } from "@/lib/customSupabaseClient";
+import { dbService } from "@/services/dbService";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
 import { useData } from "@/contexts/DataContext";
 import { toast } from "@/components/ui/use-toast";
@@ -1706,14 +1707,26 @@ const VotingInterface = ({ event, isUnlocked, onRefresh, isClosed }) => {
     isLoadingRef.current = true;
     setLoadingCandidates(true);
     
-    try {
-      console.log('🔍 Chargement des candidats pour event:', currentEventId);
+try {
+      console.log('Chargement des candidats pour event:', currentEventId);
       
-      const { data: cData, error: cError } = await supabase
-        .from("candidates")
-        .select("*")
-        .eq("event_id", currentEventId)
-        .order("vote_count", { ascending: false });
+      let cData = null;
+      let cError = null;
+      try {
+        cData = await dbService.getCandidates({ event_id: currentEventId });
+      } catch (dbErr) {
+        console.warn("dbService indisponible, fallback Supabase:", dbErr.message);
+      }
+
+      if (cData === null) {
+        const res = await supabase
+          .from("candidates")
+          .select("*")
+          .eq("event_id", currentEventId)
+          .order("vote_count", { ascending: false });
+        cData = res.data;
+        cError = res.error;
+      }
 
       if (cError) {
         console.error("❌ Erreur chargement candidats:", cError);

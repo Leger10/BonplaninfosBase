@@ -1,13 +1,8 @@
 // netlify/functions/moneyfusion-ticket-webhook.cjs
-const { createClient } = require('@supabase/supabase-js');
+const createClient = require('./_lib/local-supabase.cjs');
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseKey) {
-    console.error('❌ Variables d\'environnement Supabase manquantes');
-    throw new Error('Variables d\'environnement Supabase manquantes');
-}
+const supabaseKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 

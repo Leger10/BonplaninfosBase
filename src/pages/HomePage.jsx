@@ -28,6 +28,7 @@ import {
 import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
 import { supabase } from "@/lib/customSupabaseClient";
+import { dbService } from "@/services/dbService";
 import { toast } from "@/components/ui/use-toast";
 
 import WalletInfoModal from "@/components/WalletInfoModal";
@@ -102,20 +103,30 @@ const HomePage = () => {
     }
     setLoading(true);
     try {
-      const now = new Date().toISOString();
-    const { data: eventsRes, error: eventsError } = await supabase
-  .from("events")
-  .select(
-    "*, organizer:organizer_id(full_name), category:category_id(name, slug)"
-  )
-  .in("status", ['active', 'protected'])  // ← Modification ici
-  .eq("is_promoted", true)
-  .or(`promoted_until.gt.${now},promotion_end.gt.${now}`)
-  .order("created_at", { ascending: false })
-  .limit(8);
-      if (eventsError) throw eventsError;
+      let eventsRes = null;
+      try {
+        eventsRes = await dbService.getPromotedEvents(8);
+      } catch (dbErr) {
+        console.warn("dbService indisponible, fallback Supabase:", dbErr.message);
+      }
 
-      const formattedEvents = eventsRes.map((e) => ({
+      if (eventsRes === null || eventsRes.length === 0) {
+        const now = new Date().toISOString();
+        let { data, error } = await supabase
+          .from("events")
+          .select(
+            "*, organizer:organizer_id(full_name), category:category_id(name, slug)"
+          )
+          .in("status", ["active", "protected"])
+          .eq("is_promoted", true)
+          .or(`promoted_until.gt.${now},promotion_end.gt.${now}`)
+          .order("created_at", { ascending: false })
+          .limit(8);
+        if (error) throw error;
+        eventsRes = data || [];
+      }
+
+      const formattedEvents = (eventsRes || []).map((e) => ({
         ...e,
         category_name: e.category?.name,
         category_slug: e.category?.slug,
@@ -125,13 +136,24 @@ const HomePage = () => {
       setPromotedEvents(formattedEvents || []);
 
       if (user) {
-        const { data, error } = await supabase
-          .from("protected_event_access")
-          .select("event_id")
-          .eq("user_id", user.id)
-          .eq("status", "active");
+        let unlockedIds = null;
+        try {
+          unlockedIds = await dbService.getUnlockedEventIds(user.id);
+        } catch (dbErr) {
+          console.warn("dbService indisponible, fallback Supabase:", dbErr.message);
+        }
 
-        if (!error) setUnlockedEvents(new Set(data.map((item) => item.event_id)));
+        if (unlockedIds) {
+          setUnlockedEvents(new Set(unlockedIds));
+        } else {
+          const { data, error } = await supabase
+            .from("protected_event_access")
+            .select("event_id")
+            .eq("user_id", user.id)
+            .eq("status", "active");
+
+          if (!error) setUnlockedEvents(new Set(data.map((item) => item.event_id)));
+        }
       }
     } catch (error) {
       console.error("Error fetching homepage data:", error);

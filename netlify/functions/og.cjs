@@ -9,17 +9,14 @@
 
 // Remarque Netlify : la redirection 200 vers ".netlify/functions/og" remplace
 // le body mais PAS event.path => on reçoit toujours le chemin d'origine.
-const { createClient } = require('@supabase/supabase-js');
+const createClient = require('./_lib/local-supabase.cjs');
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL;
 const supabaseKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
-let supabase = null;
-if (supabaseUrl && supabaseKey) {
-    supabase = createClient(supabaseUrl, supabaseKey);
-}
+let supabase = createClient(supabaseUrl, supabaseKey);
 
 const escapeHtml = (s = '') =>
     String(s)

@@ -1,0 +1,3158 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_activites {
+  id                       String    @id  @default(uuid())@db.Char(36)
+  admin_id                 String    @db.Char(36)
+  mois                     DateTime  @db.Date
+  nb_evenements_moderes    Int?
+  nb_evenements_corrects   Int?
+  nb_utilisateurs_inscrits Int?
+  nb_evenements_ajoutes    Int?
+  score                    Decimal?  @db.Decimal(3, 2)
+  date_calcul              DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_balance_transactions {
+  id               String    @id  @default(uuid())@db.Char(36)
+  admin_id         String    @db.Char(36)
+  amount           Decimal   @db.Decimal(10, 2)
+  balance_before   Decimal   @db.Decimal(10, 2)
+  balance_after    Decimal   @db.Decimal(10, 2)
+  transaction_type String    @db.Text
+  description      String?   @db.Text
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_balances {
+  id                String    @id  @default(uuid())@db.Char(36)
+  admin_id          String?   @db.Char(36)
+  total_commissions Int?
+  available_balance Int?
+  total_withdrawn   Int?
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_commissions {
+  id              String    @id  @default(uuid())@db.Char(36)
+  admin_id        String?   @db.Char(36)
+  transaction_id  String?   @db.Char(36)
+  event_id        String?   @db.Char(36)
+  commission_type String    @db.Text
+  amount_pi       Int
+  amount_fcfa     Int
+  commission_rate Decimal   @db.Decimal(5, 2)
+  zone_city       String?   @db.Text
+  zone_region     String?   @db.Text
+  zone_country    String?   @db.Text
+  status          String?   @default("pending") @db.Text
+  calculated_at   DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_config {
+  id                Int       @id
+  coin_to_fcfa_rate Decimal?  @db.Decimal(20, 4)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_coverage_zones {
+  id         String    @id  @default(uuid())@db.Char(36)
+  admin_id   String?   @db.Char(36)
+  zone_type  String    @db.Text
+  zone_name  String    @db.Text
+  is_active  Boolean?  @default(true)
+  created_at DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_licences {
+  id           String    @id  @default(uuid())@db.Char(36)
+  admin_id     String?   @db.Char(36)
+  licence_type String    @db.Text
+  zone_city    String?   @db.Text
+  zone_region  String?   @db.Text
+  zone_country String?   @db.Text
+  date_debut   DateTime  @db.DateTime(0)
+  date_fin     DateTime  @db.DateTime(0)
+  statut       String?   @default("actif") @db.Text
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_logs {
+  id           String   @id  @default(uuid())@db.Char(36)
+  actor_id     String   @db.Char(36)
+  action_type  String   @db.Text
+  target_id    String?  @db.Char(36)
+  details      String?  @db.LongText
+  created_at   DateTime @default(now()) @db.DateTime(0)
+  actor_name   String?  @db.Text
+  target_name  String?  @db.Text
+  actor_email  String?  @db.Text
+  target_email String?  @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_notifications {
+  id                String    @id  @default(uuid())@db.Char(36)
+  admin_id          String    @db.Char(36)
+  notification_type String    @db.Text
+  title             String    @db.Text
+  message           String    @db.Text
+  is_read           Boolean?
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  read_at           DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_payment_info {
+  id                String    @id  @default(uuid())@db.Char(36)
+  admin_id          String?   @db.Char(36)
+  orange_money      String?   @db.Text
+  orange_details    String?   @db.Text
+  mtn_money         String?   @db.Text
+  mtn_details       String?   @db.Text
+  moov_money        String?   @db.Text
+  moov_details      String?   @db.Text
+  wave_number       String?   @db.Text
+  wave_details      String?   @db.Text
+  bank_name         String?   @db.Text
+  bank_iban         String?   @db.Text
+  bank_account_name String?   @db.Text
+  bank_details      String?   @db.Text
+  notes             String?   @db.Text
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_performance {
+  id               String    @id  @default(uuid())@db.Char(36)
+  admin_id         String?   @db.Char(36)
+  score            Decimal?  @db.Decimal(20, 4)
+  calculation_date DateTime? @db.Date
+  metrics          String?   @db.LongText
+  country          String?   @db.Text
+  city             String?   @db.Text
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_revenue {
+  id               String    @id  @default(uuid())@db.Char(36)
+  admin_id         String    @db.Char(36)
+  credited_user_id String    @db.Char(36)
+  creditor_id      String    @db.Char(36)
+  credit_source    String    @db.Text
+  amount_pi        Int
+  amount_fcfa      Int
+  created_at       DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_salaries {
+  id                String    @id  @default(uuid())@db.Char(36)
+  admin_id          String    @db.Char(36)
+  month             DateTime  @db.Date
+  country_revenue   Decimal?  @db.Decimal(20, 4)
+  referral_earnings Decimal?  @db.Decimal(20, 4)
+  license_rate      Decimal?  @db.Decimal(20, 4)
+  personal_score    Decimal?  @db.Decimal(20, 4)
+  total_salary      Decimal?  @db.Decimal(20, 4)
+  withdrawal_status String?   @default("pending") @db.Text
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_salary_calculations {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  admin_id           String    @db.Char(36)
+  calculation_month  DateTime  @db.Date
+  revenue_fcfa       Decimal   @db.Decimal(10, 2)
+  license_rate       Decimal   @db.Decimal(5, 2)
+  personal_score     Decimal   @db.Decimal(3, 2)
+  calculated_salaire Decimal   @db.Decimal(10, 2)
+  calculated_by      String    @default("super_admin") @db.Text
+  calculated_at      DateTime? @default(now()) @db.DateTime(0)
+  notes              String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_salary_history {
+  id             String    @id  @default(uuid())@db.Char(36)
+  admin_id       String    @db.Char(36)
+  month          DateTime  @db.Date
+  revenue_fcfa   Decimal   @db.Decimal(20, 4)
+  license_rate   Decimal   @db.Decimal(20, 4)
+  personal_score Decimal   @db.Decimal(20, 4)
+  final_salary   Decimal   @db.Decimal(20, 4)
+  is_paid        Boolean?
+  paid_at        DateTime? @db.DateTime(0)
+  created_at     DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_users {
+  id          String    @id  @default(uuid())@db.Char(36)
+  user_id     String?   @db.Char(36)
+  role        String?   @default("admin") @db.Text
+  permissions String?   @default("{}") @db.LongText
+  is_active   Boolean?  @default(true)
+  created_at  DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_users_summary {
+  id         String    @id  @default(uuid())@db.Char(36)
+  email      String    @db.Text
+  role       String    @db.Text
+  created_at DateTime  @db.DateTime(0)
+  updated_at DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_withdrawal_config {
+  id                        String    @id  @default(uuid())@db.Char(36)
+  withdrawal_available_date Int
+  min_withdrawal_amount     Decimal   @db.Decimal(20, 4)
+  max_withdrawal_amount     Decimal   @db.Decimal(20, 4)
+  withdrawal_methods        String?   @db.LongText
+  created_at                DateTime? @default(now()) @db.DateTime(0)
+  updated_at                DateTime? @default(now()) @db.DateTime(0)
+  withdrawal_dates          String?   @default("{5}") @db.Text
+  restricted_categories     String?   @db.LongText
+  min_withdrawal_pi         Int
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model admin_withdrawal_requests {
+  id                  String    @id  @default(uuid())@db.Char(36)
+  admin_id            String?   @db.Char(36)
+  amount_pi           Int
+  amount_fcfa         Int
+  bank_name           String?   @db.Text
+  account_number      String?   @db.Text
+  mobile_money_number String?   @db.Text
+  status              String?   @default("pending") @db.Text
+  requested_at        DateTime? @default(now()) @db.DateTime(0)
+  processed_at        DateTime? @db.DateTime(0)
+  processed_by        String?   @db.Char(36)
+  method              String?   @db.Text
+  payment_date        DateTime? @db.DateTime(0)
+  notes               String?   @db.Text
+  rejection_reason    String?   @db.Text
+  balance_deducted    Boolean?
+  deduction_date      DateTime? @db.DateTime(0)
+  withdrawal_details  String?   @default("{}") @db.LongText
+  fees                Decimal?  @db.Decimal(20, 4)
+  net_amount          Decimal?  @db.Decimal(20, 4)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model announcements {
+  id                String    @id  @default(uuid())@db.Char(36)
+  title             String    @db.Text
+  message           String    @db.Text
+  type              String?   @default("info") @db.Text
+  image_url         String?   @db.Text
+  video_url         String?   @db.Text
+  video_required    Boolean?  @default(true)
+  target_audience   String?   @default("all") @db.Text
+  target_cities     String?   @db.LongText
+  target_countries  String?   @db.LongText
+  specific_users    String?   @db.Text
+  send_immediately  Boolean?
+  scheduled_for     DateTime? @db.DateTime(0)
+  send_to_all_users Boolean?  @default(true)
+  status            String?   @default("draft") @db.Text
+  is_active         Boolean?  @default(true)
+  total_recipients  Int?
+  delivered_count   Int?
+  opened_count      Int?
+  created_by        String?   @db.Char(36)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+  sent_at           DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model app_config {
+  key        String    @id @db.VarChar(255)
+  value      String?   @db.Text
+  updated_at DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model app_images {
+  id         String    @id  @default(uuid())@db.Char(36)
+  image_key  String    @db.Text
+  image_url  String    @db.Text
+  alt_text   String?   @db.Text
+  updated_at DateTime? @default(now()) @db.DateTime(0)
+  updated_by String?   @db.Char(36)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model app_settings {
+  id                      String    @id  @default(uuid())@db.Char(36)
+  app_name                String?   @default("BonPlanInfos") @db.Text
+  app_logo                String?   @db.Text
+  app_favicon             String?   @db.Text
+  contact_email           String?   @default("contact@bonplaninfos.com") @db.Text
+  contact_phone           String?   @db.Text
+  address                 String?   @db.Text
+  social_facebook         String?   @db.Text
+  social_twitter          String?   @db.Text
+  social_instagram        String?   @db.Text
+  social_linkedin         String?   @db.Text
+  maintenance_mode        Boolean?
+  maintenance_message     String?   @db.Text
+  currency_eur_rate       Decimal?  @db.Decimal(20, 4)
+  currency_usd_rate       Decimal?  @db.Decimal(20, 4)
+  coin_to_fcfa_rate       Decimal?  @db.Decimal(20, 4)
+  min_withdrawal_pi       Int?
+  transaction_fee_percent Decimal?  @db.Decimal(20, 4)
+  email_notifications     Boolean?  @default(true)
+  push_notifications      Boolean?  @default(true)
+  analytics_enabled       Boolean?
+  cookie_consent_enabled  Boolean?  @default(true)
+  privacy_policy_url      String?   @db.Text
+  terms_of_service_url    String?   @db.Text
+  created_at              DateTime? @default(now()) @db.DateTime(0)
+  updated_at              DateTime? @default(now()) @db.DateTime(0)
+  logo_url                String?   @db.Text
+  favicon_url             String?   @db.Text
+  site_name               String?   @db.Text
+  site_description        String?   @db.Text
+  logo                    String?   @db.Text
+  favicon                 String?   @db.Text
+  meta_keywords           String?   @db.Text
+  meta_description        String?   @db.Text
+  platform_fee_percentage Decimal?  @db.Decimal(20, 4)
+  support_email           String?   @default("support@bonplaninfos.net") @db.Text
+  admin_email             String?   @default("client@bonplaninfos.net") @db.Text
+  noreply_email           String?   @default("bonplaninfos@gmail.com") @db.Text
+  billing_email           String?   @default("digihouse10@gmail.com") @db.Text
+  moneyfusion_fee_percent Decimal?  @db.Decimal(20, 4)
+  moneyfusion_enabled     Boolean?  @default(true)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model auth_users {
+  instance_id                 String?   @db.Char(36)
+  id                          String    @id  @default(uuid())@db.Char(36)
+  aud                         String?   @db.VarChar(255)
+  role                        String?   @db.VarChar(255)
+  email                       String?   @db.VarChar(255)
+  encrypted_password          String?   @db.VarChar(255)
+  email_confirmed_at          DateTime? @db.DateTime(0)
+  invited_at                  DateTime? @db.DateTime(0)
+  confirmation_token          String?   @db.VarChar(255)
+  confirmation_sent_at        DateTime? @db.DateTime(0)
+  recovery_token              String?   @db.VarChar(255)
+  recovery_sent_at            DateTime? @db.DateTime(0)
+  email_change_token_new      String?   @db.VarChar(255)
+  email_change                String?   @db.VarChar(255)
+  email_change_sent_at        DateTime? @db.DateTime(0)
+  last_sign_in_at             DateTime? @db.DateTime(0)
+  raw_app_meta_data           String?   @db.LongText
+  raw_user_meta_data          String?   @db.LongText
+  is_super_admin              Boolean?
+  created_at                  DateTime? @db.DateTime(0)
+  updated_at                  DateTime? @db.DateTime(0)
+  phone                       String?   @db.Text
+  phone_confirmed_at          DateTime? @db.DateTime(0)
+  phone_change                String?   @default("") @db.Text
+  phone_change_token          String?   @default("") @db.VarChar(255)
+  phone_change_sent_at        DateTime? @db.DateTime(0)
+  confirmed_at                DateTime? @db.DateTime(0)
+  email_change_token_current  String?   @default("") @db.VarChar(255)
+  email_change_confirm_status Int?      @db.SmallInt
+  banned_until                DateTime? @db.DateTime(0)
+  reauthentication_token      String?   @default("") @db.VarChar(255)
+  reauthentication_sent_at    DateTime? @db.DateTime(0)
+  is_sso_user                 Boolean
+  deleted_at                  DateTime? @db.DateTime(0)
+  is_anonymous                Boolean
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model candidate_likes {
+  id           String    @id  @default(uuid())@db.Char(36)
+  candidate_id String?   @db.Char(36)
+  user_id      String?   @db.Char(36)
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model candidate_performances {
+  id                   String    @id  @default(uuid())@db.Char(36)
+  event_id             String    @db.Char(36)
+  candidate_id         String    @db.Char(36)
+  candidate_name       String    @db.VarChar(255)
+  performance_score    Decimal?  @db.Decimal(10, 2)
+  votes_count          Int?
+  ranking_position     Int?
+  performance_data     String?   @db.LongText
+  qualification_status String?   @default("pending") @db.VarChar(50)
+  created_at           DateTime? @default(now()) @db.DateTime(0)
+  updated_at           DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model candidate_shares {
+  id           String    @id  @default(uuid())@db.Char(36)
+  candidate_id String?   @db.Char(36)
+  user_id      String?   @db.Char(36)
+  platform     String?   @db.Text
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model candidates {
+  id          String   @id  @default(uuid())@db.Char(36)
+  event_id    String   @db.Char(36)
+  name        String   @db.Text
+  description String?  @db.Text
+  photo_url   String?  @db.Text
+  vote_count  Int?
+  category    String?  @db.Text
+  created_at  DateTime @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model categories {
+  id          String    @id  @default(uuid())@db.Char(36)
+  name        String    @db.VarChar(255)
+  slug        String    @db.VarChar(255)
+  description String?   @db.Text
+  icon        String?   @db.VarChar(255)
+  color       String?   @db.VarChar(50)
+  is_active   Boolean?  @default(true)
+  created_at  DateTime? @default(now()) @db.DateTime(0)
+  updated_at  DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model coin_conversion_rates {
+  id                  String    @id  @default(uuid())@db.Char(36)
+  currency            String    @db.Text
+  coins_per_unit      Decimal   @db.Decimal(10, 4)
+  min_purchase_amount Int?
+  is_active           Boolean?  @default(true)
+  updated_at          DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model coin_packs {
+  id            Int       @id
+  name          String    @db.VarChar(100)
+  slug          String?   @db.VarChar(100)
+  coin_amount   Int
+  bonus_coins   Int?
+  fcfa_price    Int
+  is_active     Boolean?  @default(true)
+  is_custom     Boolean?
+  display_order Int?
+  badge         String?   @db.VarChar(50)
+  description   String?   @db.Text
+  created_at    DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model coin_spending {
+  id              String    @id  @default(uuid())@db.Char(36)
+  user_id         String?   @db.Char(36)
+  amount          Int
+  spent_from_free Boolean?
+  free_coins_used Int?
+  paid_coins_used Int?
+  purpose         String    @db.Text
+  target_id       String?   @db.Char(36)
+  target_type     String?   @db.Text
+  description     String?   @db.Text
+  created_at      DateTime? @default(now()) @db.DateTime(0)
+  raffle_event_id String?   @db.Char(36)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model coin_transactions {
+  id                    String    @id  @default(uuid())@db.Char(36)
+  user_id               String?   @db.Char(36)
+  pack_id               String?   @db.Char(36)
+  amount_paid           Int
+  coins_credited        Int
+  status                String?   @default("pending") @db.Text
+  moneyfusion_reference String?   @db.Text
+  created_at            DateTime? @default(now()) @db.DateTime(0)
+  completed_at          DateTime? @db.DateTime(0)
+  related_event_id      String?   @db.Char(36)
+  balance_before        Decimal?  @db.Decimal(15, 2)
+  balance_after         Decimal?  @db.Decimal(15, 2)
+  transaction_type      String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model coin_transfers {
+  id          String    @id  @default(uuid())@db.Char(36)
+  user_id     String    @db.Char(36)
+  amount      Int
+  type        String    @db.Text
+  description String?   @db.Text
+  created_at  DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model comments {
+  id            String    @id  @default(uuid())@db.Char(36)
+  event_id      String    @db.Char(36)
+  user_id       String    @db.Char(36)
+  parent_id     String?   @db.Char(36)
+  comment_text  String    @db.Text
+  is_approved   Boolean?  @default(true)
+  is_edited     Boolean?
+  likes_count   Int?
+  replies_count Int?
+  report_count  Int?
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+  edited_at     DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model content_reports {
+  id          String    @id  @default(uuid())@db.Char(36)
+  reporter_id String?   @db.Char(36)
+  target_type String?   @db.Text
+  target_id   String?   @db.Char(36)
+  reason      String    @db.Text
+  status      String?   @default("pending") @db.Text
+  created_at  DateTime? @default(now()) @db.DateTime(0)
+  reviewed_by String?   @db.Char(36)
+  reviewed_at DateTime? @db.DateTime(0)
+  content     String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model contests {
+  id               String    @id  @default(uuid())@db.Char(36)
+  title            String    @db.Text
+  description      String?   @db.Text
+  start_date       DateTime  @db.DateTime(0)
+  event_end_at     DateTime  @db.DateTime(0)
+  vote_cost_coins  Int
+  category         String?   @db.Text
+  organizer_id     String?   @db.Char(36)
+  is_active        Boolean?  @default(true)
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+  updated_at       DateTime? @default(now()) @db.DateTime(0)
+  primary_media_id String?   @db.Char(36)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model contract_submissions {
+  id                String    @id  @default(uuid())@db.Char(36)
+  user_id           String    @db.Char(36)
+  license_pack_id   Int?
+  license_id        Int?
+  contract_file_url String    @db.Text
+  status            String?   @default("pending") @db.Text
+  submitted_at      DateTime? @default(now()) @db.DateTime(0)
+  admin_notes       String?   @db.Text
+  reviewed_by       String?   @db.Char(36)
+  reviewed_at       DateTime? @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+  contract_type     String?   @db.Text
+  user_email        String?   @db.Text
+  user_name         String?   @db.Text
+  user_phone        String?   @db.Text
+  message           String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model conversion_rates {
+  id              String    @id  @default(uuid())@db.Char(36)
+  currency_from   String    @db.VarChar(10)
+  currency_to     String    @db.VarChar(10)
+  rate            Decimal   @db.Decimal(10, 4)
+  is_active       Boolean?  @default(true)
+  effective_from  DateTime? @default(now()) @db.DateTime(0)
+  effective_until DateTime? @db.DateTime(0)
+  created_by      String?   @db.Char(36)
+  created_at      DateTime? @default(now()) @db.DateTime(0)
+  updated_at      DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model coupon_usages {
+  id             String    @id  @default(uuid())@db.Char(36)
+  coupon_code    String?   @db.Text
+  user_id        String?   @db.Char(36)
+  transaction_id String?   @db.Text
+  amount         Decimal?  @db.Decimal(20, 4)
+  commission     Decimal?  @db.Decimal(20, 4)
+  created_at     DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model coupons {
+  code              String    @id @db.VarChar(255)
+  user_id           String    @db.Char(36)
+  active            Boolean?  @default(true)
+  usage_count       Int?
+  total_amount      Decimal?  @db.Decimal(20, 4)
+  commission_earned Decimal?  @db.Decimal(20, 4)
+  last_used_at      DateTime? @db.DateTime(0)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model creator_monthly_stats {
+  id                      String    @id  @default(uuid())@db.Char(36)
+  creator_id              String?   @db.Char(36)
+  month                   DateTime  @db.Date
+  views_count             Int?
+  inscriptions_count      Int?
+  score                   Decimal?  @db.Decimal(20, 4)
+  pool_share_percentage   Decimal?  @db.Decimal(20, 4)
+  estimated_earnings_fcfa Decimal?  @db.Decimal(20, 4)
+  final_earnings_fcfa     Decimal?  @db.Decimal(20, 4)
+  status                  String?   @default("pending") @db.Text
+  created_at              DateTime? @default(now()) @db.DateTime(0)
+  updated_at              DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model credits {
+  id           String    @id  @default(uuid())@db.Char(36)
+  user_id      String?   @db.Char(36)
+  amount_pi    Decimal   @db.Decimal(10, 2)
+  amount_fcfa  Decimal   @db.Decimal(10, 2)
+  country      String?   @db.VarChar(100)
+  city         String?   @db.VarChar(100)
+  status       String?   @default("active") @db.VarChar(50)
+  is_cancelled Boolean?
+  cancelled_at DateTime? @db.DateTime(0)
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+  updated_at   DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model currency_rates {
+  id              String    @id  @default(uuid())@db.Char(36)
+  base_currency   String    @default("XAF") @db.Text
+  target_currency String    @db.Text
+  exchange_rate   Decimal   @db.Decimal(10, 4)
+  is_active       Boolean?  @default(true)
+  updated_at      DateTime? @default(now()) @db.DateTime(0)
+  updated_by      String?   @db.Char(36)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model earnings_transactions {
+  id             String    @id  @default(uuid())@db.Char(36)
+  user_id        String?   @db.Char(36)
+  category       String    @db.Text
+  brut_amount    Int
+  net_amount     Int
+  fees_amount    Int
+  description    String?   @db.Text
+  status         String?   @default("pending") @db.Text
+  transfer_id    String?   @db.Char(36)
+  created_at     DateTime? @default(now()) @db.DateTime(0)
+  transferred_at DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model earnings_transfers {
+  id            String    @id  @default(uuid())@db.Char(36)
+  organizer_id  String    @db.Char(36)
+  amount_coins  Int
+  amount_fcfa   Decimal   @db.Decimal(20, 4)
+  transfer_type String    @db.Text
+  status        String?   @default("completed") @db.Text
+  description   String?   @db.Text
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model email_templates {
+  id            String    @id  @default(uuid())@db.Char(36)
+  template_type String    @db.VarChar(100)
+  subject       String    @db.VarChar(255)
+  html_content  String    @db.Text
+  text_content  String?   @db.Text
+  variables     String?   @default("[]") @db.LongText
+  is_active     Boolean?  @default(true)
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model encouragement_messages {
+  id            String    @id  @default(uuid())@db.Char(36)
+  message_type  String?   @default("video_completion") @db.Text
+  message_text  String    @db.Text
+  is_active     Boolean?  @default(true)
+  display_order Int?
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model error_logs {
+  id            String    @id  @default(uuid())@db.Char(36)
+  function_name String?   @db.Text
+  error_message String?   @db.Text
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_bookmarks {
+  id         String    @id  @default(uuid())@db.Char(36)
+  event_id   String    @db.Char(36)
+  user_id    String    @db.Char(36)
+  created_at DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_cancellations {
+  id                    String    @id  @default(uuid())@db.Char(36)
+  event_id              String    @db.Char(36)
+  cancelled_by_admin_id String    @db.Char(36)
+  reason                String?   @db.Text
+  total_refunded        Decimal?  @db.Decimal(20, 4)
+  participant_count     Int?
+  created_at            DateTime? @default(now()) @db.DateTime(0)
+  metadata              String?   @db.LongText
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_categories {
+  id            String   @id  @default(uuid())@db.Char(36)
+  name          String   @db.Text
+  slug          String   @db.Text
+  description   String?  @db.Text
+  icon_url      String?  @db.Text
+  color_hex     String?  @db.Text
+  display_order Int?
+  is_active     Boolean? @default(true)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_comments {
+  id           String    @id  @default(uuid())@db.Char(36)
+  user_id      String?   @db.Char(36)
+  event_id     String?   @db.Char(36)
+  comment_text String    @db.Text
+  rating       Int?
+  is_approved  Boolean?  @default(true)
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+  updated_at   DateTime? @default(now()) @db.DateTime(0)
+  content      String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_community_verifications {
+  id                String    @id  @default(uuid())@db.Char(36)
+  event_id          String?   @db.Char(36)
+  user_id           String?   @db.Char(36)
+  verified_at       DateTime? @default(now()) @db.DateTime(0)
+  verification_type String?   @db.Text
+  comment           String?   @db.Text
+  evidence_url      String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_disputes {
+  id               String    @id  @default(uuid())@db.Char(36)
+  event_id         String    @db.Char(36)
+  reporter_id      String    @db.Char(36)
+  reason           String    @db.Text
+  evidence_url     String?   @db.Text
+  status           String?   @default("open") @db.Text
+  resolution_notes String?   @db.Text
+  resolved_by      String?   @db.Char(36)
+  resolved_at      DateTime? @db.DateTime(0)
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+  updated_at       DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_fund_releases {
+  id                  String    @id  @default(uuid())@db.Char(36)
+  event_id            String    @db.Char(36)
+  organizer_id        String    @db.Char(36)
+  stage               Int
+  percentage_released Decimal   @db.Decimal(20, 4)
+  amount_released     Decimal   @db.Decimal(20, 4)
+  conditions_met      String?   @default("{}") @db.LongText
+  released_by         String?   @db.Char(36)
+  released_at         DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_geocoding_results {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  event_id           String?   @db.Char(36)
+  input_address      String    @db.Text
+  formatted_address  String?   @db.Text
+  latitude           Decimal?  @db.Decimal(10, 8)
+  longitude          Decimal?  @db.Decimal(11, 8)
+  google_place_id    String?   @db.Text
+  location_type      String?   @db.Text
+  viewport_ne_lat    Decimal?  @db.Decimal(10, 8)
+  viewport_ne_lng    Decimal?  @db.Decimal(11, 8)
+  viewport_sw_lat    Decimal?  @db.Decimal(10, 8)
+  viewport_sw_lng    Decimal?  @db.Decimal(11, 8)
+  confidence_score   Decimal?  @db.Decimal(3, 2)
+  geocoding_provider String?   @default("google") @db.Text
+  raw_response       String?   @db.LongText
+  status             String?   @default("success") @db.Text
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_notifications {
+  id                String    @id  @default(uuid())@db.Char(36)
+  event_id          String?   @db.Char(36)
+  notification_type String?   @default("new_event") @db.Text
+  send_to_all_users Boolean?  @default(true)
+  send_to_followers Boolean?
+  send_to_city      Boolean?  @default(true)
+  total_sent        Int?
+  total_delivered   Int?
+  status            String?   @default("pending") @db.Text
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  sent_at           DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_participations {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  user_id            String?   @db.Char(36)
+  event_id           String?   @db.Char(36)
+  ticket_purchase_id String?   @db.Char(36)
+  participation_type String?   @default("attendee") @db.VarChar(50)
+  status             String?   @default("registered") @db.VarChar(50)
+  registration_date  DateTime? @default(now()) @db.DateTime(0)
+  attended_at        DateTime? @db.DateTime(0)
+  check_in_time      DateTime? @db.DateTime(0)
+  check_out_time     DateTime? @db.DateTime(0)
+  notes              String?   @db.Text
+  rating             Int?
+  review_text        String?   @db.Text
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+  updated_at         DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_promo_config {
+  id              String    @id  @default(uuid())@db.Char(36)
+  event_id        String?   @db.Char(36)
+  enabled         Boolean?
+  discount_type   String?   @db.Text
+  discount_value  Int?
+  commission_rate Int?
+  usage_limit     Int?
+  created_at      DateTime? @default(now()) @db.DateTime(0)
+  updated_at      DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_promotions {
+  id                  String    @id  @default(uuid())@db.Char(36)
+  event_id            String?   @db.Char(36)
+  organizer_id        String?   @db.Char(36)
+  promotion_pack_id   String?   @db.Char(36)
+  start_date          DateTime  @db.DateTime(0)
+  event_end_at        DateTime  @db.DateTime(0)
+  cost_pi             Int
+  status              String?   @default("pending") @db.Text
+  payment_status      String?   @default("pending") @db.Text
+  used_free_coins     Int?
+  used_paid_coins     Int?
+  views_before        Int?
+  views_after         Int?
+  interactions_before Int?
+  interactions_after  Int?
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+  activated_at        DateTime? @db.DateTime(0)
+  cancelled_at        DateTime? @db.DateTime(0)
+  free_coins_used     Int?
+  paid_coins_used     Int?
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_protections {
+  id          Int       @id
+  user_id     String    @db.Char(36)
+  event_type  String    @db.VarChar(100)
+  is_unlocked Boolean?
+  unlocked_at DateTime? @db.DateTime(0)
+  created_at  DateTime? @default(now()) @db.DateTime(0)
+  updated_at  DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_raffles {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  event_id           String    @db.Char(36)
+  raffle_name        String    @db.VarChar(255)
+  description        String?   @db.Text
+  ticket_price_fcfa  Decimal?  @db.Decimal(10, 2)
+  ticket_price_coins Int?
+  total_tickets      Int
+  tickets_sold       Int?
+  prizes             String    @db.LongText
+  draw_date          DateTime  @db.DateTime(0)
+  is_active          Boolean?  @default(true)
+  winner_user_id     String?   @db.Char(36)
+  winner_announced   Boolean?
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+  updated_at         DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_reactions {
+  id            String    @id  @default(uuid())@db.Char(36)
+  user_id       String?   @db.Char(36)
+  event_id      String?   @db.Char(36)
+  reaction_type String?   @db.Text
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_refund_logs {
+  id                  String    @id  @default(uuid())@db.Char(36)
+  event_id            String?   @db.Char(36)
+  admin_id            String?   @db.Char(36)
+  total_amount        Decimal?  @db.Decimal(20, 4)
+  refunded_user_count Int?
+  reason              String?   @db.Text
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_revenues {
+  id                       String    @id  @default(uuid())@db.Char(36)
+  event_id                 String    @db.Char(36)
+  organizer_id             String    @db.Char(36)
+  ticket_revenue_fcfa      Decimal?  @db.Decimal(15, 2)
+  vote_revenue_fcfa        Decimal?  @db.Decimal(15, 2)
+  interaction_revenue_fcfa Decimal?  @db.Decimal(15, 2)
+  stand_revenue_fcfa       Decimal?  @db.Decimal(15, 2)
+  raffle_revenue_fcfa      Decimal?  @db.Decimal(15, 2)
+  total_revenue_fcfa       Decimal?  @db.Decimal(15, 2)
+  platform_fee_fcfa        Decimal?  @db.Decimal(15, 2)
+  organizer_gain_fcfa      Decimal?  @db.Decimal(15, 2)
+  organizer_gain_coins     Int?
+  organizer_gain_usd       Decimal?  @db.Decimal(15, 2)
+  organizer_gain_eur       Decimal?  @db.Decimal(15, 2)
+  calculation_date         DateTime? @db.Date
+  created_at               DateTime? @default(now()) @db.DateTime(0)
+  updated_at               DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_settings {
+  id                     String    @id  @default(uuid())@db.Char(36)
+  event_id               String?   @db.Char(36)
+  vote_price_fcfa        Int?
+  vote_price_pi          Int?
+  max_votes_per_user     Int?
+  show_live_results      Boolean?  @default(true)
+  total_tickets          Int?
+  tickets_sold           Int?
+  ticket_price_fcfa      Int?
+  ticket_price_pi        Int?
+  total_stands           Int?
+  stands_rented          Int?
+  stand_price_fcfa       Int?
+  stand_price_pi         Int?
+  raffle_price_fcfa      Int?
+  raffle_price_pi        Int?
+  total_participants     Int?
+  start_date             DateTime? @db.DateTime(0)
+  event_end_at           DateTime? @db.DateTime(0)
+  created_at             DateTime? @default(now()) @db.DateTime(0)
+  max_tickets_per_user   Int?
+  draw_date              DateTime? @db.DateTime(0)
+  automatic_draw         Boolean?  @default(true)
+  notify_winners         Boolean?  @default(true)
+  winners_drawn          Boolean?
+  voting_enabled         Boolean?
+  raffle_enabled         Boolean?
+  ticketing_enabled      Boolean?
+  stands_enabled         Boolean?
+  notify_participants    Boolean?
+  show_participants      Boolean?
+  show_remaining_tickets Boolean?  @default(true)
+  allow_multiple_votes   Boolean?
+  voting_type            String?   @default("paid") @db.Text
+  commission_rate        Decimal?  @db.Decimal(5, 2)
+  organizer_rate         Decimal?  @db.Decimal(5, 2)
+  max_votes_per_phone    Int       @default(50)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_shares {
+  id             String    @id  @default(uuid())@db.Char(36)
+  event_id       String    @db.Char(36)
+  user_id        String    @db.Char(36)
+  share_platform String?   @db.Text
+  created_at     DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_stands {
+  id                   String    @id  @default(uuid())@db.Char(36)
+  event_id             String    @db.Char(36)
+  stand_name           String    @db.VarChar(255)
+  stand_type           String    @db.VarChar(100)
+  location_description String?   @db.Text
+  price_fcfa           Decimal   @db.Decimal(10, 2)
+  price_coins          Int?
+  size_sqm             Decimal?  @db.Decimal(5, 2)
+  is_available         Boolean?  @default(true)
+  is_booked            Boolean?
+  booked_by            String?   @db.Char(36)
+  booking_start        DateTime? @db.DateTime(0)
+  booking_end          DateTime? @db.DateTime(0)
+  created_at           DateTime? @default(now()) @db.DateTime(0)
+  updated_at           DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_validation_status {
+  id              String    @id  @default(uuid())@db.Char(36)
+  event_id        String    @db.Char(36)
+  event_type      String    @db.Text
+  validation_step String    @db.Text
+  status          String?   @default("pending") @db.Text
+  admin_notes     String?   @db.Text
+  evidence_files  String?   @default("[]") @db.LongText
+  validated_by    String?   @db.Char(36)
+  validated_at    DateTime? @db.DateTime(0)
+  created_at      DateTime? @default(now()) @db.DateTime(0)
+  updated_at      DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_views {
+  id          String    @id  @default(uuid())@db.Char(36)
+  event_id    String    @db.Char(36)
+  user_id     String?   @db.Char(36)
+  ip_address  String?   @db.Text
+  user_agent  String?   @db.Text
+  view_date   DateTime? @default(now()) @db.DateTime(0)
+  session_id  String?   @db.Text
+  device_type String?   @db.Text
+  created_at  DateTime? @default(now()) @db.DateTime(0)
+  updated_at  DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model event_votes {
+  id              String    @id  @default(uuid())@db.Char(36)
+  event_id        String    @db.Char(36)
+  candidate_id    String    @db.Char(36)
+  user_id         String    @db.Char(36)
+  vote_count      Int
+  vote_price_pi   Int
+  vote_price_fcfa Int
+  created_at      DateTime? @default(now()) @db.DateTime(0)
+  updated_at      DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model events {
+  id                                String    @id  @default(uuid())@db.Char(36)
+  title                             String    @db.Text
+  description                       String?   @db.Text
+  city                              String    @db.Text
+  country                           String    @default("Côte d'Ivoire") @db.Text
+  location                          String?   @db.Text
+  organizer_id                      String?   @db.Char(36)
+  event_type                        String?   @default("protected") @db.Text
+  is_active                         Boolean?  @default(true)
+  status                            String?   @default("draft") @db.Text
+  is_promoted                       Boolean?
+  promoted_until                    DateTime? @db.DateTime(0)
+  price_fcfa                        Int?
+  price_pi                          Int?
+  views_count                       Int?
+  interactions_count                Int?
+  participants_count                Int?
+  promotion_views_count             Int?
+  cover_image                       String?   @db.Text
+  tags                              String?   @db.LongText
+  created_at                        DateTime? @default(now()) @db.DateTime(0)
+  updated_at                        DateTime? @default(now()) @db.DateTime(0)
+  contact_phone                     String?   @db.Text
+  address                           String?   @db.Text
+  google_maps_link                  String?   @db.Text
+  latitude                          Decimal?  @db.Decimal(10, 8)
+  longitude                         Decimal?  @db.Decimal(11, 8)
+  full_address                      String?   @db.Text
+  google_place_id                   String?   @db.Text
+  location_instructions             String?   @db.Text
+  geocoding_status                  String?   @default("pending") @db.Text
+  geocoding_attempts                Int?
+  geocoding_last_attempt            DateTime? @db.DateTime(0)
+  promotion_start                   DateTime? @db.DateTime(0)
+  promotion_end                     DateTime? @db.DateTime(0)
+  promotion_type                    String?   @db.Text
+  verification_enabled              Boolean?
+  max_verifications_per_ticket      Int?
+  verification_start_time           DateTime? @db.DateTime(0)
+  verification_end_time             DateTime? @db.DateTime(0)
+  category_id                       String?   @db.Char(36)
+  cover_image_url                   String?   @db.Text
+  cover_image_path                  String?   @db.Text
+  is_online                         Boolean?
+  is_public                         Boolean?  @default(true)
+  requires_approval                 Boolean?
+  max_attendees                     Int?
+  max_participants                  Int?
+  allows_reentry                    Boolean?  @default(true)
+  max_reentry_interval              Int?
+  contract_accepted_at              DateTime? @db.DateTime(0)
+  contract_version                  String?   @db.Text
+  is_sales_closed                   Boolean?
+  event_start_at                    DateTime  @db.DateTime(0)
+  event_end_at                      DateTime? @db.DateTime(0)
+  is_cancelled                      Boolean?
+  cancellation_reason               String?   @db.Text
+  cancelled_at                      DateTime? @db.DateTime(0)
+  cancelled_by_admin_id             String?   @db.Char(36)
+  is_completed                      Boolean?
+  completed_at                      DateTime? @db.DateTime(0)
+  completion_notes                  String?   @db.Text
+  requires_participant_confirmation Boolean?
+  total_tickets_purchased           Int?
+  total_tickets_scanned             Int?
+  scan_threshold_percentage         Int?
+  is_scan_verified                  Boolean?
+  scan_verified_at                  DateTime? @db.DateTime(0)
+  scan_verified_by_admin_id         String?   @db.Char(36)
+  fund_release_stage                Int?
+  validation_required               Boolean?
+  coins_refunded                    Boolean?
+  start_date                        DateTime? @db.DateTime(0)
+  end_date                          DateTime? @db.DateTime(0)
+  category_slug                     String?   @db.Text
+  image_url                         String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model home_page_data {
+  id            String    @id  @default(uuid())@db.Char(36)
+  section_type  String?   @db.Text
+  title         String    @db.Text
+  subtitle      String?   @db.Text
+  description   String?   @db.Text
+  image_url     String?   @db.Text
+  button_text   String?   @db.Text
+  button_link   String?   @db.Text
+  display_order Int?
+  is_active     Boolean?  @default(true)
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model influencer_commissions {
+  id                  String    @id  @default(uuid())@db.Char(36)
+  influencer_id       String    @db.Char(36)
+  promo_code_id       String    @db.Char(36)
+  amount              Int
+  status              String?   @default("pending") @db.Text
+  paid_at             DateTime? @db.DateTime(0)
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+  updated_at          DateTime? @default(now()) @db.DateTime(0)
+  promo_code_usage_id String?   @db.Char(36)
+  commission_date     DateTime? @db.Date
+  transaction_id      String?   @db.Char(36)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model licence_renewal_requests {
+  id           String    @id  @default(uuid())@db.Char(36)
+  admin_id     String    @db.Char(36)
+  licence_id   String    @db.Char(36)
+  status       String    @default("pending") @db.Text
+  request_date DateTime  @default(now()) @db.DateTime(0)
+  reviewed_by  String?   @db.Char(36)
+  reviewed_at  DateTime? @db.DateTime(0)
+  notes        String?   @db.Text
+  renewal_type String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model license_renewal_requests {
+  id                     String    @id  @default(uuid())@db.Char(36)
+  admin_id               String    @db.Char(36)
+  requested_license_type String    @db.Text
+  current_license_type   String?   @db.Text
+  renewal_status         String?   @default("pending") @db.Text
+  request_date           DateTime? @default(now()) @db.DateTime(0)
+  processed_date         DateTime? @db.DateTime(0)
+  processed_by           String?   @db.Char(36)
+  notes                  String?   @db.Text
+  created_at             DateTime? @default(now()) @db.DateTime(0)
+  updated_at             DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model licenses {
+  id              String    @id  @default(uuid())@db.Char(36)
+  name            String    @db.Text
+  commission_rate Decimal   @db.Decimal(20, 4)
+  price_fcfa      Decimal?  @db.Decimal(20, 4)
+  duration_days   Int?
+  features        String?   @db.LongText
+  created_at      DateTime? @default(now()) @db.DateTime(0)
+  updated_at      DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ligdicashtransactions {
+  id           String    @id  @default(uuid())@db.Char(36)
+  token        String    @db.Text
+  external_id  String    @db.Text
+  user_id      String    @db.Char(36)
+  event_id     String?   @db.Char(36)
+  amount       Int
+  operator     String    @db.Text
+  phone        String    @db.Text
+  status       String    @default("pending") @db.Text
+  payment_data String?   @db.LongText
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+  updated_at   DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model live_rankings {
+  id                   String    @id  @default(uuid())@db.Char(36)
+  event_id             String    @db.Char(36)
+  candidate_id         String    @db.Char(36)
+  candidate_name       String    @db.VarChar(255)
+  current_score        Decimal?  @db.Decimal(10, 2)
+  current_votes        Int?
+  ranking_position     Int?
+  position_change      Int?
+  qualification_status String?   @db.VarChar(50)
+  last_update          DateTime? @default(now()) @db.DateTime(0)
+  created_at           DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model location_types {
+  id          String   @id  @default(uuid())@db.Char(36)
+  name        String   @db.Text
+  slug        String   @db.Text
+  icon        String?  @db.Text
+  description String?  @db.Text
+  is_active   Boolean? @default(true)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model locations {
+  id               String    @id  @default(uuid())@db.Char(36)
+  name             String    @db.Text
+  description      String?   @db.Text
+  type_id          String?   @db.Char(36)
+  address          String    @db.Text
+  city             String    @db.Text
+  country          String    @db.Text
+  latitude         Decimal?  @db.Decimal(10, 8)
+  longitude        Decimal?  @db.Decimal(11, 8)
+  google_maps_link String?   @db.Text
+  website          String?   @db.Text
+  phone_number     String?   @db.Text
+  email            String?   @db.Text
+  opening_hours    String?   @db.LongText
+  price_range      String?   @db.Text
+  images           String?   @db.LongText
+  features         String?   @db.LongText
+  user_id          String?   @db.Char(36)
+  is_verified      Boolean?
+  is_active        Boolean?  @default(true)
+  views_count      Int?
+  rating           Decimal?  @db.Decimal(3, 2)
+  total_reviews    Int?
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+  updated_at       DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model mandatory_videos {
+  id                      String    @id  @default(uuid())@db.Char(36)
+  title                   String    @db.Text
+  description             String?   @db.Text
+  video_url               String    @db.Text
+  video_duration          Int
+  thumbnail_url           String?   @db.Text
+  reward_coins            Int?
+  reward_message          String?   @default("Félicitations! Vous avez gagné 10π gratuits! ?") @db.Text
+  is_active               Boolean?  @default(true)
+  is_mandatory            Boolean?  @default(true)
+  display_order           Int?
+  target_audience         String?   @default("all") @db.Text
+  min_app_version         String?   @db.Text
+  total_views             Int?
+  total_rewards_given     Int?
+  total_coins_distributed Int?
+  created_at              DateTime? @default(now()) @db.DateTime(0)
+  updated_at              DateTime? @default(now()) @db.DateTime(0)
+  expires_at              DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model monthly_creator_pools {
+  id                          String    @id  @default(uuid())@db.Char(36)
+  month                       DateTime  @db.Date
+  total_platform_revenue_fcfa Decimal?  @db.Decimal(20, 4)
+  pool_allocation_fcfa        Decimal?  @db.Decimal(20, 4)
+  total_system_score          Decimal?  @db.Decimal(20, 4)
+  is_distributed              Boolean?
+  distributed_at              DateTime? @db.DateTime(0)
+  created_at                  DateTime? @default(now()) @db.DateTime(0)
+  updated_at                  DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model notification_settings {
+  id                             String    @id  @default(uuid())@db.Char(36)
+  push_notifications_enabled     Boolean?  @default(true)
+  sound_enabled                  Boolean?  @default(true)
+  vibration_enabled              Boolean?  @default(true)
+  announcements_enabled          Boolean?  @default(true)
+  announcement_approval_required Boolean?  @default(true)
+  max_announcements_per_day      Int?
+  new_events_notification        Boolean?  @default(true)
+  promoted_events_notification   Boolean?  @default(true)
+  nearby_events_notification     Boolean?  @default(true)
+  user_activity_notifications    Boolean?  @default(true)
+  marketing_notifications        Boolean?  @default(true)
+  created_at                     DateTime? @default(now()) @db.DateTime(0)
+  updated_at                     DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model notifications {
+  id                String    @id  @default(uuid())@db.Char(36)
+  user_id           String?   @db.Char(36)
+  title             String    @db.Text
+  message           String    @db.Text
+  type              String?   @default("system") @db.Text
+  data              String?   @db.LongText
+  image_url         String?   @db.Text
+  sound_enabled     Boolean?  @default(true)
+  vibration_enabled Boolean?  @default(true)
+  is_read           Boolean?
+  read_at           DateTime? @db.DateTime(0)
+  push_sent         Boolean?
+  push_delivered    Boolean?
+  push_error        String?   @db.Text
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  scheduled_for     DateTime? @default(now()) @db.DateTime(0)
+  sound_effect      String?   @db.Text
+  is_global         Boolean?
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model organizer_balances {
+  id                    String    @id  @default(uuid())@db.Char(36)
+  organizer_id          String?   @db.Char(36)
+  interaction_earnings  Int?
+  event_revenues        Int?
+  subscription_earnings Int?
+  total_earnings        Int?
+  total_withdrawn       Int?
+  available_balance     Int?
+  updated_at            DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model organizer_earnings {
+  id                  String    @id  @default(uuid())@db.Char(36)
+  organizer_id        String    @db.Char(36)
+  event_id            String    @db.Char(36)
+  transaction_id      String    @db.Char(36)
+  transaction_type    String?   @default("ticket_sale") @db.VarChar(50)
+  earnings_coins      Int
+  earnings_fcfa       Decimal   @db.Decimal(10, 2)
+  status              String?   @default("pending") @db.VarChar(50)
+  paid_at             DateTime? @db.DateTime(0)
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+  updated_at          DateTime? @default(now()) @db.DateTime(0)
+  description         String?   @db.Text
+  platform_commission Int?
+  amount_pi           Decimal?  @db.Decimal(10, 2)
+  fee_percent         Decimal?  @db.Decimal(5, 2)
+  net_amount          Decimal?  @db.Decimal(10, 2)
+  ticket_count        Int?
+  earning_type        String?   @default("raffle") @db.VarChar(50)
+  raffle_event_id     String?   @db.Char(36)
+  platform_fee        Decimal?  @db.Decimal(20, 4)
+  metadata            String?   @default("{}") @db.LongText
+  event_type          String?   @db.Text
+  transferred_at      DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model organizer_interaction_earnings {
+  id               String    @id  @default(uuid())@db.Char(36)
+  organizer_id     String?   @db.Char(36)
+  event_id         String?   @db.Char(36)
+  amount           Int
+  interaction_type String    @db.Text
+  status           String?   @default("available") @db.Text
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model organizer_prices {
+  id               String    @id  @default(uuid())@db.Char(36)
+  event_id         String?   @db.Char(36)
+  price_type       String    @db.Text
+  currency         String    @db.Text
+  amount           Decimal   @db.Decimal(10, 2)
+  calculated_coins Int?
+  pricing_period   String?   @default("regular") @db.Text
+  is_active        Boolean?  @default(true)
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+  updated_at       DateTime? @default(now()) @db.DateTime(0)
+  start_date       DateTime? @db.DateTime(0)
+  event_end_at     DateTime? @db.DateTime(0)
+  ticket_type_id   String?   @db.Char(36)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model organizer_scanners {
+  id           String    @id  @default(uuid())@db.Char(36)
+  organizer_id String    @db.Char(36)
+  scanner_name String    @db.Text
+  scanner_code String    @db.Text
+  device_id    String?   @db.Text
+  is_active    Boolean?  @default(true)
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+  last_used    DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model organizer_transactions {
+  id               String    @id  @default(uuid())@db.Char(36)
+  organizer_id     String    @db.Char(36)
+  transaction_type String    @db.Text
+  source_type      String    @db.Text
+  amount_coins     Int
+  amount_fcfa      Decimal   @db.Decimal(20, 4)
+  description      String?   @db.Text
+  reference_id     String?   @db.Char(36)
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model organizer_wallet {
+  id                        String    @id  @default(uuid())@db.Char(36)
+  organizer_id              String    @db.Char(36)
+  interaction_balance_coins Int?
+  ticket_balance_coins      Int?
+  raffle_balance_coins      Int?
+  vote_balance_coins        Int?
+  stand_balance_coins       Int?
+  total_balance_coins       Int?
+  total_balance_fcfa        Decimal?  @db.Decimal(20, 4)
+  total_earned_coins        Int?
+  total_withdrawn_coins     Int?
+  total_earned_fcfa         Decimal?  @db.Decimal(20, 4)
+  total_withdrawn_fcfa      Decimal?  @db.Decimal(20, 4)
+  last_updated              DateTime? @default(now()) @db.DateTime(0)
+  created_at                DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model organizer_wallets {
+  id                  String    @id  @default(uuid())@db.Char(36)
+  organizer_id        String    @db.Char(36)
+  total_collected     Decimal?  @db.Decimal(20, 4)
+  total_unlocked      Decimal?  @db.Decimal(20, 4)
+  verification_status String?   @default("pending") @db.Text
+  fraud_flags         Int?
+  complaint_count     Int?
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+  updated_at          DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model organizer_withdrawal_requests {
+  id                     String    @id  @default(uuid())@db.Char(36)
+  organizer_id           String?   @db.Char(36)
+  amount_pi              Int
+  amount_fcfa            Int
+  status                 String?   @default("pending") @db.Text
+  admin_notes            String?   @db.Text
+  superadmin_notes       String?   @db.Text
+  requested_at           DateTime? @default(now()) @db.DateTime(0)
+  reviewed_by_admin      String?   @db.Char(36)
+  reviewed_by_superadmin String?   @db.Char(36)
+  reviewed_at            DateTime? @db.DateTime(0)
+  paid_at                DateTime? @db.DateTime(0)
+  payment_details        String?   @db.LongText
+  fees                   Decimal?  @db.Decimal(20, 4)
+  net_amount             Decimal?  @db.Decimal(20, 4)
+  validated_at           DateTime? @db.DateTime(0)
+  validation_status      String?   @default("pending") @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model paiements_admin {
+  id              String    @id  @default(uuid())@db.Char(36)
+  admin_id        String    @db.Char(36)
+  mois            DateTime  @db.Date
+  ca_zone         Decimal   @db.Decimal(20, 4)
+  taux_commission Decimal   @db.Decimal(20, 4)
+  score           Decimal   @db.Decimal(20, 4)
+  montant_a_payer Decimal   @db.Decimal(20, 4)
+  statut          String    @default("en_attente") @db.Text
+  paye_le         DateTime? @db.DateTime(0)
+  created_at      DateTime  @default(now()) @db.DateTime(0)
+  country         String?   @db.Text
+  city            String?   @db.Text
+  updated_at      DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model paiements_secretary {
+  id                String    @id  @default(uuid())@db.Char(36)
+  secretary_id      String    @db.Char(36)
+  month             DateTime  @db.Date
+  total_volume_fcfa Decimal?  @db.Decimal(20, 4)
+  commission_rate   Decimal?  @db.Decimal(20, 4)
+  amount_earned     Decimal?  @db.Decimal(20, 4)
+  status            String?   @default("pending") @db.Text
+  paid_at           DateTime? @db.DateTime(0)
+  paid_by           String?   @db.Char(36)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model participant_refunds {
+  id             String    @id  @default(uuid())@db.Char(36)
+  event_id       String    @db.Char(36)
+  user_id        String    @db.Char(36)
+  amount         Decimal   @db.Decimal(20, 4)
+  reason         String?   @db.Text
+  status         String?   @default("pending") @db.Text
+  processed_at   DateTime? @db.DateTime(0)
+  processed_by   String?   @db.Char(36)
+  transaction_id String?   @db.Char(36)
+  created_at     DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model participant_votes {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  event_id           String    @db.Char(36)
+  candidate_id       String    @db.Char(36)
+  voter_id           String    @db.Char(36)
+  ticket_purchase_id String?   @db.Char(36)
+  vote_value         Int?
+  vote_type          String?   @default("standard") @db.VarChar(50)
+  vote_weight        Decimal?  @db.Decimal(5, 2)
+  voted_at           DateTime? @default(now()) @db.DateTime(0)
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model participation_payments {
+  id                       String    @id  @default(uuid())@db.Char(36)
+  user_id                  String    @db.Char(36)
+  event_id                 String    @db.Char(36)
+  organizer_id             String    @db.Char(36)
+  transaction_type         String    @db.Text
+  reference_id             String?   @db.Char(36)
+  total_amount_coins       Int
+  platform_fee_coins       Int
+  organizer_earnings_coins Int
+  created_at               DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model participations {
+  id              String    @id  @default(uuid())@db.Char(36)
+  raffle_id       String    @db.Char(36)
+  user_id         String    @db.Char(36)
+  ticket_quantity Int
+  created_at      DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model partner_badges {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  partner_id         String    @db.Char(36)
+  partner_name       String    @db.VarChar(100)
+  license_type       String    @db.VarChar(20)
+  zone               String    @db.VarChar(100)
+  badge_id           String    @db.VarChar(50)
+  is_active          Boolean?
+  display_order      Int?
+  custom_title       String?   @db.VarChar(100)
+  custom_description String?   @db.Text
+  banner_color       String?   @default("#000000") @db.VarChar(7)
+  created_by         String    @db.Char(36)
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+  updated_at         DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model partner_earnings {
+  id                String    @id  @default(uuid())@db.Char(36)
+  partner_id        String    @db.Char(36)
+  month             String    @db.VarChar(7)
+  total_sales_fcfa  Decimal?  @db.Decimal(15, 2)
+  total_sales_coins Int?
+  commission_rate   Decimal?  @db.Decimal(5, 2)
+  earnings_fcfa     Decimal?  @db.Decimal(15, 2)
+  earnings_coins    Int?
+  payout_status     String?   @default("pending") @db.VarChar(20)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  paid_at           DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model partner_license_packs {
+  id                    Int       @id
+  name                  String    @db.VarChar(100)
+  licence_type          String    @db.VarChar(100)
+  fcfa_price            Int
+  duration_days         Int
+  revenue_share_percent Int
+  description           String?   @db.Text
+  is_active             Boolean?  @default(true)
+  display_order         Int?
+  badge                 String?   @db.VarChar(50)
+  features              String?   @db.LongText
+  created_at            DateTime? @db.DateTime(0)
+  duration_months       Int?
+  slug                  String?   @db.Text
+  coverage_type         String?   @db.Text
+  benefits              String?   @db.Text
+  level                 String?   @db.Text
+  duration_years        Int?
+  updated_at            DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model partner_licenses {
+  id              String    @id  @default(uuid())@db.Char(36)
+  name            String    @db.VarChar(100)
+  slug            String    @db.VarChar(100)
+  coverage_type   String    @db.VarChar(20)
+  commission_rate Decimal   @db.Decimal(5, 2)
+  duration_days   Int?
+  price_fcfa      Decimal   @db.Decimal(15, 2)
+  is_active       Boolean?  @default(true)
+  created_at      DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model partners {
+  id                  String    @id  @default(uuid())@db.Char(36)
+  user_id             String    @db.Char(36)
+  license_id          String    @db.Char(36)
+  coverage_zone       String    @db.LongText
+  activation_date     DateTime? @db.DateTime(0)
+  expiration_date     DateTime? @db.DateTime(0)
+  status              String?   @default("pending") @db.VarChar(20)
+  documents_submitted Boolean?
+  documents_verified  Boolean?
+  contract_sent       Boolean?
+  total_earnings      Decimal?  @db.Decimal(15, 2)
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+  updated_at          DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model payment_intents {
+  id                      String    @id  @default(uuid())@db.Char(36)
+  user_id                 String    @db.Char(36)
+  amount_fcfa             Int
+  pack_id                 String?   @db.Text
+  status                  String?   @default("pending") @db.Text
+  provider_transaction_id String?   @db.Text
+  created_at              DateTime? @default(now()) @db.DateTime(0)
+  expires_at              DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model payments {
+  id                String    @id  @default(uuid())@db.Char(36)
+  user_id           String?   @db.Char(36)
+  coins_amount      Int
+  amount_fcfa       Decimal   @db.Decimal(20, 4)
+  status            String    @default("pending") @db.Text
+  payment_method    String?   @db.Text
+  transaction_id    String    @db.Text
+  processed_at      DateTime? @db.DateTime(0)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+  pack_id           String?   @db.Text
+  coupon_code       String?   @db.Text
+  coupon_owner_id   String?   @db.Char(36)
+  coupon_commission Decimal?  @db.Decimal(20, 4)
+  credits_added     Boolean?
+  failed_at         DateTime? @db.DateTime(0)
+  failure_reason    String?   @db.Text
+  validated_by      String?   @db.Char(36)
+  rejected_by       String?   @db.Char(36)
+  validated_at      DateTime? @db.DateTime(0)
+  rejected_at       DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model pending_emails {
+  id            String    @id  @default(uuid())@db.Char(36)
+  user_email    String    @db.Text
+  subject       String    @db.Text
+  template_name String    @db.Text
+  template_data String    @db.LongText
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  sent_at       DateTime? @db.DateTime(0)
+  error         String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model pending_withdrawals {
+  id                    String    @id  @default(uuid())@db.Char(36)
+  organizer_id          String    @db.Char(36)
+  event_id              String?   @db.Char(36)
+  amount_pi             Int
+  amount_fcfa           Decimal   @db.Decimal(20, 4)
+  status                String?   @default("PENDING") @db.Text
+  withdrawal_request_id String?   @db.Char(36)
+  admin_notes           String?   @db.Text
+  created_at            DateTime? @default(now()) @db.DateTime(0)
+  validated_at          DateTime? @db.DateTime(0)
+  paid_at               DateTime? @db.DateTime(0)
+  processed_by          String?   @db.Char(36)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model personal_score {
+  id               String    @id  @default(uuid())@db.Char(36)
+  admin_id         String    @db.Char(36)
+  score            Decimal   @db.Decimal(4, 3)
+  calculation_date DateTime  @db.Date
+  details          String?   @db.LongText
+  created_at       DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model pin_reset_requests {
+  id           String    @id  @default(uuid())@db.Char(36)
+  user_id      String    @db.Char(36)
+  phone_number String    @db.Text
+  id_photo_url String?   @default("en_attente.jpg") @db.Text
+  status       String?   @default("pending") @db.Text
+  admin_notes  String?   @db.Text
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+  updated_at   DateTime? @default(now()) @db.DateTime(0)
+  processed_at DateTime? @db.DateTime(0)
+  processed_by String?   @db.Char(36)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model platform_earnings {
+  id             String    @id  @default(uuid())@db.Char(36)
+  event_id       String?   @db.Char(36)
+  transaction_id String?   @db.Char(36)
+  amount         Decimal   @db.Decimal(10, 2)
+  earning_type   String?   @default("vote_fee") @db.VarChar(50)
+  created_at     DateTime? @default(now()) @db.DateTime(0)
+  deleted_at     DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model platform_fees {
+  id              String    @id  @default(uuid())@db.Char(36)
+  organizer_id    String    @db.Char(36)
+  raffle_event_id String?   @db.Char(36)
+  amount          Decimal   @db.Decimal(20, 4)
+  percentage      Int
+  description     String?   @db.Text
+  created_at      DateTime? @default(now()) @db.DateTime(0)
+  updated_at      DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model platform_wallet {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  wallet_type        String    @db.VarChar(50)
+  balance_coins      Int?
+  balance_fcfa       Decimal?  @db.Decimal(15, 2)
+  total_earned_coins Int?
+  total_earned_fcfa  Decimal?  @db.Decimal(15, 2)
+  last_updated       DateTime? @default(now()) @db.DateTime(0)
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+  updated_at         DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model profiles {
+  id                         String    @id  @default(uuid())@db.Char(36)
+  username                   String?   @db.Text
+  full_name                  String?   @db.Text
+  email                      String?   @db.Text
+  phone                      String?   @db.Text
+  user_type                  String?   @default("user") @db.Text
+  coin_balance               Int?
+  free_coin_balance          Int?
+  total_earnings             Int?
+  available_earnings         Int?
+  mandatory_videos_completed Int?
+  total_video_rewards_earned Int?
+  last_video_watched_at      DateTime? @db.DateTime(0)
+  video_streak_count         Int?
+  last_video_streak_date     DateTime? @db.Date
+  avatar_url                 String?   @db.Text
+  bio                        String?   @db.Text
+  city                       String?   @db.Text
+  country                    String?   @default("Côte d'Ivoire") @db.Text
+  date_of_birth              DateTime? @db.Date
+  is_verified                Boolean?
+  is_active                  Boolean?  @default(true)
+  affiliate_code             String?   @db.Text
+  notification_radius        Int?
+  notification_settings      String?   @db.LongText
+  deleted_at                 DateTime? @db.DateTime(0)
+  admin_type                 String?   @db.Text
+  commission_wallet          Int?
+  created_at                 DateTime? @default(now()) @db.DateTime(0)
+  updated_at                 DateTime? @default(now()) @db.DateTime(0)
+  last_login                 DateTime? @db.DateTime(0)
+  region                     String?   @db.Text
+  license_type               String?   @db.Text
+  license_status             String?   @default("inactive") @db.Text
+  license_expires_at         DateTime? @db.DateTime(0)
+  appointed_by               String?   @db.Char(36)
+  appointed_by_super_admin   Boolean?
+  referral_count             Int?
+  referred_by                String?   @db.Char(36)
+  payment_details            String?   @default("{}") @db.LongText
+  license_number             String?   @db.Text
+  total_pi_spent             Int?
+  identity_verified          Boolean?
+  identity_verified_at       DateTime? @db.DateTime(0)
+  phone_verified             Boolean?
+  phone_verified_at          DateTime? @db.DateTime(0)
+  is_blacklisted             Boolean?
+  blacklist_reason           String?   @db.Text
+  blacklist_date             DateTime? @db.DateTime(0)
+  wallet_pin                 String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model promo_code_commissions {
+  id                String    @id  @default(uuid())@db.Char(36)
+  promo_code_id     String    @db.Char(36)
+  user_id           String    @db.Char(36)
+  commission_amount Int
+  order_id          String    @db.Text
+  status            String?   @default("pending") @db.Text
+  source            String?   @default("moneyfusion_ticket") @db.Text
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model promo_code_usages {
+  id                String    @id  @default(uuid())@db.Char(36)
+  promo_code_id     String?   @db.Char(36)
+  user_id           String    @db.Char(36)
+  discount_amount   Int
+  commission_amount Int
+  purchase_amount   Int
+  used_at           DateTime? @default(now()) @db.DateTime(0)
+  transaction_id    String?   @db.Char(36)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model promo_codes {
+  id            String    @id  @default(uuid())@db.Char(36)
+  code          String    @db.Text
+  influencer_id String    @db.Char(36)
+  event_id      String?   @db.Char(36)
+  is_active     Boolean?  @default(true)
+  usage_count   Int?
+  usage_limit   Int?
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model promotion_packs {
+  id            String    @id  @default(uuid())@db.Char(36)
+  name          String    @db.Text
+  slug          String    @db.Text
+  duration_days Int
+  cost_pi       Int
+  description   String?   @db.Text
+  features      String?   @db.LongText
+  is_active     Boolean?  @default(true)
+  display_order Int?
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model protected_event_access {
+  id             String    @id  @default(uuid())@db.Char(36)
+  event_id       String?   @db.Char(36)
+  user_id        String?   @db.Char(36)
+  amount_paid_pi Int
+  status         String?   @default("active") @db.Text
+  expires_at     DateTime? @db.DateTime(0)
+  created_at     DateTime? @default(now()) @db.DateTime(0)
+  updated_at     DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model push_tokens {
+  id           String    @id  @default(uuid())@db.Char(36)
+  user_id      String    @db.Char(36)
+  token        String    @db.Text
+  endpoint     String    @db.Text
+  p256dh       String    @default("pending") @db.Text
+  auth         String    @default("pending") @db.Text
+  device_type  String?   @default("desktop") @db.Text
+  is_active    Boolean?  @default(true)
+  device_info  String?   @db.LongText
+  last_used_at DateTime? @db.DateTime(0)
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+  updated_at   DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model pwa_installs {
+  id           String    @id  @default(uuid())@db.Char(36)
+  user_id      String?   @db.Char(36)
+  installed_at DateTime  @default(now()) @db.DateTime(0)
+  device_type  String?   @db.Text
+  platform     String?   @db.Text
+  source       String?   @db.Text
+  user_agent   String?   @db.Text
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model raffle_deposits {
+  id                      String    @id  @default(uuid())@db.Char(36)
+  raffle_id               String    @db.Char(36)
+  deposit_type            String    @db.Text
+  amount_or_value         Decimal?  @db.Decimal(20, 4)
+  item_description        String?   @db.Text
+  photos                  String?   @db.LongText
+  admin_validation_status String?   @default("pending") @db.Text
+  validated_by            String?   @db.Char(36)
+  validated_at            DateTime? @db.DateTime(0)
+  created_at              DateTime? @default(now()) @db.DateTime(0)
+  updated_at              DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model raffle_draw_history {
+  id                    String    @id  @default(uuid())@db.Char(36)
+  raffle_event_id       String?   @db.Char(36)
+  draw_type             String?   @db.Text
+  participants_count    Int?
+  tickets_sold          Int?
+  winner_user_id        String?   @db.Char(36)
+  winning_ticket_number String?   @db.Text
+  draw_date             DateTime? @default(now()) @db.DateTime(0)
+  created_at            DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model raffle_draw_sessions {
+  id               String    @id  @default(uuid())@db.Char(36)
+  raffle_event_id  String?   @db.Char(36)
+  displayed_number Int?
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+  started_at       DateTime? @db.DateTime(0)
+  started_time     DateTime? @db.DateTime(0)
+  started_by       String?   @db.Char(36)
+  status           String?   @db.Text
+  step             String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model raffle_draw_status {
+  id               String    @id  @default(uuid())@db.Char(36)
+  raffle_event_id  String    @db.Char(36)
+  draw_session_id  String    @db.Char(36)
+  status           String    @db.Text
+  round_number     Int?
+  displayed_number Int?
+  broadcast_at     DateTime? @default(now()) @db.DateTime(0)
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+  is_active        Boolean?
+  started_at       DateTime? @db.DateTime(0)
+  broadcast_id     String?   @db.Text
+  updated_at       DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model raffle_earnings_transfers {
+  id            BigInt    @id
+  organizer_id  String    @db.Char(36)
+  amount        Int
+  transfer_type String    @db.Text
+  description   String?   @db.Text
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model raffle_events {
+  id                    String    @id  @default(uuid())@db.Char(36)
+  event_id              String?   @db.Char(36)
+  base_currency         String?   @default("XAF") @db.Text
+  base_price            Decimal   @db.Decimal(10, 2)
+  calculated_price_pi   Int?
+  total_tickets         Int
+  tickets_sold          Int?
+  winning_ticket_number String?   @db.Text
+  winner_user_id        String?   @db.Char(36)
+  winner_announced_at   DateTime? @db.DateTime(0)
+  draw_date             DateTime  @db.DateTime(0)
+  is_drawn              Boolean?
+  auto_draw             Boolean?  @default(true)
+  created_at            DateTime? @default(now()) @db.DateTime(0)
+  min_tickets_sold      Int?
+  status                String?   @default("active") @db.Text
+  max_tickets_per_user  Int?
+  min_tickets_required  Int?
+  is_draw_conducted     Boolean?
+  draw_conducted_at     DateTime? @db.DateTime(0)
+  is_postponed          Boolean?
+  postponed_to          DateTime? @db.DateTime(0)
+  postponed_reason      String?   @db.Text
+  organizer_id          String?   @db.Char(36)
+  revenue_transferred   Boolean?
+  earnings_transferred  Boolean?
+  transferred_at        DateTime? @db.DateTime(0)
+  updated_at            DateTime? @default(now()) @db.DateTime(0)
+  coin_to_fcfa_rate     Decimal?  @db.Decimal(20, 4)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model raffle_live_numbers {
+  id               String    @id  @default(uuid())@db.Char(36)
+  raffle_event_id  String    @db.Char(36)
+  draw_session_id  String    @db.Char(36)
+  displayed_number Int
+  round_number     Int
+  broadcast_at     DateTime? @default(now()) @db.DateTime(0)
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model raffle_participants {
+  id              String    @id  @default(uuid())@db.Char(36)
+  event_id        String?   @db.Char(36)
+  user_id         String?   @db.Char(36)
+  ticket_number   String?   @db.Text
+  status          String?   @default("active") @db.Text
+  participated_at DateTime? @default(now()) @db.DateTime(0)
+  ticket_quantity Int?
+  total_paid_pi   Decimal?  @db.Decimal(15, 2)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model raffle_prizes {
+  id              String    @id  @default(uuid())@db.Char(36)
+  event_id        String    @db.Char(36)
+  rank            Int
+  description     String    @db.Text
+  value_fcfa      Int?
+  created_at      DateTime? @default(now()) @db.DateTime(0)
+  raffle_event_id String?   @db.Char(36)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model raffle_tickets {
+  id                String    @id  @default(uuid())@db.Char(36)
+  raffle_event_id   String?   @db.Char(36)
+  user_id           String?   @db.Char(36)
+  ticket_number     Int
+  purchase_price_pi Int
+  purchased_at      DateTime? @default(now()) @db.DateTime(0)
+  quantity          Int?
+  total_pi_paid     Int?
+  rank              Int?
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model raffle_winners {
+  id                     String    @id  @default(uuid())@db.Char(36)
+  raffle_event_id        String?   @db.Char(36)
+  user_id                String?   @db.Char(36)
+  ticket_number          String    @db.Text
+  prize_description      String?   @db.Text
+  prize_value_pi         Int?
+  prize_value_fcfa       Int?
+  claimed_at             DateTime? @db.DateTime(0)
+  created_at             DateTime? @default(now()) @db.DateTime(0)
+  rank                   Int?
+  delivery_status        String?   @default("pending") @db.Text
+  delivery_proof_url     String?   @db.Text
+  organizer_confirmation Boolean?
+  confirmed_at           DateTime? @db.DateTime(0)
+  admin_notes            String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model raffles {
+  id                   String    @id  @default(uuid())@db.Char(36)
+  title                String    @db.VarChar(255)
+  available_tickets    Int
+  total_participations Int?
+  created_at           DateTime? @default(now()) @db.DateTime(0)
+  updated_at           DateTime? @default(now()) @db.DateTime(0)
+  event_id             String?   @db.Char(36)
+  organizer_id         String?   @db.Char(36)
+  status               String?   @default("active") @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model reactivation_requests {
+  id              String    @id  @default(uuid())@db.Char(36)
+  user_id         String?   @db.Char(36)
+  request_message String?   @db.Text
+  status          String?   @default("pending") @db.Text
+  created_at      DateTime? @default(now()) @db.DateTime(0)
+  reviewed_at     DateTime? @db.DateTime(0)
+  reviewed_by     String?   @db.Char(36)
+  admin_notes     String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model referral_program {
+  id           String    @id  @default(uuid())@db.Char(36)
+  referrer_id  String?   @db.Char(36)
+  referred_id  String?   @db.Char(36)
+  bonus_coins  Int?
+  status       String?   @default("pending") @db.Text
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+  completed_at DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model referral_rewards {
+  id              Int       @id
+  referrer_id     String    @db.Char(36)
+  referred_id     String    @db.Char(36)
+  referrer_reward Int
+  referred_reward Int
+  created_at      DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model refund_appeals {
+  id                     String    @id  @default(uuid())@db.Char(36)
+  user_id                String?   @db.Char(36)
+  event_id               String?   @db.Char(36)
+  original_refund_amount Decimal?  @db.Decimal(20, 4)
+  requested_amount       Decimal?  @db.Decimal(20, 4)
+  reason                 String?   @db.Text
+  status                 String?   @default("pending") @db.Text
+  admin_notes            String?   @db.Text
+  reviewed_by            String?   @db.Char(36)
+  attachment_url         String?   @db.Text
+  created_at             DateTime? @default(now()) @db.DateTime(0)
+  updated_at             DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model secretary_actions {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  secretary_id       String?   @db.Char(36)
+  action_type        String    @db.Text
+  event_id           String?   @db.Char(36)
+  event_title        String?   @db.Text
+  participants_count Int?
+  total_amount       Int?
+  reason             String?   @db.Text
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model sponsors {
+  id             String    @id  @default(uuid())@db.Char(36)
+  name           String    @db.Text
+  logo_url       String    @db.Text
+  website_url    String?   @db.Text
+  created_by     String?   @db.Char(36)
+  created_at     DateTime? @default(now()) @db.DateTime(0)
+  updated_at     DateTime? @default(now()) @db.DateTime(0)
+  description    String?   @db.Text
+  is_active      Boolean?  @default(true)
+  display_order  Int?
+  category       String?   @default("general") @db.Text
+  show_in_footer Boolean?  @default(true)
+  level          String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model stand_bookings {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  event_id           String    @db.Char(36)
+  stand_id           String    @db.Char(36)
+  vendor_id          String    @db.Char(36)
+  booking_number     String    @db.VarChar(100)
+  total_amount_fcfa  Decimal?  @db.Decimal(10, 2)
+  total_amount_coins Int?
+  booking_status     String?   @default("pending") @db.VarChar(50)
+  payment_status     String?   @default("pending") @db.VarChar(50)
+  booked_at          DateTime? @default(now()) @db.DateTime(0)
+  paid_at            DateTime? @db.DateTime(0)
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model stand_events {
+  id               String    @id  @default(uuid())@db.Char(36)
+  event_id         String?   @db.Char(36)
+  base_currency    String?   @default("XAF") @db.Text
+  layout_image_url String?   @db.Text
+  terms_conditions String?   @db.Text
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model stand_rentals {
+  id                   String    @id  @default(uuid())@db.Char(36)
+  stand_event_id       String?   @db.Char(36)
+  user_id              String?   @db.Char(36)
+  stand_type_id        String?   @db.Char(36)
+  stand_number         String?   @db.Text
+  company_name         String?   @db.Text
+  contact_person       String?   @db.Text
+  contact_email        String?   @db.Text
+  contact_phone        String?   @db.Text
+  business_description String?   @db.Text
+  rental_amount_pi     Int?
+  rental_amount_fcfa   Decimal?  @db.Decimal(12, 2)
+  deposit_paid_pi      Int?
+  deposit_paid_fcfa    Decimal?  @db.Decimal(12, 2)
+  rental_start_date    DateTime? @db.DateTime(0)
+  rental_end_date      DateTime? @db.DateTime(0)
+  status               String?   @default("reserved") @db.Text
+  reserved_at          DateTime? @default(now()) @db.DateTime(0)
+  confirmed_at         DateTime? @db.DateTime(0)
+  cancelled_at         DateTime? @db.DateTime(0)
+  created_at           DateTime? @default(now()) @db.DateTime(0)
+  updated_at           DateTime? @default(now()) @db.DateTime(0)
+  booking_code         String?   @db.Text
+  rental_type          String?   @default("stand") @db.Text
+  guest_name           String?   @db.Text
+  check_in_date        DateTime? @db.Date
+  check_out_date       DateTime? @db.Date
+  tent_size            String?   @db.Text
+  special_requests     String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model stand_reservations {
+  id                String    @id  @default(uuid())@db.Char(36)
+  stand_id          String?   @db.Char(36)
+  user_id           String?   @db.Char(36)
+  company_name      String?   @db.Text
+  business_activity String?   @db.Text
+  status            String?   @default("pending") @db.Text
+  reserved_at       DateTime? @default(now()) @db.DateTime(0)
+  payment_reference String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model stand_types {
+  id                  String    @id  @default(uuid())@db.Char(36)
+  stand_event_id      String?   @db.Char(36)
+  event_id            String?   @db.Char(36)
+  name                String    @db.Text
+  description         String?   @db.Text
+  size                String?   @db.Text
+  amenities           String?   @db.LongText
+  base_currency       String?   @default("XAF") @db.Text
+  base_price          Decimal   @db.Decimal(12, 2)
+  calculated_price_pi Int?
+  quantity_available  Int
+  quantity_rented     Int?
+  is_active           Boolean?  @default(true)
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+  rental_type         String?   @default("stand") @db.Text
+  capacity            Int?
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model stands {
+  id                  String    @id  @default(uuid())@db.Char(36)
+  event_id            String?   @db.Char(36)
+  user_id             String?   @db.Char(36)
+  stand_number        String?   @db.Text
+  rental_amount_pi    Int?
+  rental_amount_fcfa  Int?
+  status              String?   @default("available") @db.Text
+  rented_at           DateTime? @db.DateTime(0)
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+  is_available        Boolean?  @default(true)
+  type                String?   @db.Text
+  price_fcfa          Int?
+  price_pi            Int?
+  reserved_by_company String?   @db.Text
+  business_activity   String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model support_tickets {
+  id             String    @id  @default(uuid())@db.Char(36)
+  user_id        String    @db.Char(36)
+  subject        String    @db.Text
+  description    String    @db.Text
+  attachment_url String?   @db.Text
+  status         String?   @default("open") @db.Text
+  created_at     DateTime? @default(now()) @db.DateTime(0)
+  updated_at     DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ticket_commissions {
+  id                  String    @id  @default(uuid())@db.Char(36)
+  transaction_id      String    @db.Char(36)
+  transaction_type    String    @db.VarChar(50)
+  event_id            String    @db.Char(36)
+  organizer_id        String    @db.Char(36)
+  user_id             String    @db.Char(36)
+  total_amount_coins  Int
+  platform_commission Int
+  organizer_earnings  Int
+  commission_rate     Decimal?  @db.Decimal(5, 2)
+  status              String?   @default("completed") @db.VarChar(50)
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ticket_designs {
+  id               String    @id  @default(uuid())@db.Char(36)
+  ticket_type_id   String?   @db.Char(36)
+  name             String    @db.VarChar(255)
+  background_color String?   @default("#FFFFFF") @db.VarChar(7)
+  text_color       String?   @default("#000000") @db.VarChar(7)
+  accent_color     String?   @default("#3B82F6") @db.VarChar(7)
+  border_color     String?   @default("#E5E7EB") @db.VarChar(7)
+  qr_color         String?   @default("#000000") @db.VarChar(7)
+  header_image_url String?   @db.Text
+  footer_text      String?   @db.Text
+  is_active        Boolean?  @default(true)
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+  updated_at       DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ticket_emails {
+  id              String    @id  @default(uuid())@db.Char(36)
+  event_ticket_id String?   @db.Char(36)
+  recipient_email String    @db.Text
+  email_type      String    @db.Text
+  subject         String    @db.Text
+  content_html    String?   @db.Text
+  content_text    String?   @db.Text
+  attachments     String?   @db.LongText
+  sent_at         DateTime? @default(now()) @db.DateTime(0)
+  delivery_status String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ticket_issues {
+  id           String    @id  @default(uuid())@db.Char(36)
+  event_id     String    @db.Char(36)
+  ticket_id    String    @db.Char(36)
+  organizer_id String    @db.Char(36)
+  issue_type   String    @db.Text
+  description  String?   @db.Text
+  status       String?   @default("reported") @db.Text
+  resolution   String?   @db.Text
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+  resolved_at  DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ticket_orders {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  user_id            String?   @db.Char(36)
+  event_id           String?   @db.Char(36)
+  order_number       String    @db.VarChar(100)
+  total_amount_fcfa  Decimal?  @db.Decimal(10, 2)
+  total_amount_coins Int?
+  ticket_count       Int
+  status             String?   @default("pending") @db.VarChar(50)
+  payment_method     String?   @db.VarChar(50)
+  payment_status     String?   @default("pending") @db.VarChar(50)
+  order_date         DateTime? @default(now()) @db.DateTime(0)
+  paid_at            DateTime? @db.DateTime(0)
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+  updated_at         DateTime? @default(now()) @db.DateTime(0)
+  whatsapp_number    String?   @db.Text
+  transaction_id     String?   @db.Char(36)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ticket_purchases {
+  id              String    @id  @default(uuid())@db.Char(36)
+  ticket_order_id String?   @db.Char(36)
+  ticket_type_id  String?   @db.Char(36)
+  user_id         String?   @db.Char(36)
+  event_id        String?   @db.Char(36)
+  ticket_number   String    @db.VarChar(100)
+  qr_code_data    String?   @db.Text
+  price_fcfa      Decimal?  @db.Decimal(10, 2)
+  price_coins     Int?
+  purchase_date   DateTime? @default(now()) @db.DateTime(0)
+  status          String?   @default("active") @db.VarChar(50)
+  used_at         DateTime? @db.DateTime(0)
+  created_at      DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ticket_scans {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  ticket_purchase_id String?   @db.Char(36)
+  event_id           String?   @db.Char(36)
+  scanner_user_id    String?   @db.Char(36)
+  scan_type          String?   @default("entry") @db.VarChar(50)
+  scan_location      String?   @db.VarChar(255)
+  scan_timestamp     DateTime? @default(now()) @db.DateTime(0)
+  scan_status        String?   @default("success") @db.VarChar(50)
+  notes              String?   @db.Text
+  device_info        String?   @db.Text
+  gps_coordinates    String?   @db.VarChar(100)
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ticket_scans_log {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  ticket_id          String?   @db.Char(36)
+  event_id           String?   @db.Char(36)
+  scanned_by_user_id String?   @db.Char(36)
+  scan_method        String?   @db.Text
+  scan_result        String?   @db.Text
+  scanned_at         DateTime? @default(now()) @db.DateTime(0)
+  device_info        String?   @default("{}") @db.LongText
+  location_data      String?   @default("{}") @db.LongText
+  notes              String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ticket_types {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  event_id           String?   @db.Char(36)
+  name               String    @db.VarChar(255)
+  description        String?   @db.Text
+  price              Decimal   @db.Decimal(10, 2)
+  price_coins        Int?
+  quantity_available Int
+  tickets_sold       Int?
+  sales_start        DateTime? @db.DateTime(0)
+  sales_end          DateTime? @db.DateTime(0)
+  is_active          Boolean?  @default(true)
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+  updated_at         DateTime? @default(now()) @db.DateTime(0)
+  quantity_sold      Int?
+  price_pi           Int
+  presale_price_pi   Int?
+  presale_price_fcfa Decimal?  @db.Decimal(20, 4)
+  color              String?   @default("blue") @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ticket_verifications {
+  id                      String    @id  @default(uuid())@db.Char(36)
+  event_id                String    @db.Char(36)
+  ticket_id               String    @db.Char(36)
+  organizer_id            String    @db.Char(36)
+  scanner_id              String?   @db.Char(36)
+  verification_session_id String?   @db.Char(36)
+  verification_time       DateTime? @default(now()) @db.DateTime(0)
+  verification_method     String?   @db.Text
+  verification_status     String?   @db.Text
+  scanned_data            String?   @db.LongText
+  location_latitude       Decimal?  @db.Decimal(20, 4)
+  location_longitude      Decimal?  @db.Decimal(20, 4)
+  notes                   String?   @db.Text
+  action                  String?   @db.Text
+  state                   String?   @db.Text
+  exit_time               DateTime? @db.DateTime(0)
+  exit_reason             String?   @db.Text
+  attendee_name           String?   @db.Text
+  attendee_email          String?   @db.Text
+  ticket_number           String?   @db.Text
+  previous_exit_id        String?   @db.Char(36)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ticket_whatsapp_messages {
+  id               String    @id  @default(uuid())@db.Char(36)
+  ticket_order_id  String?   @db.Char(36)
+  recipient_number String    @db.Text
+  message_type     String    @default("ticket_delivery") @db.Text
+  content_params   String?   @db.LongText
+  status           String?   @default("pending") @db.Text
+  pdf_url          String?   @db.Text
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+  sent_at          DateTime? @db.DateTime(0)
+  error_message    String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model ticketing_events {
+  id                     String    @id  @default(uuid())@db.Char(36)
+  event_id               String    @db.Char(36)
+  total_tickets          Int
+  tickets_sold           Int?
+  max_tickets_per_user   Int?
+  early_bird_price_pi    Int?
+  early_bird_end_date    DateTime? @db.DateTime(0)
+  vip_tickets_available  Boolean?
+  vip_ticket_price_pi    Int?
+  seating_plan_available Boolean?
+  created_at             DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model tickets {
+  id                    String    @id  @default(uuid())@db.Char(36)
+  event_id              String?   @db.Char(36)
+  user_id               String?   @db.Char(36)
+  quantity              Int?
+  total_amount_pi       Int?
+  total_amount_fcfa     Int?
+  qr_code               String?   @db.Text
+  status                String?   @default("active") @db.Text
+  purchased_at          DateTime? @default(now()) @db.DateTime(0)
+  used_at               DateTime? @db.DateTime(0)
+  ticket_type_id        String?   @db.Char(36)
+  purchase_price_pi     Int?
+  attendee_name         String?   @db.Text
+  check_in_time         DateTime? @db.DateTime(0)
+  check_out_time        DateTime? @db.DateTime(0)
+  updated_at            DateTime? @default(now()) @db.DateTime(0)
+  ticket_number         String?   @db.Text
+  payment_method        String?   @default("coins") @db.Text
+  transaction_reference String?   @db.Text
+  ticket_code_short     String?   @db.Text
+  reentry_count         Int?
+  last_reentry_time     DateTime? @db.DateTime(0)
+  entry_count           Int?
+  phone                 String?   @db.Text
+  email                 String?   @db.Text
+  customer_name         String?   @db.Text
+  is_guest              Boolean?
+  ticket_date           DateTime? @db.Date
+  valid_dates           String?   @db.LongText
+  is_multi_day          Boolean?
+  created_at            DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model transactions {
+  id                    String    @id  @default(uuid())@db.Char(36)
+  user_id               String?   @db.Char(36)
+  event_id              String?   @db.Char(36)
+  transaction_type      String?   @db.Text
+  amount_pi             Decimal   @db.Decimal(20, 4)
+  amount_fcfa           Decimal   @db.Decimal(20, 4)
+  description           String?   @db.Text
+  status                String?   @default("pending") @db.Text
+  payment_gateway_data  String?   @db.LongText
+  created_at            DateTime? @default(now()) @db.DateTime(0)
+  completed_at          DateTime? @db.DateTime(0)
+  city                  String?   @db.Text
+  region                String?   @db.Text
+  country               String?   @db.Text
+  metadata              String?   @db.LongText
+  amount_coins          Int?
+  escrow_status         String?   @default("none") @db.Text
+  release_stage         Int?
+  refund_reason         String?   @db.Text
+  deleted_at            DateTime? @db.DateTime(0)
+  payment_method        String?   @default("coins") @db.Text
+  transaction_reference String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model trigger_debug_logs {
+  id            Int       @id
+  event_id      String?   @db.Char(36)
+  message       String?   @db.Text
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  event_name    String?   @db.Text
+  payload       String?   @db.LongText
+  status        String?   @db.Text
+  error_message String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model user_balances {
+  id                String    @id  @default(uuid())@db.Char(36)
+  user_id           String    @db.Char(36)
+  balance           Decimal?  @db.Decimal(20, 4)
+  purchased_balance Decimal?  @db.Decimal(20, 4)
+  free_balance      Decimal?  @db.Decimal(20, 4)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model user_coin_transactions {
+  id                    Int       @id
+  user_id               String?   @db.Char(36)
+  transaction_id        String    @db.VarChar(100)
+  amount_fcfa           Decimal   @db.Decimal(10, 2)
+  coin_amount           Int?
+  bonus_coins           Int?
+  total_coins           Int?
+  pack_id               Int?
+  license_pack_id       Int?
+  transaction_type      String    @db.VarChar(20)
+  status                String?   @default("pending") @db.VarChar(20)
+  conversion_rate       Decimal?  @db.Decimal(10, 2)
+  user_email            String?   @db.VarChar(255)
+  moneyfusion_reference String?   @db.VarChar(100)
+  payment_date          DateTime? @db.DateTime(0)
+  verified_at           DateTime? @db.DateTime(0)
+  created_at            DateTime? @db.DateTime(0)
+  updated_at            DateTime? @db.DateTime(0)
+  coin_balance          Decimal?  @db.Decimal(20, 4)
+  free_coin_balance     Decimal?  @db.Decimal(20, 4)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model user_contract_acceptances {
+  id               String    @id  @default(uuid())@db.Char(36)
+  user_id          String?   @db.Char(36)
+  event_id         String?   @db.Char(36)
+  contract_type    String    @db.Text
+  accepted_at      DateTime? @default(now()) @db.DateTime(0)
+  contract_version String?   @db.Text
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model user_earnings {
+  id            String    @id  @default(uuid())@db.Char(36)
+  user_id       String?   @db.Char(36)
+  earnings_type String?   @db.Text
+  amount        Int
+  status        String?   @default("pending") @db.Text
+  description   String?   @db.Text
+  source_id     String?   @db.Char(36)
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  withdrawn_at  DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model user_interactions {
+  id                  String    @id  @default(uuid())@db.Char(36)
+  user_id             String?   @db.Char(36)
+  event_id            String?   @db.Char(36)
+  interaction_type    String?   @db.Text
+  cost_paid           Int?
+  used_free_balance   Boolean?
+  organizer_earned    Int?
+  platform_commission Int?
+  metadata            String?   @db.LongText
+  created_at          DateTime? @default(now()) @db.DateTime(0)
+  comment_text        String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model user_partner_licenses {
+  id                    Int       @id
+  user_id               String?   @db.Char(36)
+  license_pack_id       Int?
+  transaction_id        String?   @db.VarChar(100)
+  purchase_date         DateTime? @db.DateTime(0)
+  expiry_date           DateTime? @db.DateTime(0)
+  status                String?   @default("active") @db.VarChar(20)
+  revenue_share_percent Int?
+  created_at            DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model user_profiles {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  username           String?   @db.VarChar(100)
+  full_name          String?   @db.VarChar(255)
+  phone              String?   @db.VarChar(50)
+  city               String?   @db.VarChar(100)
+  country            String?   @default("Côte d'Ivoire") @db.VarChar(100)
+  coin_balance       Decimal?  @db.Decimal(15, 2)
+  total_pi_earned    Decimal?  @db.Decimal(15, 2)
+  total_pi_spent     Decimal?  @db.Decimal(15, 2)
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+  updated_at         DateTime? @default(now()) @db.DateTime(0)
+  available_earnings Int?
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model user_push_tokens {
+  id          String    @id  @default(uuid())@db.Char(36)
+  user_id     String    @db.Char(36)
+  fcm_token   String    @db.Text
+  device_type String?   @db.Text
+  is_active   Boolean?  @default(true)
+  created_at  DateTime? @default(now()) @db.DateTime(0)
+  updated_at  DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model user_subscriptions {
+  id             String    @id  @default(uuid())@db.Char(36)
+  user_id        String?   @db.Char(36)
+  organizer_id   String?   @db.Char(36)
+  is_active      Boolean?  @default(true)
+  subscribed_at  DateTime? @default(now()) @db.DateTime(0)
+  unsubscribe_at DateTime? @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model user_video_views {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  user_id            String?   @db.Char(36)
+  video_id           String?   @db.Char(36)
+  watch_duration     Int
+  fully_watched      Boolean?
+  watch_started_at   DateTime? @db.DateTime(0)
+  watch_completed_at DateTime? @db.DateTime(0)
+  reward_received    Boolean?
+  coins_awarded      Int?
+  reward_message     String?   @db.Text
+  device_info        String?   @db.LongText
+  app_version        String?   @db.Text
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model user_video_watches {
+  id          String    @id  @default(uuid())@db.Char(36)
+  user_id     String?   @db.Char(36)
+  video_id    String?   @db.Char(36)
+  rewarded_at DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model user_votes {
+  id               String    @id  @default(uuid())@db.Char(36)
+  event_id         String?   @db.Char(36)
+  candidate_id     String?   @db.Char(36)
+  user_id          String?   @db.Char(36)
+  vote_count       Int
+  vote_cost_pi     Int
+  vote_cost_fcfa   Int
+  net_to_organizer Int
+  fees             Int
+  created_at       DateTime? @default(now()) @db.DateTime(0)
+  payment_method   String?   @db.Text
+  payment_status   String?   @db.Text
+  guest_id         String?   @db.Text
+  voter_name       String?   @db.Text
+  voter_phone      String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model user_wallets {
+  id                      String    @id  @default(uuid())@db.Char(36)
+  user_id                 String    @db.Char(36)
+  balance_pi              Decimal?  @db.Decimal(15, 2)
+  balance_fcfa            Decimal?  @db.Decimal(15, 2)
+  total_earned_pi         Decimal?  @db.Decimal(15, 2)
+  total_spent_pi          Decimal?  @db.Decimal(15, 2)
+  organizer_earnings_pi   Decimal?  @db.Decimal(15, 2)
+  created_at              DateTime? @default(now()) @db.DateTime(0)
+  updated_at              DateTime? @default(now()) @db.DateTime(0)
+  commission_balance      Decimal?  @db.Decimal(20, 4)
+  total_commission_earned Decimal?  @db.Decimal(20, 4)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model users {
+  id                String    @id  @default(uuid())@db.Char(36)
+  email             String?   @db.VarChar(255)
+  full_name         String?   @db.VarChar(255)
+  phone             String?   @db.VarChar(50)
+  country           String?   @db.VarChar(100)
+  city              String?   @db.VarChar(100)
+  created_at        DateTime? @default(now()) @db.DateTime(0)
+  updated_at        DateTime? @default(now()) @db.DateTime(0)
+  user_type         String?   @db.Text
+  referral_code     String?   @db.Text
+  available_coins   Int?
+  total_coins_spent Decimal?  @db.Decimal(20, 4)
+  coin_balance      Decimal?  @db.Decimal(20, 4)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model verification_sessions {
+  id               String    @id  @default(uuid())@db.Char(36)
+  event_id         String    @db.Char(36)
+  organizer_id     String    @db.Char(36)
+  scanner_id       String    @db.Char(36)
+  session_start    DateTime? @default(now()) @db.DateTime(0)
+  session_end      DateTime? @db.DateTime(0)
+  is_active        Boolean?  @default(true)
+  tickets_verified Int?
+  location         String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model videos {
+  id            String    @id  @default(uuid())@db.Char(36)
+  title         String    @db.Text
+  description   String?   @db.Text
+  video_url     String    @db.Text
+  thumbnail_url String?   @db.Text
+  is_active     Boolean?  @default(true)
+  created_at    DateTime? @default(now()) @db.DateTime(0)
+  updated_at    DateTime? @default(now()) @db.DateTime(0)
+  created_by    String?   @db.Char(36)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model vote_payments {
+  id             String    @id  @default(uuid())@db.Char(36)
+  payment_id     String?   @db.Char(36)
+  user_id        String    @db.Char(36)
+  event_id       String?   @db.Char(36)
+  candidate_id   String    @db.Char(36)
+  vote_count     Int?
+  amount_pi      Int?
+  amount_fcfa    Int?
+  status         String?   @default("pending") @db.Text
+  transaction_id String?   @db.Text
+  sms_reference  String?   @db.Text
+  proof_url      String?   @db.Text
+  organizer_id   String?   @db.Char(36)
+  validated_by   String?   @db.Char(36)
+  rejected_by    String?   @db.Char(36)
+  validated_at   DateTime? @db.DateTime(0)
+  rejected_at    DateTime? @db.DateTime(0)
+  created_at     DateTime? @default(now()) @db.DateTime(0)
+  updated_at     DateTime? @default(now()) @db.DateTime(0)
+  contest_id     String?   @db.Char(36)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model votes {
+  id           String    @id  @default(uuid())@db.Char(36)
+  user_id      String    @db.Char(36)
+  candidate_id String    @db.Char(36)
+  event_id     String    @db.Char(36)
+  vote_count   Int
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+  updated_at   DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model voting_sessions {
+  id                   String    @id  @default(uuid())@db.Char(36)
+  event_id             String    @db.Char(36)
+  session_name         String    @db.VarChar(255)
+  session_type         String?   @default("public") @db.VarChar(100)
+  voting_start         DateTime  @db.DateTime(0)
+  voting_end           DateTime  @db.DateTime(0)
+  max_votes_per_user   Int?
+  allow_multiple_votes Boolean?
+  is_active            Boolean?
+  results_public       Boolean?  @default(true)
+  created_at           DateTime? @default(now()) @db.DateTime(0)
+  updated_at           DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model webhook_errors {
+  id         String    @id  @default(uuid())@db.Char(36)
+  error      String?   @db.Text
+  stack      String?   @db.Text
+  payload    String?   @db.Text
+  timestamp  DateTime? @default(now()) @db.DateTime(0)
+  created_at DateTime? @default(now()) @db.DateTime(0)
+  source     String?   @default("moneyfusion") @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model webhook_logs {
+  id             String    @id  @default(uuid())@db.Char(36)
+  raw_payload    String?   @db.LongText
+  received_at    DateTime? @default(now()) @db.DateTime(0)
+  source         String?   @default("moneyfusion") @db.Text
+  transaction_id String?   @db.Text
+  processed      Boolean?
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model welcome_popups {
+  id          String    @id  @default(uuid())@db.Char(36)
+  image_url   String    @db.Text
+  alt_text    String?   @db.Text
+  is_active   Boolean?  @default(true)
+  uploaded_by String?   @db.Char(36)
+  created_at  DateTime? @default(now()) @db.DateTime(0)
+  updated_at  DateTime? @default(now()) @db.DateTime(0)
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model withdrawal_requests {
+  id                            String    @id  @default(uuid())@db.Char(36)
+  user_id                       String?   @db.Char(36)
+  request_type                  String?   @default("user_earnings") @db.Text
+  amount_pi                     Int
+  amount_fcfa                   Int
+  bank_name                     String?   @db.Text
+  account_number                String?   @db.Text
+  account_holder                String?   @db.Text
+  mobile_money_number           String?   @db.Text
+  mobile_money_operator         String?   @db.Text
+  status                        String?   @default("pending") @db.Text
+  rejection_reason              String?   @db.Text
+  requested_at                  DateTime? @default(now()) @db.DateTime(0)
+  processed_at                  DateTime? @db.DateTime(0)
+  processed_by                  String?   @db.Char(36)
+  organizer_id                  String?   @db.Char(36)
+  amount_coins                  BigInt?
+  created_at                    DateTime? @default(now()) @db.DateTime(0)
+  withdrawal_method             String?   @db.Text
+  payment_details               String?   @db.LongText
+  community_verification_status String?   @default("pending") @db.Text
+  reason_if_rejected            String?   @db.Text
+  admin_notes                   String?   @db.Text
+
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model withdrawal_transactions {
+  id                 String    @id  @default(uuid())@db.Char(36)
+  request_id         String?   @db.Char(36)
+  user_id            String?   @db.Char(36)
+  amount             Decimal?  @db.Decimal(20, 4)
+  balance_before     Decimal?  @db.Decimal(20, 4)
+  balance_after      Decimal?  @db.Decimal(20, 4)
+  deduction_status   String?   @db.Text
+  approval_timestamp DateTime? @db.DateTime(0)
+  processed_by       String?   @db.Char(36)
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+
+}

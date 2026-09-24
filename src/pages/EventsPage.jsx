@@ -4,6 +4,7 @@ import { Helmet } from "react-helmet-async";
 import { useTranslation } from "react-i18next";
 import { motion } from "framer-motion";
 import { supabase } from "@/lib/customSupabaseClient";
+import { dbService } from "@/services/dbService";
 import { toast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -98,28 +99,39 @@ const EventsPage = () => {
   const forceRefresh = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: eventsRes, error: eventsError } = await supabase
-        .from("events")
-        .select(
-          "*, category:category_id(name, slug), organizer:organizer_id(full_name)"
-        )
-        .eq("status", "active")
-        .order("created_at", { ascending: false });
-
-      if (eventsError) throw eventsError;
-      const validEvents = (eventsRes || []).filter(event => event && event.id);
-      setEvents(validEvents);
-      
-      // Rafraîchir aussi les catégories
-      const { data: categoriesRes, error: categoriesError } = await supabase
-        .from("event_categories")
-        .select("*")
-        .eq("is_active", true)
-        .order("name");
-      
-      if (!categoriesError && categoriesRes) {
-        setCategories(categoriesRes);
+      let validEvents = null;
+      let catRes = null;
+      try {
+        validEvents = await dbService.getActiveEvents();
+        catRes = await dbService.getActiveCategories();
+      } catch (dbErr) {
+        console.warn("dbService indisponible, fallback Supabase :", dbErr.message);
       }
+      if (!validEvents) {
+        const { data: eventsRes, error: eventsError } = await supabase
+          .from("events")
+          .select(
+            "*, category:category_id(name, slug), organizer:organizer_id(full_name)"
+          )
+          .eq("status", "active")
+          .order("created_at", { ascending: false });
+
+        if (eventsError) throw eventsError;
+        validEvents = eventsRes || [];
+
+        // Rafraîchir aussi les catégories
+        const { data: categoriesRes, error: categoriesError } = await supabase
+          .from("event_categories")
+          .select("*")
+          .eq("is_active", true)
+          .order("name");
+
+        if (!categoriesError && categoriesRes) {
+          catRes = categoriesRes;
+        }
+      }
+      setEvents((validEvents || []).filter(event => event && event.id));
+      setCategories(catRes || []);
     } catch (error) {
       console.error("Error refreshing events:", error);
       toast({
@@ -142,6 +154,12 @@ const EventsPage = () => {
 
   const fetchEventsWithPromo = useCallback(async () => {
     try {
+      try {
+        setEventsWithPromo(await dbService.getPromoEventIds());
+        return;
+      } catch (dbErr) {
+        console.warn("dbService indisponible, fallback Supabase :", dbErr.message);
+      }
       const { data, error } = await supabase
         .from("event_promo_config")
         .select("event_id")
@@ -161,31 +179,46 @@ const EventsPage = () => {
     }
     setLoading(true);
     try {
-      const [eventsRes, categoriesRes] = await Promise.all([
-        fetchWithRetry(() =>
-          supabase
-            .from("events")
-            .select(
-              "*, category:category_id(name, slug), organizer:organizer_id(full_name)"
-            )
-            .eq("status", "active")
-            .order("created_at", { ascending: false })
-        ),
-        fetchWithRetry(() =>
-          supabase
-            .from("event_categories")
-            .select("*")
-            .eq("is_active", true)
-            .order("name")
-        ),
-      ]);
+      let validEvents = null;
+      let catRows = null;
+      try {
+        [validEvents, catRows] = await Promise.all([
+          dbService.getActiveEvents(),
+          dbService.getActiveCategories(),
+        ]);
+      } catch (dbErr) {
+        console.warn("dbService indisponible, fallback Supabase :", dbErr.message);
+      }
 
-      if (eventsRes.error) throw eventsRes.error;
-      if (categoriesRes.error) throw categoriesRes.error;
+      if (!validEvents) {
+        const [eventsRes, categoriesRes] = await Promise.all([
+          fetchWithRetry(() =>
+            supabase
+              .from("events")
+              .select(
+                "*, category:category_id(name, slug), organizer:organizer_id(full_name)"
+              )
+              .eq("status", "active")
+              .order("created_at", { ascending: false })
+          ),
+          fetchWithRetry(() =>
+            supabase
+              .from("event_categories")
+              .select("*")
+              .eq("is_active", true)
+              .order("name")
+          ),
+        ]);
 
-      const validEvents = (eventsRes.data || []).filter(event => event && event.id);
-      setEvents(validEvents);
-      setCategories(categoriesRes.data || []);
+        if (eventsRes.error) throw eventsRes.error;
+        if (categoriesRes.error) throw categoriesRes.error;
+
+        validEvents = eventsRes.data || [];
+        catRows = categoriesRes.data || [];
+      }
+
+      setEvents((validEvents || []).filter(event => event && event.id));
+      setCategories(catRows || []);
     } catch (error) {
       console.error("Error fetching events:", error);
       toast({

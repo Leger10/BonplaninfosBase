@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/lib/customSupabaseClient";
+import { dbService } from "@/services/dbService";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
 import { useToast } from "@/components/ui/use-toast";
 import { useNotificationSound } from "@/hooks/useNotificationSound";
@@ -307,6 +308,16 @@ export const DataProvider = ({ children }) => {
   const getEvents = useCallback(async (filters = {}) => {
     safeTime("getEvents");
     try {
+      let events;
+      try {
+        events = await dbService.getAllEvents(filters);
+      } catch (dbErr) {
+        if (import.meta.env.DEV) {
+          console.warn("dbService indisponible, fallback Supabase:", dbErr.message);
+        }
+      }
+      if (events) return events;
+
       let query = supabase.from("events").select("*").eq("status", "active").order("created_at", { ascending: false });
       if (filters.organizer_id) query = query.eq("organizer_id", filters.organizer_id);
       if (filters.country) query = query.eq("country", filters.country);
@@ -326,6 +337,16 @@ export const DataProvider = ({ children }) => {
   const getPromotions = useCallback(async () => {
     safeTime("getPromotions");
     try {
+      let promotions;
+      try {
+        promotions = await dbService.getPromotions();
+      } catch (dbErr) {
+        if (import.meta.env.DEV) {
+          console.warn("dbService indisponible, fallback Supabase:", dbErr.message);
+        }
+      }
+      if (promotions) return promotions;
+
       const { data, error } = await supabase
         .from("event_promotions")
         .select("*, organizer:organizer_id(full_name, email)")

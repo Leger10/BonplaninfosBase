@@ -24,3 +24,12 @@ Thumbs.db
 
 # Local Netlify folder
 .netlify
+
+# Local media storage (big files)
+storage/public/
+
+# DB dumps
+db/
+*.backup
+*.backup (1)
+*.opdownload

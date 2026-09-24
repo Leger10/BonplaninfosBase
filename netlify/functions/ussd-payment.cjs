@@ -6,17 +6,14 @@
 // - action=validate : l'admin confirme le paiement reçu  => payments.status = 'completed'
 // - action=reject   : l'admin rejette (fraude)           => payments.status = 'cancelled'
 //                     (+ remboursement pièces / suppression billets / contrepassation gains)
-const { createClient } = require('@supabase/supabase-js');
+const createClient = require('./_lib/local-supabase.cjs');
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL;
 const supabaseKey =
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
-let supabase = null;
-if (supabaseUrl && supabaseKey) {
-    supabase = createClient(supabaseUrl, supabaseKey);
-}
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const USSD_MERCHANT = process.env.USSD_MERCHANT || '46598281';
 const USSD_PREFIX = '*144*10*';

@@ -10,6 +10,12 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
+    proxy: {
+      '/.netlify/functions': 'http://localhost:8888',
+      '/api': 'http://localhost:8888',
+      '/storage': 'http://localhost:8888',
+      '/media': 'http://localhost:8888',
+    },
     hmr: {
       protocol: 'ws',
       host: 'localhost',
@@ -45,7 +51,6 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ['@supabase/supabase-js'],
     exclude: ['@ffmpeg/ffmpeg'],
   },
 });

@@ -48,6 +48,7 @@ import { useData } from "@/contexts/DataContext";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
 import { toast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/customSupabaseClient";
+import { dbService } from "@/services/dbService";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -88,6 +89,8 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import CommunityVerification from "@/components/event/CommunityVerification";
 import TicketScannerDialog from "@/components/event/TicketScannerDialog";
 import { PromoCodeGenerator } from "../components/influencer/PromoCodeGenerator.jsx";
+import { v4 as uuidv4 } from "uuid";
+import { processImage, validateImage } from "@/utils/imageConverter";
 
 // ============================================================
 // MODAL D'ÉDITION COMPLET DE L'ÉVÉNEMENT
@@ -1142,7 +1145,7 @@ const VerificationStatsDialog = ({ isOpen, onClose, eventId, organizerId }) => {
 // ============================================================
 // BOUTONS D'ACTION STYLE TIKTOK
 // ============================================================
-const TikTokActionButtons = ({ event, onRefresh, user, isOwner, onEditClick }) => {
+const TikTokActionButtons = ({ event, onRefresh, user, isOwner, canManage, onEditClick }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [likes, setLikes] = useState(event?.likes_count || 0);
@@ -1270,7 +1273,7 @@ const TikTokActionButtons = ({ event, onRefresh, user, isOwner, onEditClick }) =
           {t("common.share")}
         </span>
       </div>
-      {isOwner && (
+      {(isOwner || canManage) && (
         <div className="flex flex-col items-center gap-1">
           <Button
             onClick={onEditClick}
@@ -1401,6 +1404,9 @@ const EventDetailPage = () => {
   const [promoConfigLoading, setPromoConfigLoading] = useState(false);
   const [phoneVoteLimit, setPhoneVoteLimit] = useState(0);
   const [savingPhoneVoteLimit, setSavingPhoneVoteLimit] = useState(false);
+  const [candidates, setCandidates] = useState([]);
+  const [candidatesLoading, setCandidatesLoading] = useState(false);
+  const [uploadingCandidateId, setUploadingCandidateId] = useState(null);
 
   const userId = user?.id;
   const isMountedRef = useRef(true);
@@ -1459,18 +1465,31 @@ const EventDetailPage = () => {
 
     console.log("Fetching event data for ID:", id);
     try {
-      const { data: fetchedEvent, error: eventError } = await fetchWithRetry(
-        () =>
-          supabase
-            .from("events")
-            .select(
-              "*, organizer:organizer_id(full_name), category:category_id(name, slug)",
-            )
-            .eq("id", id)
-            .maybeSingle(),
-      );
+      let fetchedEvent = null;
 
-      if (eventError) throw eventError;
+      try {
+        const rows = await dbService.getEventById(id);
+        fetchedEvent = rows.length > 0 ? rows[0] : null;
+      } catch (dbErr) {
+        console.warn("dbService indisponible, fallback Supabase :", dbErr.message);
+      }
+
+      if (!fetchedEvent) {
+        const { data: fbEvent, error: eventError } = await fetchWithRetry(
+          () =>
+            supabase
+              .from("events")
+              .select(
+                "*, organizer:organizer_id(full_name), category:category_id(name, slug)",
+              )
+              .eq("id", id)
+              .maybeSingle(),
+        );
+
+        if (eventError) throw eventError;
+        fetchedEvent = fbEvent;
+      }
+
       if (!fetchedEvent) {
         console.error("Event not found");
         if (isMountedRef.current) {
@@ -1595,9 +1614,13 @@ const EventDetailPage = () => {
 
   const isOwner = user && event?.organizer_id === user.id;
   const isInfluencer = user && event?.organizer_id !== user.id;
+  const canManageEvent =
+    isOwner ||
+    (userProfile &&
+      ["super_admin", "admin", "secretary"].includes(userProfile.user_type));
 
   useEffect(() => {
-    if (isOwner && event?.event_type === "stand_rental") {
+    if (canManageEvent && event?.event_type === "stand_rental") {
       const fetchStandStats = async () => {
         if (!isMountedRef.current) return;
         setStandStats((prev) => ({ ...prev, loading: true }));
@@ -1654,11 +1677,11 @@ const EventDetailPage = () => {
       };
       fetchStandStats();
     }
-  }, [isOwner, event]);
+  }, [canManageEvent, event]);
 
   // 📵 Chargement du réglage "limite de voix par téléphone" (organisateur)
   useEffect(() => {
-    if (!isOwner || event?.event_type !== "voting" || !event?.id) return;
+    if (!canManageEvent || event?.event_type !== "voting" || !event?.id) return;
     let mounted = true;
     const loadVoteLimit = async () => {
       try {
@@ -1682,7 +1705,7 @@ const EventDetailPage = () => {
     return () => {
       mounted = false;
     };
-  }, [isOwner, event?.event_type, event?.id]);
+  }, [canManageEvent, event?.event_type, event?.id]);
 
   const handleSavePhoneVoteLimit = async () => {
     if (!event?.id) return;
@@ -1733,6 +1756,114 @@ const EventDetailPage = () => {
       });
     } finally {
       setSavingPhoneVoteLimit(false);
+    }
+  };
+
+  // 💥 Chargement des candidats (pour la gestion des photos, visible aux
+  // organisateurs + admin/super_admin/secretary)
+  useEffect(() => {
+    if (!canManageEvent || event?.event_type !== "voting" || !event?.id) return;
+    let mounted = true;
+    const loadCandidates = async () => {
+      setCandidatesLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from("candidates")
+          .select("*")
+          .eq("event_id", event.id)
+          .order("created_at", { ascending: true });
+        if (error) throw error;
+        if (mounted) setCandidates(data || []);
+      } catch (e) {
+        console.warn("Erreur chargement candidats:", e);
+        if (mounted) setCandidates([]);
+      } finally {
+        if (mounted) setCandidatesLoading(false);
+      }
+    };
+    loadCandidates();
+    return () => {
+      mounted = false;
+    };
+  }, [canManageEvent, event?.event_type, event?.id]);
+
+  const handleFileSelectForCandidate = (candidateId) => {
+    const input = document.getElementById(
+      `candidate-photo-input-${candidateId}`,
+    );
+    if (input) input.click();
+  };
+
+  const handleCandidateFileChange = async (candidateId, file) => {
+    if (!file || !event?.id) return;
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "❌ Fichier invalide",
+        description: "Veuillez sélectionner une image.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setUploadingCandidateId(candidateId);
+    try {
+      const validation = validateImage(file);
+      if (!validation.isValid) {
+        toast({
+          title: "❌ Image invalide",
+          description: validation.message,
+          variant: "destructive",
+        });
+        return;
+      }
+      const processedFile = await processImage(file, {
+        maxSizeMB: 1,
+        maxWidthOrHeight: 800,
+        fileType: "image/jpeg",
+      });
+      const fileExt = "jpg";
+      const fileName = `${Date.now()}-${uuidv4()}.${fileExt}`;
+      const filePath = `voting/${event.organizer_id}/candidates/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("media")
+        .upload(filePath, processedFile, {
+          cacheControl: "3600",
+          upsert: true,
+          contentType: "image/jpeg",
+        });
+      if (uploadError) throw uploadError;
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("media").getPublicUrl(filePath);
+
+      const { error: updateError } = await supabase
+        .from("candidates")
+        .update({ photo_url: publicUrl, updated_at: new Date().toISOString() })
+        .eq("id", candidateId);
+      if (updateError) throw updateError;
+
+      if (isMountedRef.current) {
+        setCandidates((prev) =>
+          prev.map((c) =>
+            c.id === candidateId ? { ...c, photo_url: publicUrl } : c,
+          ),
+        );
+      }
+      toast({
+        title: "✅ Photo mise à jour",
+        description: "La photo du candidat a été remplacée avec succès.",
+        className: "bg-green-600 text-white",
+      });
+    } catch (e) {
+      console.error("Erreur upload photo candidat:", e);
+      toast({
+        title: "❌ Erreur",
+        description: e.message || "Impossible de mettre à jour la photo.",
+        variant: "destructive",
+      });
+    } finally {
+      if (isMountedRef.current) setUploadingCandidateId(null);
     }
   };
 
@@ -1789,7 +1920,7 @@ const EventDetailPage = () => {
   };
 
   const handleToggleSales = async () => {
-    if (!isOwner) return;
+    if (!canManageEvent) return;
     setTogglingSales(true);
     const newStatus = !event.is_sales_closed;
     try {
@@ -1855,10 +1986,7 @@ const EventDetailPage = () => {
   const optimizedImageUrl =
     event.cover_image ||
     "https://images.unsplash.com/photo-1509930854872-0f61005b282e";
-  const canDelete =
-    isOwner ||
-    (userProfile &&
-      ["super_admin", "admin", "secretary"].includes(userProfile.user_type));
+  const canDelete = canManageEvent;
 
   const now = new Date();
   const eventStartDate = new Date(event.event_start_at);
@@ -1967,6 +2095,7 @@ const EventDetailPage = () => {
                 onRefresh={handleDataRefresh}
                 user={user}
                 isOwner={isOwner}
+                canManage={canManageEvent}
                 onEditClick={() => setShowEditModal(true)}
               />
             </div>
@@ -2201,7 +2330,7 @@ const EventDetailPage = () => {
 
           {/* Sidebar droite */}
           <div className="space-y-6">
-            {isOwner && (
+            {canManageEvent && (
               <Card className="bg-gray-900/80 backdrop-blur-sm border-blue-800/50 shadow-xl overflow-hidden">
                 <div className="bg-gradient-to-r from-blue-900/30 to-purple-900/30 p-3 border-b border-blue-800/30">
                   <h3 className="font-bold text-blue-300 flex items-center gap-2">
@@ -2384,11 +2513,99 @@ const EventDetailPage = () => {
                       </div>
                     </div>
                   )}
+
+                  {event.event_type === "voting" && (
+                    <div className="flex flex-col gap-3 bg-black/20 p-3 rounded-lg border border-white/10">
+                      <div>
+                        <p className="font-medium text-white">
+                          📸 Photos des candidats
+                        </p>
+                        <p className="text-[10px] text-gray-400 mt-1">
+                          Remplacez la photo d&apos;un candidat du concours.
+                          L&apos;image est automatiquement compressée.
+                        </p>
+                      </div>
+                      {candidatesLoading ? (
+                        <div className="flex items-center justify-center text-gray-400 py-2">
+                          <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                          Chargement...
+                        </div>
+                      ) : candidates.length === 0 ? (
+                        <p className="text-[11px] text-gray-400">
+                          Aucun candidat pour ce concours.
+                        </p>
+                      ) : (
+                        <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-1">
+                          {candidates.map((cand) => (
+                            <div
+                              key={cand.id}
+                              className="flex items-center gap-3 bg-white/5 p-2 rounded-lg border border-white/10"
+                            >
+                              <img
+                                src={
+                                  cand.photo_url ||
+                                  "/api/placeholder/64/64"
+                                }
+                                alt={cand.name}
+                                className="w-12 h-12 rounded-lg object-cover shrink-0"
+                                onError={(e) => {
+                                  e.target.onerror = null;
+                                  e.target.src = "/api/placeholder/64/64";
+                                }}
+                              />
+                              <div className="flex flex-col min-w-0 flex-1">
+                                <span className="text-white text-sm font-medium truncate">
+                                  {cand.name}
+                                </span>
+                                {cand.category && (
+                                  <span className="text-[10px] text-gray-400">
+                                    {cand.category}
+                                  </span>
+                                )}
+                              </div>
+                              <input
+                                id={`candidate-photo-input-${cand.id}`}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                disabled={uploadingCandidateId === cand.id}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    handleCandidateFileChange(cand.id, file);
+                                  }
+                                  e.target.value = "";
+                                }}
+                              />
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-purple-600/50 text-purple-400 hover:bg-purple-900/30 whitespace-nowrap"
+                                onClick={() =>
+                                  handleFileSelectForCandidate(cand.id)
+                                }
+                                disabled={uploadingCandidateId === cand.id}
+                              >
+                                {uploadingCandidateId === cand.id ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <ImageIcon className="w-3.5 h-3.5" />
+                                )}
+                                {uploadingCandidateId === cand.id
+                                  ? "Upload..."
+                                  : "Photo"}
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
 
-            {isOwner && promoConfig?.enabled && (
+            {canManageEvent && promoConfig?.enabled && (
               <Card className="bg-gray-900/80 backdrop-blur-sm border-green-800/50 shadow-xl overflow-hidden">
                 <div className="bg-gradient-to-r from-green-900/30 to-emerald-900/30 p-3 border-b border-green-800/30">
                   <h3 className="font-bold text-green-300 flex items-center gap-2">
@@ -2432,7 +2649,7 @@ const EventDetailPage = () => {
               </Card>
             )}
 
-            {isOwner && event.event_type === "stand_rental" && (
+            {canManageEvent && event.event_type === "stand_rental" && (
               <Card className="bg-gray-900/80 backdrop-blur-sm border-blue-800/50 shadow-xl overflow-hidden animate-in fade-in">
                 <div className="bg-gradient-to-r from-blue-900/30 to-cyan-900/30 p-3 border-b border-blue-800/30">
                   <h3 className="font-bold text-blue-300 flex items-center gap-2">

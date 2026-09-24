@@ -1,20 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
+import { localSupabase } from "./localSupabaseClient";
 
-// Client dédié à la consultation/action USSD.
-// En production, la Netlify Function ussd-payment sert d'intermédiaire avec la
-// clé service role côté serveur. En dev (vite :3000) il n'y a pas de Netlify
-// Function : on retombe sur un client service-role pour lire/agir, comme le fait
-// déjà Sitemap.jsx. À réserver à cet usage spécifique.
-const url = import.meta.env?.VITE_SUPABASE_URL || "";
-const key =
-  import.meta.env?.VITE_SUPABASE_SERVICE_ROLE_KEY ||
-  import.meta.env?.VITE_SUPABASE_ANON_KEY ||
-  "";
+// Client dédié à la consultation/action USSD local : le client local émule la
+// lecture via le moteur de requête Express (Prisma).
+export const ussdServiceClient = localSupabase;
 
-export const ussdServiceClient = url && key ? createClient(url, key) : null;
-
-// Lecture du statut d'un paiement USSD (fallback dev quand la Netlify Function
-// n'est pas disponible). Retourne 'pending' | 'completed' | 'cancelled' | null.
+// Lecture du statut d'un paiement USSD (fallback local). Retourne 'pending' | 'completed' | 'cancelled' | null.
 export const fetchUssdStatus = async (orderId) => {
   if (!ussdServiceClient || !orderId) return null;
   try {
@@ -22,7 +12,6 @@ export const fetchUssdStatus = async (orderId) => {
       .from("payments")
       .select("status")
       .eq("payment_method", "ussd");
-    // transaction_id peut contenir un point -> bascule sur like si besoin
     const { data, error } = await q
       .eq("transaction_id", orderId)
       .maybeSingle();

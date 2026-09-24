@@ -30,6 +30,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { supabase } from "@/lib/customSupabaseClient";
+import { dbService } from "@/services/dbService";
 import WalletInfoModal from "@/components/WalletInfoModal";
 import { CoinService } from "@/services/CoinService";
 import { Badge } from "@/components/ui/badge";
@@ -108,16 +109,27 @@ const BoostPage = () => {
       setIsFetchingContent(true);
       try {
         // Récupérer tous les événements actifs de l'utilisateur
-        const { data: eventsData, error: eventsError } = await supabase
-          .from("events")
-          .select(
-            "id, title, event_type, is_promoted, promoted_until, status, cover_image"
-          )
-          .eq("organizer_id", user.id)
-          .eq("status", "active")
-          .order("created_at", { ascending: false });
+        let eventsData = null;
+        try {
+          const rows = await dbService.getEventsByOrganizer(user.id);
+          eventsData = rows.length > 0 ? rows : null;
+        } catch (dbErr) {
+          console.warn("dbService indisponible, fallback Supabase:", dbErr.message);
+        }
 
-        if (eventsError) throw eventsError;
+        if (eventsData === null) {
+          const { data, error } = await supabase
+            .from("events")
+            .select(
+              "id, title, event_type, is_promoted, promoted_until, status, cover_image"
+            )
+            .eq("organizer_id", user.id)
+            .eq("status", "active")
+            .order("created_at", { ascending: false });
+
+          if (error) throw error;
+          eventsData = data || [];
+        }
 
         // Filtrer les événements éligibles
         const now = new Date();
