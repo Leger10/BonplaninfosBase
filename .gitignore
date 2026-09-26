@@ -3,9 +3,14 @@
 .env.local
 .env.production
 *.env*
+!/.env.example
 secrets.txt
 *.key
 *.pem
+
+# Logs pm2 (production)
+logs/
+*.log
 
 # Dependencies
 node_modules/
