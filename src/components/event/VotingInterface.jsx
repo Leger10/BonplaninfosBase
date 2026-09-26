@@ -78,94 +78,6 @@ const Separator = ({
   />
 );
 
-// Service pour créer des transactions sécurisées
-const TransactionService = {
-  async createTransaction(transactionData) {
-    try {
-      if (
-        transactionData.amount_pi === undefined ||
-        transactionData.amount_pi === null
-      ) {
-        throw new Error("amount_pi est requis pour une transaction");
-      }
-
-      if (!transactionData.user_id) {
-        throw new Error("user_id est requis pour une transaction");
-      }
-
-      const safeTransactionData = {
-        user_id: transactionData.user_id,
-        event_id: transactionData.event_id || null,
-        transaction_type: transactionData.transaction_type || "unknown",
-        amount_pi: Number(transactionData.amount_pi) || 0,
-        amount_fcfa:
-          transactionData.amount_fcfa !== undefined
-            ? Number(transactionData.amount_fcfa)
-            : Math.abs(Number(transactionData.amount_pi)) * 5,
-        description: transactionData.description || "",
-        status: transactionData.status || "completed",
-        payment_gateway_data: transactionData.payment_gateway_data || null,
-        created_at: transactionData.created_at || new Date().toISOString(),
-        completed_at: transactionData.completed_at || null,
-        city: transactionData.city || null,
-        region: transactionData.region || null,
-        country: transactionData.country || null,
-        metadata: transactionData.metadata || {},
-        amount_coins:
-          transactionData.amount_coins ||
-          Math.abs(Number(transactionData.amount_pi)),
-      };
-
-      const { data, error } = await supabase
-        .from("transactions")
-        .insert(safeTransactionData)
-        .select()
-        .single();
-
-      if (error) throw error;
-      return data;
-    } catch (error) {
-      console.error("TransactionService.createTransaction error:", error);
-      throw error;
-    }
-  },
-
-  async createVoteTransaction(
-    userId,
-    eventId,
-    voteCost,
-    candidateId,
-    options = {},
-  ) {
-    const {
-      voteType = "vote_purchase",
-      platformFeePercent = 5,
-      description = "Achat de vote",
-    } = options;
-
-    const platformFee = Math.ceil(voteCost * (platformFeePercent / 100));
-    const netCost = voteCost - platformFee;
-
-    return await this.createTransaction({
-      user_id: userId,
-      event_id: eventId,
-      transaction_type: voteType,
-      amount_pi: -voteCost,
-      amount_fcfa: -voteCost * 5,
-      description: `${description} - Candidat ID: ${candidateId}`,
-      status: "completed",
-      metadata: {
-        platform_fee: platformFee,
-        fee_percent: platformFeePercent,
-        net_cost: netCost,
-        candidate_id: candidateId,
-        source: "vote",
-        timestamp: new Date().toISOString(),
-      },
-    });
-  },
-};
-
 // Composant pour les messages motivants
 const MotivationalMessage = ({ type, rank, timeLeft }) => {
   const messages = {
@@ -680,113 +592,26 @@ if (maxVotesPerUser > 0 && !(maxVotesPerPhone > 0 && storedPhone) && used + vote
         return;
       }
 
-      const platformFeePercent = 0;
-      const platformFee = 0;
-      const netAmount = totalCostPi;
+      const { data: voteResult, error: voteError } = await supabase.rpc("cast_votes", {
+        p_user_id: user.id,
+        p_event_id: event.id,
+        p_votes: [{ candidate_id: candidate.id, vote_count: voteCount }],
+        p_voter_phone: voterPhone || null,
+      });
 
-      const newBalance = (userData.coin_balance || 0) - totalCostPi;
-      const { error: debitError } = await supabase
-        .from("profiles")
-        .update({ coin_balance: newBalance })
-        .eq("id", user.id);
+      if (voteError) throw voteError;
+      if (!voteResult?.success) throw new Error(voteResult?.message || "Erreur lors du vote");
 
-      if (debitError) throw debitError;
-
-      await TransactionService.createVoteTransaction(
-        user.id,
-        event.id,
-        totalCostPi,
-        candidate.id,
-        {
-          description: `Vote pour ${candidate.name}`,
-        },
-      );
-
-      const { data: existingVote, error: checkError } = await supabase
+      const { data: existingVote } = await supabase
         .from("user_votes")
-        .select("vote_count, vote_cost_pi, net_to_organizer, fees")
+        .select("vote_count")
         .eq("user_id", user.id)
         .eq("candidate_id", candidate.id)
         .eq("event_id", event.id)
         .maybeSingle();
 
-      const existingVoteCount = existingVote?.vote_count || 0;
-      const existingCost = existingVote?.vote_cost_pi || 0;
-      const existingNet = existingVote?.net_to_organizer || 0;
-      const existingFees = existingVote?.fees || 0;
-
-      const totalVoteCount = existingVoteCount + voteCount;
-      const totalCost = existingCost + totalCostPi;
-      const totalNetAmount = existingNet + netAmount;
-      const totalFees = existingFees + platformFee;
-
-      const { error: voteError } = await supabase.from("user_votes").upsert(
-        {
-          user_id: user.id,
-          candidate_id: candidate.id,
-          event_id: event.id,
-          vote_count: totalVoteCount,
-          vote_cost_pi: totalCost,
-          vote_cost_fcfa: totalCost * coinRate,
-          net_to_organizer: totalNetAmount,
-          fees: totalFees,
-          voter_phone: voterPhone || null,
-          created_at: new Date().toISOString(),
-        },
-        {
-          onConflict: "event_id, candidate_id, user_id",
-        },
-      );
-
-      if (voteError) throw voteError;
-
-      const newVoteCount = candidateVoteCount + voteCount;
-      setCandidateVoteCount(newVoteCount);
-
-      const { error: updateError } = await supabase
-        .from("candidates")
-        .update({ vote_count: newVoteCount })
-        .eq("id", candidate.id);
-
-      if (updateError) throw updateError;
-
-      const { data: eventData } = await supabase
-        .from("events")
-        .select("organizer_id, title")
-        .eq("id", event.id)
-        .single();
-
-      if (eventData?.organizer_id) {
-        const { data: organizerProfile } = await supabase
-          .from("profiles")
-          .select("available_earnings")
-          .eq("id", eventData.organizer_id)
-          .single();
-
-        if (organizerProfile) {
-          const newEarnings =
-            (organizerProfile.available_earnings || 0) + netAmount;
-
-          await supabase
-            .from("profiles")
-            .update({
-              available_earnings: newEarnings,
-            })
-            .eq("id", eventData.organizer_id);
-        }
-
-        await supabase.from("organizer_earnings").insert({
-          organizer_id: eventData.organizer_id,
-          event_id: event.id,
-          earnings_coins: netAmount,
-          transaction_type: "vote",
-          fee_percent: platformFeePercent,
-          platform_fee: platformFee,
-          status: "pending",
-          created_at: new Date().toISOString(),
-          description: `Gains de vote: ${candidate.name} - ${eventData.title} (${voteCount} voix)`,
-        });
-      }
+      const totalVoteCount = (existingVote?.vote_count || 0) + voteCount;
+      setCandidateVoteCount(candidateVoteCount + voteCount);
 
       toast({
         title: "🎉 Vote enregistré !",
@@ -2305,150 +2130,21 @@ if ((userData?.coin_balance || 0) < totalCost) {
         }
       }
 
-      const newBalance = (userData.coin_balance || 0) - totalCost;
-      await supabase
-        .from("profiles")
-        .update({ coin_balance: newBalance })
-        .eq("id", user.id);
+      const { data: cartVoteResult, error: cartVoteError } = await supabase.rpc("cast_votes", {
+        p_user_id: user.id,
+        p_event_id: event.id,
+        p_votes: cartItems.map((item) => ({
+          candidate_id: item.candidate.id,
+          vote_count: item.quantity,
+        })),
+        p_voter_phone: checkoutPhone || null,
+      });
 
-      const errors = [];
-      const platformFeePercent = 0;
-      let spentCoins = 0;
-
-      for (const item of cartItems) {
-        try {
-          const itemTotalCost = item.quantity * item.price;
-          const platformFee = Math.ceil(
-            itemTotalCost * (platformFeePercent / 100),
-          );
-          const netAmount = itemTotalCost;
-
-          await TransactionService.createVoteTransaction(
-            user.id,
-            event.id,
-            itemTotalCost,
-            item.candidate.id,
-            {
-              description: `Vote pour ${item.candidate.name} (${item.quantity} voix)`,
-            },
-          );
-
-          const { data: existingVote, error: checkError } = await supabase
-            .from("user_votes")
-            .select("vote_count, vote_cost_pi, net_to_organizer, fees")
-            .eq("user_id", user.id)
-            .eq("candidate_id", item.candidate.id)
-            .eq("event_id", event.id)
-            .maybeSingle();
-
-          const existingVoteCount = existingVote?.vote_count || 0;
-          const existingCost = existingVote?.vote_cost_pi || 0;
-          const existingNet = existingVote?.net_to_organizer || 0;
-          const existingFees = existingVote?.fees || 0;
-
-          const totalVoteCount = existingVoteCount + item.quantity;
-          const totalCostInc = existingCost + itemTotalCost;
-          const totalNetAmount = existingNet + netAmount;
-          const totalFees = existingFees + platformFee;
-
-          const { error: voteError } = await supabase.from("user_votes").upsert(
-            {
-              user_id: user.id,
-              candidate_id: item.candidate.id,
-              event_id: event.id,
-vote_count: totalVoteCount,
-                vote_cost_pi: totalCostInc,
-                vote_cost_fcfa: totalCostInc * coinRate,
-                net_to_organizer: totalNetAmount,
-                fees: totalFees,
-                voter_phone: checkoutPhone || null,
-                created_at: new Date().toISOString(),
-            },
-            {
-              onConflict: "event_id, candidate_id, user_id",
-            },
-          );
-
-if (voteError) {
-        await supabase
-          .from("profiles")
-          .update({ coin_balance: userData.coin_balance })
-          .eq("id", user.id);
-        throw new Error(
-          `Vote refusé (${voteError.message}). Vos ${totalCostPi} pièces ont été remboursées.`,
-        );
+      if (cartVoteError) throw cartVoteError;
+      if (!cartVoteResult?.success) {
+        throw new Error(cartVoteResult?.message || "Erreur lors du vote");
       }
 
-          const newVoteCount = (item.candidate.vote_count || 0) + item.quantity;
-
-          const { error: cartCandidUpdErr } = await supabase
-            .from("candidates")
-            .update({ vote_count: newVoteCount })
-            .eq("id", item.candidate.id);
-
-          if (cartCandidUpdErr) throw cartCandidUpdErr;
-
-          const { data: eventData } = await supabase
-            .from("events")
-            .select("organizer_id, title")
-            .eq("id", event.id)
-            .single();
-
-          if (eventData?.organizer_id) {
-            const { data: organizerProfile } = await supabase
-              .from("profiles")
-              .select("available_earnings")
-              .eq("id", eventData.organizer_id)
-              .single();
-
-            if (organizerProfile) {
-              const newEarnings =
-                (organizerProfile.available_earnings || 0) + netAmount;
-
-              await supabase
-                .from("profiles")
-                .update({
-                  available_earnings: newEarnings,
-                })
-                .eq("id", eventData.organizer_id);
-            }
-
-            await supabase.from("organizer_earnings").insert({
-              organizer_id: eventData.organizer_id,
-              event_id: event.id,
-              earnings_coins: netAmount,
-              transaction_type: "vote",
-              fee_percent: platformFeePercent,
-              platform_fee: platformFee,
-              status: "pending",
-              created_at: new Date().toISOString(),
-              description: `Gains de vote: ${item.candidate.name} - ${eventData.title} (${item.quantity} voix)`,
-            });
-          }
-
-          spentCoins += itemTotalCost;
-        } catch (itemError) {
-          errors.push(
-            `Erreur pour ${item.candidate.name}: ${itemError.message}`,
-          );
-        }
-      }
-
-      if (errors.length > 0) {
-        const refund = Math.max(0, totalCost - spentCoins);
-        if (refund > 0) {
-          await supabase
-            .from("profiles")
-            .update({ coin_balance: (userData.coin_balance || 0) - spentCoins })
-            .eq("id", user.id);
-        }
-        throw new Error(
-          errors.join("\n") +
-            (refund > 0
-              ? `\n\n${refund} pièce(s) non consommée(s) vous ont été remboursées.`
-              : ""),
-        );
-      }
 
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 5000);

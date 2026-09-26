@@ -14,6 +14,17 @@ const hashToken = async (token) => {
   return hashHex;
 };
 
+const arrayBufferToBase64 = (buffer) => {
+  if (!buffer) return 'pending';
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+};
+
 // ✅ EXPORT: isPushSupported
 export const isPushSupported = () => {
   return 'serviceWorker' in navigator && 'PushManager' in window;
@@ -221,6 +232,9 @@ export const savePushTokenToSupabase = async (subscription) => {
       .insert({
         user_id: user.id,
         token: tokenHash,
+        endpoint: subscription.endpoint,
+        p256dh: subscription.getKey ? arrayBufferToBase64(subscription.getKey('p256dh')) : 'pending',
+        auth: subscription.getKey ? arrayBufferToBase64(subscription.getKey('auth')) : 'pending',
         device_type: deviceType,
         is_active: true,
         device_info: {

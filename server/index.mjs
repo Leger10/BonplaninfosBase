@@ -26,9 +26,13 @@ app.use('/api/auth', authRouter);
 app.use('/api/storage', storageRouter);
 app.use('/api/rpc', rpcRouter);
 app.post('/api/query', async (req, res) => {
+  const q = req.body || {};
   try {
-    const result = await runQuery(req.body || {});
-    if (result.error) return res.status(result.status || 400).json(result);
+    const result = await runQuery(q);
+    if (result.error) {
+      console.log(`[query] ${q.method || 'select'} ${q.table} -> ${result.status} ${result.error.code || ''} ${JSON.stringify(result.error.message)?.slice(0, 160)}`);
+      return res.status(result.status || 400).json(result);
+    }
     res.json(result);
   } catch (err) {
     console.error('[api/query]', err);

@@ -306,8 +306,14 @@ const TicketingInterface = ({
           (t) => t.ticket_type_id === tt.id,
         ).length;
 
+        const soldCounter = Number(tt.quantity_sold ?? tt.tickets_sold ?? 0);
+        const capacityLeft = Math.max(
+          0,
+          Number(tt.quantity_available ?? 0) - soldCounter,
+        );
+
         availability[tt.id] = {
-          available: availableCount,
+          available: Math.min(availableCount, capacityLeft),
           sold: soldCount,
           total: totalCount,
         };
@@ -380,9 +386,9 @@ const TicketingInterface = ({
         return ticketAvailability[typeId].available || 0;
       }
 
-      // Fallback sur quantity_available
       const type = effectiveTicketTypes?.find((t) => t.id === typeId);
-      return type?.quantity_available || 0;
+      const soldCounter = Number(type?.quantity_sold ?? type?.tickets_sold ?? 0);
+      return Math.max(0, Number(type?.quantity_available ?? 0) - soldCounter);
     },
     [ticketAvailability, effectiveTicketTypes, ticketsLoaded],
   );

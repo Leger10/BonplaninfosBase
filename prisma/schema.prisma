@@ -2743,6 +2743,41 @@ model tickets {
 
 }
 
+/// Tickets d'événement affichés dans "Mes billets" (l'ancienne table Supabase event_tickets).
+model event_tickets {
+  id                    String     @id  @default(uuid())@db.Char(36)
+  order_id              String?    @db.Text
+  event_id              String?    @db.Char(36)
+  user_id               String?    @db.Char(36)
+  ticket_type_id        String?    @db.Char(36)
+  ticket_number         String?    @db.Text
+  qr_code               String?    @db.Text
+  status                String?    @default("active") @db.Text
+  purchase_amount_pi    Int?
+  purchase_amount_fcfa  Int?
+  purchase_price_pi     Int?
+  purchased_at          DateTime?  @default(now()) @db.DateTime(0)
+  transaction_reference String?    @db.Text
+  attendee_name         String?    @db.Text
+  email                 String?    @db.Text
+  phone                 String?    @db.Text
+  payment_method        String?    @default("coins") @db.Text
+  payment_status        String?    @db.Text
+  ticket_code           String?    @db.Text
+  ticket_code_short     String?    @db.Text
+  event_title           String?    @db.Text
+  event_start_at        DateTime?  @db.DateTime(0)
+  event_end_at          DateTime?  @db.DateTime(0)
+  location              String?    @db.Text
+  full_address          String?    @db.Text
+  address               String?    @db.Text
+  city                  String?    @db.Text
+  country               String?    @db.Text
+  created_at            DateTime?  @default(now()) @db.DateTime(0)
+  updated_at            DateTime?  @default(now()) @db.DateTime(0)
+
+}
+
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 model transactions {
   id                    String    @id  @default(uuid())@db.Char(36)

@@ -578,7 +578,7 @@ const CreateTicketingEventPage = () => {
           event_start_at: eventStartAt.toISOString(),
           event_end_at: eventEndAt.toISOString(),
           city,
-          country: country || null,
+          country: country || "Côte d'Ivoire",
           address: address || null,
           cover_image: coverImage,
           organizer_id: user.id,

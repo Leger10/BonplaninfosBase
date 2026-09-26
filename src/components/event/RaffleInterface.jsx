@@ -114,127 +114,26 @@ const RaffleInterface = ({
 
     setIsPurchasing(true);
     try {
-      // 1. Récupérer les données fraîches (organizer_id, event_id, etc.)
-      const { data: raffleFresh, error: raffleError } = await supabase
-        .from('raffle_events')
-        .select('id, event_id, organizer_id, calculated_price_pi, total_tickets, tickets_sold, max_tickets_per_user')
-        .eq('id', raffleData.id)
-        .single();
-      if (raffleError) throw raffleError;
-      if (!raffleFresh.organizer_id) throw new Error("Cette tombola n'a pas d'organisateur");
+      const { data, error } = await supabase.rpc('purchase_raffle_tickets', {
+        p_user_id: user.id,
+        p_raffle_event_id: raffleData.id,
+        p_quantity: quantity,
+      });
 
-      const ticketPrice = raffleFresh.calculated_price_pi;
-      const totalCost = ticketPrice * quantity;
+      if (error) throw error;
+      if (!data?.success) throw new Error(data?.message || "Impossible de compléter l'achat");
 
-      // 2. Vérifier le solde utilisateur
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('coin_balance')
-        .eq('id', user.id)
-        .single();
-      if (profileError) throw profileError;
-      if (profile.coin_balance < totalCost) {
-        toast({
-          title: "Solde insuffisant",
-          description: `Vous avez ${profile.coin_balance} π, il vous faut ${totalCost} π`,
-          variant: "destructive"
-        });
-        setShowWalletModal(true);
-        return;
-      }
-
-      // 3. Vérifier les tickets disponibles
-      const availableTickets = raffleFresh.total_tickets - (raffleFresh.tickets_sold || 0);
-      if (quantity > availableTickets) {
-        toast({
-          title: "Tickets insuffisants",
-          description: `Il ne reste que ${availableTickets} ticket(s) disponible(s)`,
-          variant: "destructive"
-        });
-        return;
-      }
-
-      // 4. Vérifier la limite par utilisateur
-      if (quantity > raffleFresh.max_tickets_per_user) {
-        toast({
-          title: "Limite dépassée",
-          description: `Vous ne pouvez acheter que ${raffleFresh.max_tickets_per_user} ticket(s) maximum`,
-          variant: "destructive"
-        });
-        return;
-      }
-
-      // 5. Générer et insérer les tickets
-      const tickets = [];
-      for (let i = 0; i < quantity; i++) {
-        const ticketNumber = Math.floor(100000 + Math.random() * 900000);
-        tickets.push({
-          raffle_event_id: raffleFresh.id,
-          user_id: user.id,
-          purchase_price_pi: ticketPrice,
-          ticket_number: ticketNumber,
-          purchased_at: new Date().toISOString()
-        });
-      }
-      const { error: ticketError } = await supabase.from('raffle_tickets').insert(tickets);
-      if (ticketError) throw ticketError;
-
-      // 6. Déduire le solde utilisateur
-      const { error: balanceError } = await supabase
-        .from('profiles')
-        .update({ coin_balance: profile.coin_balance - totalCost })
-        .eq('id', user.id);
-      if (balanceError) throw balanceError;
-
-      // 7. Mettre à jour le compteur tickets_sold
-      const { error: updateError } = await supabase
-        .from('raffle_events')
-        .update({ tickets_sold: (raffleFresh.tickets_sold || 0) + quantity })
-        .eq('id', raffleFresh.id);
-      if (updateError) throw updateError;
-
-      // 8. Créditer l'organisateur (gains en attente) – exactement comme TicketingInterface
-      // const platformFee = Math.floor(totalCost * 0.05);
-      // const netEarnings = totalCost - platformFee;
-      const platformFee = 0;
-const netEarnings = totalCost; // 100% du montant
-      const targetEventId = raffleFresh.event_id || event?.id;
-      if (!targetEventId) {
-        throw new Error("Impossible de déterminer l'événement parent pour créditer l'organisateur");
-      }
-
-      const { error: earningError } = await supabase
-        .from('organizer_earnings')
-        .insert({
-          organizer_id: raffleFresh.organizer_id,
-          event_id: targetEventId,
-          raffle_event_id: raffleFresh.id,
-          earnings_coins: netEarnings,
-          amount_pi: totalCost,
-          net_amount: netEarnings,
-         platform_fee: 0,
-          status: 'pending',
-          transaction_type: 'raffle_ticket_sale',
-          event_type: 'raffle',
-          earnings_fcfa: netEarnings * 10,
-          description: `Vente de ${quantity} tickets tombola`,
-          fee_percent: 0.0
-        });
-      if (earningError) throw earningError;
-
-      // Succès
       toast({
         title: "🎉 Achat réussi !",
-        description: `Vous avez acheté ${quantity} ticket(s) pour la tombola "${event?.title || ''}"`,
+        description: `Vous avez acheté ${data.quantity} ticket(s) pour la tombola "${event?.title || ''}"`,
       });
 
       if (onPurchaseSuccess) onPurchaseSuccess();
 
-      // Recharger les tickets de l'utilisateur
       const { data: newTickets } = await supabase
         .from('raffle_tickets')
         .select('ticket_number, purchase_price_pi, purchased_at')
-        .eq('raffle_event_id', raffleFresh.id)
+        .eq('raffle_event_id', raffleData.id)
         .eq('user_id', user.id);
       setUserTickets(newTickets || []);
       setQuantity(1);

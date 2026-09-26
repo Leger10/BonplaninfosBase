@@ -105,10 +105,15 @@ const USSDPaymentsTab = ({ actorId }) => {
       const proofMap = {};
       if (!txsErr && txs) {
         for (const tx of txs) {
-          const u = tx.metadata?.ussd;
-          if (u && tx.metadata?.payment_id) {
-            if (!proofMap[tx.metadata.payment_id]) {
-              proofMap[tx.metadata.payment_id] = {
+          // metadata peut revenir en JSON (objet) ou en texte selon la source
+          let meta = tx.metadata;
+          if (typeof meta === "string") {
+            try { meta = JSON.parse(meta); } catch { meta = null; }
+          }
+          const u = meta?.ussd;
+          if (u && meta?.payment_id) {
+            if (!proofMap[meta.payment_id]) {
+              proofMap[meta.payment_id] = {
                 sms_reference: u.sms_reference || "",
                 proof_url: u.proof_url || "",
               };
@@ -216,46 +221,10 @@ const USSDPaymentsTab = ({ actorId }) => {
       } catch (e) {
         result = null;
       }
-      // Fallback si la fonction netlify n'est pas disponible (ex. dev vite :3000)
       if (!result) {
-        const target = action === "validate" ? "completed" : "cancelled";
-        const patch =
-          target === "completed"
-            ? {
-                status: target,
-                processed_at: new Date().toISOString(),
-                validated_by: actorId || null,
-                validated_at: new Date().toISOString(),
-                rejected_by: null,
-                rejected_at: null,
-              }
-            : {
-                status: target,
-                processed_at: new Date().toISOString(),
-                rejected_by: actorId || null,
-                rejected_at: new Date().toISOString(),
-                validated_by: null,
-                validated_at: null,
-              };
-        // Client service-role (bypass RLS) comme le fait la Netlify Function
-        let srv = supabase;
-        try {
-          const mod = await import("@/lib/ussdStatusClient");
-          if (mod.ussdServiceClient) srv = mod.ussdServiceClient;
-        } catch (_) {
-          /* ignore */
-        }
-        const { error: upErr } = await srv
-          .from("payments")
-          .update(patch)
-          .eq("id", payment.id);
-        if (upErr) throw new Error("Impossible de mettre à jour le paiement");
-        toast({
-          title: action === "validate" ? "Paiement validé ✅" : "Paiement rejeté",
-          className: action === "validate" ? "bg-green-600 text-white" : "bg-red-600 text-white",
-        });
-        await fetchPayments();
-        return;
+        throw new Error(
+          "Le service de validation USSD est injoignable. Refus : aucun paiement ne peut etre modifie sans la fonction serveur (validation humaine + livraison).",
+        );
       }
       if (!res.ok || !result.success) {
         throw new Error(result.message || `Erreur HTTP ${res.status}`);

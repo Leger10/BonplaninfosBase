@@ -80,8 +80,9 @@ const CreateWithdrawalRequestModal = ({ isOpen, onClose, event, metrics, adminId
       await supabase.from('event_validation_status').insert({
         event_id: event.id,
         event_type: 'withdrawal',
+        validation_step: 'withdrawal',
         status: 'EN_ATTENTE',
-        admin_notes: `Demande créée manuellement par Admin pour ${amount} π`,
+        admin_notes: `Demande crǸǸe manuellement par Admin pour ${amount} �?`,
         validated_by: adminId,
         validated_at: new Date()
       });

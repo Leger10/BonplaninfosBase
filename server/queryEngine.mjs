@@ -13,7 +13,7 @@
 //     body,                 // payload insert/update
 //     conflictColumns: [...]   // upsert
 //   }
-import { getDb, scalarColumns } from './db.mjs';
+import { getDb, scalarColumns, scalarTypes } from './db.mjs';
 import { resolveEmbed } from './relations.mjs';
 import { parseSelect } from './selectParser.mjs';
 import { match } from './matchers.mjs';
@@ -24,6 +24,40 @@ function ok(data, extra = {}) {
 }
 function err(message, status = 400, code) {
   return { data: null, error: { message, code, details: null, hint: null }, status };
+}
+
+const JSON_TEXT_COLUMNS = new Set([
+  'locations.images',
+  'partners.coverage_zone',
+  'admin_withdrawal_config.withdrawal_dates',
+  'admin_withdrawal_config.withdrawal_methods',
+  'organizer_withdrawal_requests.payment_details',
+]);
+
+function decodeJsonColumns(table, rows) {
+  if (!Array.isArray(rows) || !rows.length) return rows;
+  const cols = [];
+  for (const key of JSON_TEXT_COLUMNS) {
+    const dot = key.indexOf('.');
+    if (key.slice(0, dot) === table) cols.push(key.slice(dot + 1));
+  }
+  if (!cols.length) return rows;
+  return rows.map((row) => {
+    if (!row || typeof row !== 'object') return row;
+    let out = row;
+    for (const col of cols) {
+      const v = row[col];
+      if (typeof v !== 'string') continue;
+      const t = v.trim();
+      if (!t.startsWith('[') && !t.startsWith('{')) continue;
+      try {
+        const parsed = JSON.parse(t);
+        if (out === row) out = { ...row };
+        out[col] = parsed;
+      } catch (e) { /* valeur non JSON : laisser telle quelle */ }
+    }
+    return out;
+  });
 }
 
 const isDate = (v) =>
@@ -155,6 +189,7 @@ async function selectRows(q, modelCols) {
     const take = q.limit !== undefined ? q.limit : q.rangeTo !== undefined ? q.rangeTo - range + 1 : undefined;
     data = take !== undefined ? withEmbeds.slice(range, range + take) : withEmbeds.slice(range);
   }
+  data = decodeJsonColumns(q.table, data);
 
   if (q.head) return ok([], { count: total });
 
@@ -162,7 +197,7 @@ async function selectRows(q, modelCols) {
     if (data.length === 0) {
       if (q.single) return err('JSON object requested, multiple (or no) rows returned', 406, 'PGRST116');
       data = null;
-    } else if (data.length > 1) {
+    } else if (data.length > 1 && q.single) {
       return err('JSON object requested, multiple (or no) rows returned', 406, 'PGRST116');
     } else {
       data = data[0];
@@ -206,29 +241,47 @@ async function embedRows(rows, embeds) {
   });
 }
 
-async function insertRows(q, modelCols) {
+async function insertRows(q, modelCols, modelTypes) {
   const db = getDb();
   const body = Array.isArray(q.body) ? q.body : [q.body];
   const created = [];
   for (const item of body) {
-    const data = pick(item, modelCols);
+    const data = pick(item, modelCols, modelTypes);
     if (!data.id) data.id = uuidv4();
     const row = await db[q.table].create({ data });
     created.push(row);
   }
   if (q.select) {
     const ids = created.map((r) => r.id);
-    const q2 = { ...q, select: q.select, filters: [{ column: 'id', op: 'in', value: ids }], single: false, maybeSingle: false };
+    const q2 = { ...q, select: q.select, filters: [{ column: 'id', op: 'in', value: ids }], single: q.single, maybeSingle: q.maybeSingle };
     return selectRows(q2, modelCols);
   }
   return ok(created);
 }
 
-async function updateRows(q, modelCols) {
+function destructiveFilterError(q, modelCols) {
+  const filters = q.filters || [];
+  const problems = [];
+  for (const f of filters) {
+    if (!f || typeof f !== 'object') {
+      problems.push('filtre invalide');
+      continue;
+    }
+    if (!modelCols.includes(f.column)) problems.push(`colonne inconnue "${f.column}"`);
+    if (f.value === undefined) problems.push(`valeur undefined sur "${f.column}"`);
+    else if (Array.isArray(f.value) && f.value.some((v) => v === undefined)) problems.push(`valeur undefined sur "${f.column}"`);
+  }
+  if (!filters.length && !((q.orders || []).length && q.limit)) {
+    problems.push('aucun filtre : operation refusee');
+  }
+  return problems.length ? problems.join(' | ') : null;
+}
+
+async function updateRows(q, modelCols, modelTypes) {
   const db = getDb();
   const where = buildPrismaWhere(q.filters, [], modelCols);
   const before = await db[q.table].findMany({ where, select: { id: true } });
-  const data = pick(q.body, modelCols);
+  const data = pick(q.body, modelCols, modelTypes);
   if (before.length) {
     await db[q.table].updateMany({ where: { id: { in: before.map((r) => r.id) } }, data });
   }
@@ -256,13 +309,13 @@ async function deleteRows(q, modelCols) {
   return ok([]);
 }
 
-async function upsertRows(q, modelCols) {
+async function upsertRows(q, modelCols, modelTypes) {
   const db = getDb();
   const body = Array.isArray(q.body) ? q.body : [q.body];
   const conflicts = (q.conflictColumns || ['id']).map((s) => s.trim());
   const created = [];
   for (const item of body) {
-    const fields = pick(item, modelCols);
+    const fields = pick(item, modelCols, modelTypes);
     const where = {};
     let found = null;
     if (conflicts.length === 1 && conflicts[0] === 'id') {
@@ -280,23 +333,27 @@ async function upsertRows(q, modelCols) {
     }
   }
   if (q.select) {
-    const q2 = { ...q, filters: [{ column: 'id', op: 'in', value: created.map((r) => r.id) }], single: false, maybeSingle: false };
+    const q2 = { ...q, filters: [{ column: 'id', op: 'in', value: created.map((r) => r.id) }], single: q.single, maybeSingle: q.maybeSingle };
     return selectRows(q2, modelCols);
   }
   return ok(created);
 }
 
-function pick(obj, cols) {
+function pick(obj, cols, types) {
   if (!obj || typeof obj !== 'object') return {};
   const out = {};
   for (const k of Object.keys(obj)) {
-    if (cols.includes(k) && obj[k] !== undefined) {
-      let v = obj[k];
-      if (Array.isArray(v) || (typeof v === 'object' && v !== null && typeof v.toISOString !== 'function')) {
-        v = JSON.stringify(v);
-      }
-      out[k] = v;
+    const col = (types && types[k]) || null;
+    let v = obj[k];
+    if (v === undefined) continue;
+    if (!cols.includes(k)) continue;
+    if (v === null && col && col.isRequired && col.hasDefault) continue;
+    if (Array.isArray(v) || (typeof v === 'object' && v !== null && typeof v.toISOString !== 'function')) {
+      v = JSON.stringify(v);
+    } else if (col && col.type === 'DateTime' && isDate(v)) {
+      v = new Date(v);
     }
+    out[k] = v;
   }
   return out;
 }
@@ -314,12 +371,17 @@ export async function runQuery(q) {
   const db = getDb();
   if (!db[q.table]) return err(`Relation "${q.table}" does not exist`, 404, 'PGRST205');
   const modelCols = scalarColumns(q.table) || [];
+  const modelTypes = scalarTypes(q.table) || {};
   const method = q.method || 'select';
+  if (method === 'update' || method === 'delete') {
+    const filterProblem = destructiveFilterError(q, modelCols);
+    if (filterProblem) return err(`Filtre invalide : ${filterProblem}`, 400, 'INVALID_FILTER');
+  }
   switch (method) {
-    case 'insert': return insertRows(q, modelCols);
-    case 'update': return updateRows(q, modelCols);
+    case 'insert': return insertRows(q, modelCols, modelTypes);
+    case 'update': return updateRows(q, modelCols, modelTypes);
     case 'delete': return deleteRows(q, modelCols);
-    case 'upsert': return upsertRows(q, modelCols);
+    case 'upsert': return upsertRows(q, modelCols, modelTypes);
     default: return selectRows(q, modelCols);
   }
 }

@@ -6,6 +6,19 @@ const supabaseKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+const TICKET_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const genShortCode = (used) => {
+    let code;
+    do {
+        code = Array.from(
+            { length: 4 },
+            () => TICKET_CODE_ALPHABET[Math.floor(Math.random() * TICKET_CODE_ALPHABET.length)]
+        ).join('');
+    } while (used && used.has(code));
+    if (used) used.add(code);
+    return code;
+};
+
 const generateEmailFromName = (fullName) => {
     const cleanName = fullName
         .toLowerCase()
@@ -223,10 +236,11 @@ exports.handler = async (event) => {
         const now = new Date().toISOString();
         const baseTimestamp = Date.now();
 
+        const usedCodes = new Set();
         for (let i = 0; i < ticketCount; i++) {
             const ticketId = crypto.randomUUID ? crypto.randomUUID() : `00000000-0000-0000-0000-${Math.random().toString(36).substring(2, 10)}`;
-            const qrCode = `${String(Math.floor(10000 + Math.random() * 90000))}${'ABCDEFGHJKLMNPQRSTUVWXYZ'[Math.floor(Math.random() * 24)]}`;
-            const shortCode = qrCode;
+            const shortCode = genShortCode(usedCodes);
+            const qrCode = shortCode;
             
             tickets.push({
                 id: ticketId,
@@ -298,47 +312,23 @@ exports.handler = async (event) => {
 
         if (eventData) {
             const organizerId = eventData.organizer_id;
-            const amountCoins = Math.floor(originalAmount / 10);
-            const platformCommission = Math.floor(amountCoins * 0.05);
+            const amountCoins = totalAmountCoins;
+            const earnedFcfa = totalAmountFcfa;
             const transactionUuid = crypto.randomUUID ? crypto.randomUUID() : `00000000-0000-0000-0000-${Math.random().toString(36).substring(2, 10)}`;
 
-            await supabase
-                .from('organizer_earnings')
-                .insert({
-                    organizer_id: organizerId,
-                    event_id: eventId,
-                    transaction_id: transactionUuid,
-                    transaction_type: 'ticket_sale',
-                    earnings_coins: amountCoins,
-                    earnings_fcfa: originalAmount,
-                    status: 'pending',
-                    platform_commission: platformCommission,
-                    platform_fee: platformCommission * 10,
-                    net_amount: (amountCoins - platformCommission) * 10,
-                    ticket_count: ticketCount || 1,
-                    earning_type: 'ticket_sale',
-                    event_type: 'ticketing',
-                    description: `💰 Vente de ${ticketCount} tickets via MoneyFusion - ${attendeeName} (${phoneNumber || 'pas de téléphone'})`,
-                    created_at: now
-                });
-
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('total_earnings, available_earnings')
-                .eq('id', organizerId)
-                .single();
-
-            if (profile) {
-                await supabase
-                    .from('profiles')
-                    .update({
-                        total_earnings: (profile.total_earnings || 0) + amountCoins,
-                        available_earnings: (profile.available_earnings || 0) + amountCoins,
-                        updated_at: now
-                    })
-                    .eq('id', organizerId);
-                console.log(`✅ Profil organisateur mis à jour: +${amountCoins} coins`);
-            }
+            const { error: earningError } = await supabase.rpc('credit_organizer_earnings', {
+                p_organizer_id: organizerId,
+                p_event_id: eventId,
+                p_transaction_id: transactionUuid,
+                p_transaction_type: 'ticket_sale',
+                p_earnings_coins: amountCoins,
+                p_earnings_fcfa: earnedFcfa,
+                p_ticket_count: ticketCount || 1,
+                p_description: `Vente de ${ticketCount} tickets via MoneyFusion - ${attendeeName} (${phoneNumber || 'pas de téléphone'})`,
+                p_created_at: now
+            });
+            if (earningError) throw new Error(earningError.message);
+            console.log(`✅ Gains organisateur enregistrés: +${amountCoins} coins (en attente)`);
         }
 
         console.log(`🎉 Traitement terminé pour ${orderId}`);

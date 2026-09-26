@@ -120,6 +120,7 @@ const WithdrawalModal = ({
         setLoading(true);
         try {
             const { data, error } = await supabase.rpc('request_organizer_withdrawal', {
+                p_organizer_id: userId,
                 p_amount_pi: requestedAmountPI,
                 p_payment_details: { 
                     method, 

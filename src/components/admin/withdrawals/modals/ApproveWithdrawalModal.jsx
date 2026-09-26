@@ -57,6 +57,7 @@ const ApproveWithdrawalModal = ({ isOpen, onClose, event, metrics, adminId, onCo
         .insert({
           event_id: event.id,
           event_type: 'withdrawal',
+          validation_step: 'withdrawal',
           status: 'VALIDE',
           admin_notes: notes,
           validated_by: adminId,

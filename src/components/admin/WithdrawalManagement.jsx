@@ -139,6 +139,7 @@ const WithdrawalManagement = () => {
         p_request_id: requestId,
         p_status: status,
         p_notes: reason,
+        p_admin_id: user?.id || null,
       });
 
       if (error) throw error;
