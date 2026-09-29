@@ -264,8 +264,12 @@ retrait, un paiement pieces.
 - `/.netlify/functions/*` n'est servi que par le processus Node : ne pas derouter
   ces URL vers Apache/Nginx.
 - Non fonctionne en prod tant que ce n'est pas corrige : paiement par carte
-  MoneyFusion (`process_moneyfusion_success`), coupons, codes promo. Ces RPC
-  repondent `NOT_IMPLEMENTED`.
+  MoneyFusion (`process_moneyfusion_success`), verification partenaire
+  (`submit_partner_verification`), stats salaires étendues
+  (`get_admin_salary_stats_full`). Ces RPC repondent `NOT_IMPLEMENTED`.
+- Coupons, codes promo et commission influenceur : implémentés côte serveur
+  (`credit_coupon_earnings`, `add_commission_to_user`, `process_promo_usage`),
+  sur le schéma MySQL réel (coupons.code est la clé, pas un `id`).
 - Les boutons USSD (stand, tombola, evenement protege) et le tirage de tombola
   (`conduct_raffle_draw`) côte serveur sont implementés.
 - `DATABASE_URL` dans le `.env` ne doit jamais etre committe ni partage.
