@@ -12,6 +12,7 @@ import {
   Zap,
   AlertTriangle,
   Play,
+  Trophy,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +33,7 @@ import { dbService } from "@/services/dbService";
 import { toast } from "@/components/ui/use-toast";
 
 import WalletInfoModal from "@/components/WalletInfoModal";
+import USSDPaymentModal, { openBonplaninfosRelance } from "@/components/payment/USSDPaymentModal";
 import { CoinService } from "@/services/CoinService";
 import WelcomePopup from "@/components/WelcomePopup";
 import AnimatedBadgesBanner from "@/components/AnimatedBadgesBanner";
@@ -69,6 +71,11 @@ const HomePage = () => {
     costFcfa: 0,
     onConfirm: null,
   });
+  const [unlockPaymentMethod, setUnlockPaymentMethod] = useState("coins");
+  const [showUSSDModal, setShowUSSDModal] = useState(false);
+  const [ussdAmount, setUssdAmount] = useState(0);
+  const [ussdTarget, setUssdTarget] = useState(null);
+  const [ussdSuccess, setUssdSuccess] = useState(false);
 
   // --- Vidéo active ---
   const [activeVideo, setActiveVideo] = useState(null);
@@ -177,6 +184,16 @@ const HomePage = () => {
       navigate("/auth");
       return;
     }
+    if (unlockPaymentMethod === "ussd") {
+      const pricePi = Number(event.price_pi || 2);
+      const amountFcfa = Number(event.price_fcfa || 0) || pricePi * 10;
+      setUssdSuccess(false);
+      setUssdTarget({ event, txnId: `ussd_access_${Date.now()}_${Math.random().toString(36).substring(2, 9)}` });
+      setUssdAmount(amountFcfa);
+      setConfirmation((c) => ({ ...c, isOpen: false }));
+      setShowUSSDModal(true);
+      return;
+    }
     const cost = 2;
     await CoinService.handleAction({
       userId: user.id,
@@ -210,6 +227,44 @@ const HomePage = () => {
       },
       onInsufficientBalance: () => setShowWalletInfoModal(true),
     });
+  };
+
+const confirmProtectedUSSD = async (proofDataUrl, phoneInput) => {
+    const target = ussdTarget;
+    if (!target) throw new Error("Données de paiement manquantes.");
+    try {
+      const response = await fetch("/.netlify/functions/ussd-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          action: "submit",
+          type: "protected",
+          transactionId: target.txnId,
+          userId: user?.id,
+          eventId: target.event.id,
+          amountFcfa: ussdAmount,
+          phone: phoneInput || userProfile?.phone || "",
+          proofDataUrl: proofDataUrl || null,
+        }),
+      });
+      const text = await response.text();
+      let result;
+      try { result = JSON.parse(text); } catch { throw new Error("La réponse du serveur n'est pas un JSON valide"); }
+      if (!response.ok || !result.success) throw new Error(result.message || `Erreur HTTP ${response.status}`);
+      toast({
+        title: t("common.success_title"),
+        description: result.message || "Votre accès sera ouvert après validation du dépôt.",
+      });
+      setUssdSuccess(true);
+      return true;
+    } catch (error) {
+      toast({
+        title: t("common.error_title"),
+        description: error.message || "Impossible d'enregistrer le paiement.",
+        variant: "destructive",
+      });
+      throw error;
+    }
   };
 
   const handleEventClick = async (event) => {
@@ -414,17 +469,55 @@ const HomePage = () => {
                   <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
                   <span>{t("events_page.unlock_modal.info")}</span>
                 </div>
+                <div className="flex gap-2 mt-4 w-full max-w-xs">
+                  <Button
+                    variant={unlockPaymentMethod === "coins" ? "default" : "outline"}
+                    onClick={() => setUnlockPaymentMethod("coins")}
+                    className="flex-1"
+                    size="sm"
+                  >
+                    <Coins className="w-4 h-4 mr-1" /> Pièces
+                  </Button>
+                  <Button
+                    variant={unlockPaymentMethod === "ussd" ? "default" : "outline"}
+                    onClick={() => setUnlockPaymentMethod("ussd")}
+                    className="flex-1"
+                    size="sm"
+                  >
+                    <Trophy className="w-4 h-4 mr-1" /> USSD
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  {unlockPaymentMethod === "ussd"
+                    ? `${(confirmation.cost * (adminConfig?.coin_to_fcfa_rate || 10)).toLocaleString("fr-FR")} FCFA à payer par mobile money. Votre accès sera ouvert après validation.`
+                    : `${confirmation.cost} pièces (≈ ${confirmation.costFcfa?.toLocaleString("fr-FR")} FCFA) seront retirées de votre solde.`}
+                </p>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={confirmation.onConfirm}>
-              {t("common.confirm")}
+              {unlockPaymentMethod === "ussd" ? "Payer par Mobile Money" : t("common.confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <USSDPaymentModal
+        open={showUSSDModal}
+        onClose={() => {
+          setShowUSSDModal(false);
+          if (ussdSuccess) setUssdSuccess(false);
+          else openBonplaninfosRelance(ussdAmount);
+        }}
+        amountFcfa={ussdAmount}
+        title="Paiement Mobile Money — Accès événement"
+        subtitle="Payez par USSD puis confirmez avec la capture d'écran du dépôt. Votre accès sera ouvert après validation."
+        submitLabel="J'ai payé l'accès"
+        requirePhone={true}
+        onConfirm={confirmProtectedUSSD}
+      />
 
       {activeVideo && (
         <VideoPlayerModal

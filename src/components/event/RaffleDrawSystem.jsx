@@ -1220,16 +1220,6 @@ const RaffleDrawSystem = ({ raffleData, eventData, isOrganizer, onDrawComplete, 
             // Générer un ID unique pour cette diffusion
             const broadcastId = `draw-${raffleData.id}-${Date.now()}`;
             
-            // Créer une entrée dans raffle_draw_status (table à créer)
-            await supabase
-                .from('raffle_draw_status')
-                .upsert({
-                    raffle_event_id: raffleData.id,
-                    is_active: true,
-                    started_at: new Date().toISOString(),
-                    broadcast_id: broadcastId
-                });
-
             // Diffuser le début du tirage à tous les participants via Realtime
             const channel = supabase.channel(`raffle-draw-${raffleData.id}`);
             await channel.send({
@@ -1262,12 +1252,6 @@ const RaffleDrawSystem = ({ raffleData, eventData, isOrganizer, onDrawComplete, 
                     }
                 });
 
-                // Mettre à jour le statut
-                await supabase
-                    .from('raffle_draw_status')
-                    .update({ is_active: false })
-                    .eq('raffle_event_id', raffleData.id);
-
                 toast({
                     title: "🎉 Tirage terminé !",
                     description: "Les résultats sont maintenant disponibles pour tous.",
@@ -1288,12 +1272,6 @@ const RaffleDrawSystem = ({ raffleData, eventData, isOrganizer, onDrawComplete, 
                 description: error.message || "Impossible de lancer le tirage",
                 variant: "destructive"
             });
-            
-            // Nettoyer le statut en cas d'erreur
-            await supabase
-                .from('raffle_draw_status')
-                .update({ is_active: false })
-                .eq('raffle_event_id', raffleData.id);
         } finally {
             setIsLaunching(false);
             setShowFinalConfirmDialog(false);

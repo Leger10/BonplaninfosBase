@@ -2539,6 +2539,159 @@ const HANDLERS = {
       })),
     );
   },
+
+  async conduct_raffle_draw(args, actor) {
+    const { p_raffle_event_id } = args || {};
+    if (!p_raffle_event_id) return fail('Identifiant de tombola requis', 'RAFFLE_ID_MISSING');
+    if (!actor || actor.source === 'internal') return fail('Authentification requise', 'FORBIDDEN');
+    const dbc = db();
+    const raffle = await dbc.raffle_events.findUnique({ where: { id: p_raffle_event_id } });
+    if (!raffle) return fail('Tombola introuvable', 'RAFFLE_NOT_FOUND');
+    // Seul l'organisateur (ou l'administration) peut lancer le tirage.
+    if (actor.source === 'user' && !ADMIN_ROLES.includes(actor.user_type)) {
+      if (raffle.organizer_id !== actor.id) return fail("Vous n'êtes pas l'organisateur de cette tombola", 'FORBIDDEN');
+    }
+    if (raffle.is_draw_conducted) {
+      return ok({ success: true, message: 'Le tirage a déjà été effectué.', already_drawn: true });
+    }
+    const tickets = await dbc.raffle_tickets.findMany({
+      where: { raffle_event_id: p_raffle_event_id },
+      orderBy: { id: 'asc' },
+    });
+    if (!tickets.length) return fail('Aucun ticket vendu, impossible de tirer au sort', 'RAFFLE_NO_TICKETS');
+    const minRequired = Number(raffle.min_tickets_required || 0);
+    if (minRequired > 0 && tickets.length < minRequired) {
+      return fail(`Tickets insuffisants (minimum requis: ${minRequired}, vendus: ${tickets.length})`, 'RAFFLE_MIN_NOT_MET');
+    }
+    let prizeList = await dbc.raffle_prizes.findMany({
+      where: { raffle_event_id: p_raffle_event_id },
+      orderBy: { rank: 'asc' },
+    });
+    if (!prizeList.length && raffle.event_id) {
+      prizeList = await dbc.raffle_prizes.findMany({
+        where: { event_id: raffle.event_id },
+        orderBy: { rank: 'asc' },
+      });
+    }
+    if (!prizeList.length) {
+      prizeList = [{ rank: 1, description: 'Gagnant du tirage', value_fcfa: null }];
+    }
+    // Tirage sans remise : un ticket par lot, et si possible un gagnant différent par lot.
+    const pool = [...tickets];
+    const usedUserIds = new Set();
+    const winners = [];
+    for (const prize of prizeList) {
+      if (!pool.length) break;
+      let pickIdx = -1;
+      for (let i = 0; i < pool.length; i++) {
+        if (!usedUserIds.has(pool[i].user_id)) { pickIdx = i; break; }
+      }
+      if (pickIdx === -1) pickIdx = Math.floor(Math.random() * pool.length);
+      const ticket = pool.splice(pickIdx, 1)[0];
+      usedUserIds.add(ticket.user_id);
+      winners.push({ rank: Number(prize.rank || 1), prize, ticket });
+    }
+    const now = new Date();
+    await dbc.$transaction(async (tx) => {
+      for (const w of winners) {
+        await tx.raffle_tickets.update({
+          where: { id: w.ticket.id },
+          data: { rank: w.rank, updated_at: now },
+        });
+        await tx.raffle_winners.create({
+          data: {
+            id: uuidv4(),
+            raffle_event_id: p_raffle_event_id,
+            user_id: w.ticket.user_id,
+            ticket_number: String(w.ticket.ticket_number),
+            prize_description: w.prize.description || null,
+            prize_value_fcfa: w.prize.value_fcfa ?? null,
+            prize_value_pi: w.prize.value_fcfa != null ? Math.round(Number(w.prize.value_fcfa) / 10) : null,
+            rank: w.rank,
+            delivery_status: 'pending',
+            created_at: now,
+          },
+        });
+      }
+      await tx.raffle_events.update({
+        where: { id: p_raffle_event_id },
+        data: {
+          is_drawn: true,
+          is_draw_conducted: true,
+          draw_conducted_at: now,
+          winning_ticket_number: String(winners[0]?.ticket.ticket_number ?? ''),
+          winner_user_id: winners[0]?.ticket.user_id ?? null,
+          winner_announced_at: now,
+        },
+      });
+      await tx.raffle_draw_history.create({
+        data: {
+          id: uuidv4(),
+          raffle_event_id: p_raffle_event_id,
+          draw_type: 'live',
+          participants_count: tickets.length,
+          tickets_sold: tickets.length,
+          winner_user_id: winners[0]?.ticket.user_id ?? null,
+          winning_ticket_number: winners[0] ? String(winners[0].ticket.ticket_number) : null,
+          draw_date: now,
+          created_at: now,
+        },
+      });
+      const session = await tx.raffle_draw_sessions.create({
+        data: {
+          id: uuidv4(),
+          raffle_event_id: p_raffle_event_id,
+          displayed_number: winners[0]?.ticket.ticket_number ?? null,
+          started_at: now,
+          started_by: actor.id,
+          status: 'completed',
+          step: 'done',
+        },
+      });
+      const existingStatus = await tx.raffle_draw_status.findFirst({
+        where: { raffle_event_id: p_raffle_event_id },
+      });
+      if (existingStatus) {
+        await tx.raffle_draw_status.update({
+          where: { id: existingStatus.id },
+          data: {
+            draw_session_id: session.id,
+            status: 'completed',
+            displayed_number: winners[0]?.ticket.ticket_number ?? null,
+            broadcast_at: now,
+            is_active: false,
+            updated_at: now,
+          },
+        });
+      } else {
+        await tx.raffle_draw_status.create({
+          data: {
+            id: uuidv4(),
+            raffle_event_id: p_raffle_event_id,
+            draw_session_id: session.id,
+            status: 'completed',
+            round_number: 1,
+            displayed_number: winners[0]?.ticket.ticket_number ?? null,
+            broadcast_at: now,
+            is_active: false,
+            started_at: now,
+            created_at: now,
+            updated_at: now,
+          },
+        });
+      }
+    });
+    return ok({
+      success: true,
+      message: 'Tirage terminé',
+      winners: winners.map((w) => ({
+        rank: w.rank,
+        ticket_number: w.ticket.ticket_number,
+        user_id: w.ticket.user_id,
+        prize: w.prize.description || null,
+      })),
+    });
+  },
 };
 
 // RPC qui ne peuvent pas être portés fidèlement sans son schéma : réponse
@@ -2548,7 +2701,6 @@ const NOT_IMPLEMENTED = {
   credit_coupon_earnings: 'coupons',
   add_commission_to_user: 'commissions',
   process_promo_usage: 'promos',
-  conduct_raffle_draw: 'raffles',
   submit_partner_verification: 'partenaires',
   get_admin_salary_stats_full: 'salaires',
 };

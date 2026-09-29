@@ -660,7 +660,7 @@ const handleSubmit = async (body) => {
         }
         const unitCoins = Number(raffle.calculated_price_pi || 0);
         const raffleTotalCoins = unitCoins * qty;
-        const expectedFcfa = unitCoins * 10;
+        const expectedFcfa = raffleTotalCoins * 10;
         if (expectedFcfa > 0 && total < expectedFcfa) {
             return {
                 statusCode: 400,

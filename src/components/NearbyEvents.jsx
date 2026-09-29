@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { MapPin, Loader2, ServerCrash, Users, Coins, Info, Sparkles, TrendingUp, Star } from 'lucide-react';
+import { MapPin, Loader2, ServerCrash, Users, Coins, Info, Sparkles, TrendingUp, Star, Trophy } from 'lucide-react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useData } from '@/contexts/DataContext';
@@ -8,11 +8,13 @@ import { locationService } from '@/services/locationService';
 import { useToast } from '@/components/ui/use-toast';
 import EventCard from './EventCard';
 import { useNavigate } from 'react-router-dom';
+import USSDPaymentModal, { openBonplaninfosRelance } from '@/components/payment/USSDPaymentModal';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import WalletInfoModal from '@/components/WalletInfoModal';
+import { Button } from '@/components/ui/button';
 
 // Simple retry helper
 const fetchWithRetry = async (fn, retries = 3, delay = 1000) => {
@@ -39,6 +41,11 @@ const NearbyEvents = () => {
   const [confirmation, setConfirmation] = useState({ isOpen: false, event: null, cost: 0, costFcfa: 0, onConfirm: null });
   const [showWalletInfoModal, setShowWalletInfoModal] = useState(false);
   const [headerMessage, setHeaderMessage] = useState('');
+  const [unlockPaymentMethod, setUnlockPaymentMethod] = useState('coins');
+  const [showUSSDModal, setShowUSSDModal] = useState(false);
+  const [ussdAmount, setUssdAmount] = useState(0);
+  const [ussdTarget, setUssdTarget] = useState(null);
+  const [ussdSuccess, setUssdSuccess] = useState(false);
 
   // Liste des messages variés pour le header
   const headerMessages = useMemo(() => [
@@ -213,6 +220,16 @@ const NearbyEvents = () => {
 
   const executeUnlock = async (event) => {
     try {
+      if (unlockPaymentMethod === 'ussd') {
+        const pricePi = Number(event.price_pi || 2);
+        const amountFcfa = Number(event.price_fcfa || 0) || pricePi * 10;
+        setUssdSuccess(false);
+        setUssdTarget({ event, txnId: `ussd_access_${Date.now()}_${Math.random().toString(36).substring(2, 9)}` });
+        setUssdAmount(amountFcfa);
+        setConfirmation({ isOpen: false, event: null, cost: 0, costFcfa: 0, onConfirm: null });
+        setShowUSSDModal(true);
+        return;
+      }
       const { data: rpcData, error: rpcError } = await supabase.rpc('access_protected_event', { 
         p_event_id: event.id, 
         p_user_id: user.id 
@@ -247,6 +264,44 @@ const NearbyEvents = () => {
           duration: 5000
         });
       }
+    }
+  };
+
+  const confirmProtectedUSSD = async (proofDataUrl, phoneInput) => {
+    const target = ussdTarget;
+    if (!target) throw new Error("Données de paiement manquantes.");
+    try {
+      const response = await fetch("/.netlify/functions/ussd-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          action: "submit",
+          type: "protected",
+          transactionId: target.txnId,
+          userId: user?.id,
+          eventId: target.event.id,
+          amountFcfa: ussdAmount,
+          phone: phoneInput || userProfile?.phone || "",
+          proofDataUrl: proofDataUrl || null,
+        }),
+      });
+      const text = await response.text();
+      let result;
+      try { result = JSON.parse(text); } catch { throw new Error("La réponse du serveur n'est pas un JSON valide"); }
+      if (!response.ok || !result.success) throw new Error(result.message || `Erreur HTTP ${response.status}`);
+      toast({
+        title: "Paiement enregistré !",
+        description: result.message || "Votre accès sera ouvert après validation du dépôt.",
+      });
+      setUssdSuccess(true);
+      return true;
+    } catch (error) {
+      toast({
+        title: "Erreur de paiement",
+        description: error.message || "Impossible d'enregistrer le paiement.",
+        variant: "destructive",
+      });
+      throw error;
     }
   };
 
@@ -430,17 +485,55 @@ const NearbyEvents = () => {
                     </div>
                   </div>
                 </div>
+                <div className="flex gap-2 mt-4 w-full max-w-xs">
+                  <Button
+                    variant={unlockPaymentMethod === 'coins' ? 'default' : 'outline'}
+                    onClick={() => setUnlockPaymentMethod('coins')}
+                    className="flex-1"
+                    size="sm"
+                  >
+                    <Coins className="w-4 h-4 mr-1" /> Pièces
+                  </Button>
+                  <Button
+                    variant={unlockPaymentMethod === 'ussd' ? 'default' : 'outline'}
+                    onClick={() => setUnlockPaymentMethod('ussd')}
+                    className="flex-1"
+                    size="sm"
+                  >
+                    <Trophy className="w-4 h-4 mr-1" /> USSD
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  {unlockPaymentMethod === 'ussd'
+                    ? `${(confirmation.cost * (adminConfig?.coin_to_fcfa_rate || 10)).toLocaleString('fr-FR')} FCFA à payer par mobile money. Votre accès sera ouvert après validation.`
+                    : `${confirmation.cost} pièces (≈ ${confirmation.costFcfa?.toLocaleString('fr-FR')} FCFA) seront retirées de votre solde.`}
+                </p>
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="mt-2 sm:mt-0">Annuler</AlertDialogCancel>
             <AlertDialogAction onClick={confirmation.onConfirm} className="bg-primary hover:bg-primary/90">
-              Confirmer et Payer {confirmation.cost} pièces
+              {unlockPaymentMethod === 'ussd' ? 'Payer par Mobile Money' : `Confirmer et Payer ${confirmation.cost} pièces`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <USSDPaymentModal
+        open={showUSSDModal}
+        onClose={() => {
+          setShowUSSDModal(false);
+          if (ussdSuccess) setUssdSuccess(false);
+          else openBonplaninfosRelance(ussdAmount);
+        }}
+        amountFcfa={ussdAmount}
+        title="Paiement Mobile Money — Accès événement"
+        subtitle="Payez par USSD puis confirmez avec la capture d'écran du dépôt. Votre accès sera ouvert après validation."
+        submitLabel="J'ai payé l'accès"
+        requirePhone={true}
+        onConfirm={confirmProtectedUSSD}
+      />
     </motion.section>
   );
 };

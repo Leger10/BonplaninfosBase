@@ -79,9 +79,11 @@ import {
   Compass,
   User,
   Calendar,
+  Trophy,
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
 import { useNavigate } from "react-router-dom";
+import USSDPaymentModal, { openBonplaninfosRelance } from "@/components/payment/USSDPaymentModal";
 import { Progress } from "@/components/ui/progress";
 import { motion } from "framer-motion";
 import jsPDF from "jspdf";
@@ -292,6 +294,11 @@ const StandRentalInterface = ({ event, isUnlocked, onRefresh, isClosed }) => {
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [qrCodeUrl, setQrCodeUrl] = useState(null);
   const [selectedRentalType, setSelectedRentalType] = useState("stand");
+  const [standPaymentMethod, setStandPaymentMethod] = useState("coins");
+  const [showUSSDModal, setShowUSSDModal] = useState(false);
+  const [ussdAmount, setUssdAmount] = useState(0);
+  const [ussdStandData, setUssdStandData] = useState(null);
+  const [ussdSuccess, setUssdSuccess] = useState(false);
   
   const [statistics, setStatistics] = useState({
     totalStands: 0,
@@ -1069,6 +1076,100 @@ const exportToExcel = () => {
 
   const handleBuyCoins = () => navigate("/packs");
 
+  const getStandCartPayload = () => {
+    const counts = {};
+    cartStands.forEach((s) => {
+      counts[s.id] = (counts[s.id] || 0) + 1;
+    });
+    return Object.entries(counts).map(([standTypeId, qty]) => ({
+      standTypeId,
+      quantity: qty,
+    }));
+  };
+
+  const openStandUSSD = () => {
+    if (isClosed || !user) {
+      if (!user) {
+        toast({
+          title: "Connexion requise",
+          description: "Veuillez vous connecter pour réserver.",
+          variant: "destructive",
+        });
+      }
+      return;
+    }
+    if (cartStands.length === 0) {
+      toast({ title: "Panier vide", description: "Ajoutez des stands à votre panier.", variant: "destructive" });
+      return;
+    }
+    const rentalType = cartStands[0]?.rental_type || "stand";
+    if (rentalType === "stand" && !formData.companyName) {
+      toast({ title: "Champ requis", description: "Veuillez saisir le nom de votre entreprise.", variant: "destructive" });
+      return;
+    }
+    setUssdSuccess(false);
+    setUssdStandData({
+      txnId: `ussd_stand_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      rentalType,
+    });
+    setUssdAmount(getCartTotal() * COIN_RATE);
+    setIsCartOpen(false);
+    setShowUSSDModal(true);
+  };
+
+  const confirmStandUSSD = async (proofDataUrl, phoneInput) => {
+    const data = ussdStandData;
+    if (!data) throw new Error("Données de paiement manquantes.");
+    try {
+      const response = await fetch("/.netlify/functions/ussd-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          action: "submit",
+          type: "stand_rental",
+          transactionId: data.txnId,
+          userId: user?.id,
+          eventId: event?.id,
+          standCart: getStandCartPayload(),
+          amountFcfa: getCartTotal() * COIN_RATE,
+          phone: phoneInput || formData.phone || "",
+          proofDataUrl: proofDataUrl || null,
+          companyName: formData.companyName,
+          contactPerson: formData.contactPerson,
+          contactEmail: formData.email,
+          businessDescription: formData.description,
+          rentalType: data.rentalType,
+          guestName: formData.guestName,
+          checkIn: formData.checkIn,
+          checkOut: formData.checkOut,
+          tentSize: formData.tentSize,
+          specialRequests: formData.specialRequests,
+        }),
+      });
+      const text = await response.text();
+      let result;
+      try { result = JSON.parse(text); } catch { throw new Error("La réponse du serveur n'est pas un JSON valide"); }
+      if (!response.ok || !result.success) throw new Error(result.message || `Erreur HTTP ${response.status}`);
+      toast({
+        title: "🎉 Paiement enregistré !",
+        description: result.message || "Votre réservation sera confirmée après validation du dépôt.",
+      });
+      clearCart();
+      setUssdSuccess(true);
+      await fetchStandData();
+      if (onRefresh) onRefresh();
+      return true;
+    } catch (error) {
+      toast({ title: "Erreur de paiement", description: error.message || "Impossible d'enregistrer le paiement.", variant: "destructive" });
+      throw error;
+    }
+  };
+
+  const handleStandCheckout = () => {
+    if (standPaymentMethod === "ussd") { openStandUSSD(); return; }
+    handleRentMultipleStands();
+  };
+
   // ==================== RENDU DU FORMULAIRE ADAPTÉ ====================
   const renderFormFields = () => {
     const rentalType = cartStands[0]?.rental_type || "stand";
@@ -1499,8 +1600,32 @@ const exportToExcel = () => {
                     
                     {renderFormFields()}
                     
+                    <div className="flex gap-2">
+                      <Button
+                        variant={standPaymentMethod === "coins" ? "default" : "outline"}
+                        onClick={() => setStandPaymentMethod("coins")}
+                        className="flex-1"
+                        size="sm"
+                      >
+                        <Coins className="w-4 h-4 mr-1" /> Pièces
+                      </Button>
+                      <Button
+                        variant={standPaymentMethod === "ussd" ? "default" : "outline"}
+                        onClick={() => setStandPaymentMethod("ussd")}
+                        className="flex-1"
+                        size="sm"
+                      >
+                        <Trophy className="w-4 h-4 mr-1" /> Mobile Money
+                      </Button>
+                    </div>
+                    {standPaymentMethod === "ussd" && (
+                      <p className="text-xs text-gray-400 text-center">
+                        {(getCartTotal() * COIN_RATE).toLocaleString()} FCFA à payer par mobile money. Votre réservation sera confirmée après validation du dépôt.
+                      </p>
+                    )}
+
                     <Button
-                      onClick={handleRentMultipleStands}
+                      onClick={handleStandCheckout}
                       disabled={
                         isRenting ||
                         cartStands.length === 0 ||
@@ -1511,7 +1636,9 @@ const exportToExcel = () => {
                       className="w-full bg-primary h-12"
                     >
                       {isRenting ? (
-                        <Loader2 className="animate-spin mr-2" />
+                        <Loader2 className="animate-spin" />
+                      ) : standPaymentMethod === "ussd" ? (
+                        `Payer ${(getCartTotal() * COIN_RATE).toLocaleString()} FCFA`
                       ) : (
                         `Payer ${getCartTotal()} π et confirmer`
                       )}
@@ -2431,6 +2558,22 @@ const exportToExcel = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <USSDPaymentModal
+        open={showUSSDModal}
+        onClose={() => {
+          setShowUSSDModal(false);
+          if (ussdSuccess) setUssdSuccess(false);
+          else openBonplaninfosRelance(ussdAmount);
+        }}
+        amountFcfa={ussdAmount}
+        title="Paiement Mobile Money — Réservation"
+        subtitle="Payez par USSD puis confirmez avec la capture d'écran du dépôt. Votre réservation sera confirmée après validation."
+        submitLabel="J'ai payé ma réservation"
+        requirePhone={true}
+        initialPhone={formData.phone}
+        onConfirm={confirmStandUSSD}
+      />
     </div>
   );
 };

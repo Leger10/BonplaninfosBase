@@ -8,10 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { Ticket, Coins, Wallet, ChevronUp, ChevronDown, Loader2, AlertTriangle } from "lucide-react";
+import { Ticket, Coins, Wallet, ChevronUp, ChevronDown, Loader2, AlertTriangle, Trophy } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
+import USSDPaymentModal, { openBonplaninfosRelance } from "@/components/payment/USSDPaymentModal";
 
 const RaffleInterface = ({
   raffleData,
@@ -30,6 +31,11 @@ const RaffleInterface = ({
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [userTickets, setUserTickets] = useState([]);
   const [loadingUserTickets, setLoadingUserTickets] = useState(false);
+  const [rafflePaymentMethod, setRafflePaymentMethod] = useState("coins");
+  const [showUSSDModal, setShowUSSDModal] = useState(false);
+  const [ussdAmount, setUssdAmount] = useState(0);
+  const [ussdRaffleData, setUssdRaffleData] = useState(null);
+  const [ussdSuccess, setUssdSuccess] = useState(false);
 
   if (!raffleData) {
     return (
@@ -148,6 +154,63 @@ const RaffleInterface = ({
     } finally {
       setIsPurchasing(false);
     }
+  };
+
+  const totalCostFcfa = totalCostPi * 10;
+
+  const openRaffleUSSD = () => {
+    if (!user) {
+      toast({ title: "Connexion requise", description: "Veuillez vous connecter pour acheter des tickets", variant: "destructive" });
+      return;
+    }
+    if (!raffleData || raffleData.status !== 'active') {
+      toast({ title: "Tombola non disponible", description: "Cette tombola n'est plus active", variant: "destructive" });
+      return;
+    }
+    setUssdSuccess(false);
+    setUssdRaffleData({ txnId: `ussd_raffle_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`, quantity });
+    setUssdAmount(totalCostFcfa);
+    setShowUSSDModal(true);
+  };
+
+  const confirmRaffleUSSD = async (proofDataUrl, phoneInput) => {
+    const data = ussdRaffleData;
+    if (!data) throw new Error("Données de paiement manquantes.");
+    try {
+      const response = await fetch("/.netlify/functions/ussd-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          action: "submit",
+          type: "raffle",
+          transactionId: data.txnId,
+          userId: user?.id,
+          raffleEventId: raffleData.id,
+          quantity: data.quantity,
+          amountFcfa: data.amountFcfa,
+          phone: phoneInput || "",
+          proofDataUrl: proofDataUrl || null,
+          attendeeName: userProfile?.full_name || user?.user_metadata?.full_name || "",
+          userEmail: user?.email || null,
+          isGuest: false,
+        }),
+      });
+      const text = await response.text();
+      let result;
+      try { result = JSON.parse(text); } catch { throw new Error("La réponse du serveur n'est pas un JSON valide"); }
+      if (!response.ok || !result.success) throw new Error(result.message || `Erreur HTTP ${response.status}`);
+      toast({ title: "🎉 Paiement enregistré !", description: result.message || "Vos tickets de tombola seront créés après validation du dépôt." });
+      setUssdSuccess(true);
+      return true;
+    } catch (error) {
+      toast({ title: "Erreur de paiement", description: error.message || "Impossible d'enregistrer le paiement.", variant: "destructive" });
+      throw error;
+    }
+  };
+
+  const handleRaffleCheckout = () => {
+    if (rafflePaymentMethod === "ussd") { openRaffleUSSD(); return; }
+    handlePurchaseTickets();
   };
 
   const availableTickets = raffleData?.total_tickets - (raffleData?.tickets_sold || 0);
@@ -279,14 +342,42 @@ const RaffleInterface = ({
                     <p className="text-sm text-gray-400">{quantity} ticket{quantity>1 ? 's' : ''} × {pricePerTicket} π</p>
                   </div>
 
+                  <div className="flex gap-2">
+                    <Button
+                      variant={rafflePaymentMethod === "coins" ? "default" : "outline"}
+                      onClick={() => setRafflePaymentMethod("coins")}
+                      className="flex-1"
+                      size="sm"
+                    >
+                      <Coins className="w-4 h-4 mr-1" /> Pièces
+                    </Button>
+                    <Button
+                      variant={rafflePaymentMethod === "ussd" ? "default" : "outline"}
+                      onClick={() => setRafflePaymentMethod("ussd")}
+                      className="flex-1"
+                      size="sm"
+                    >
+                      <Trophy className="w-4 h-4 mr-1" /> Mobile Money
+                    </Button>
+                  </div>
+                  {rafflePaymentMethod === "ussd" && (
+                    <p className="text-xs text-gray-400 text-center">
+                      {totalCostFcfa.toLocaleString("fr-FR")} FCFA à payer par mobile money. Vos tickets seront créés après validation du dépôt.
+                    </p>
+                  )}
+
                   <Button
-                    onClick={handlePurchaseTickets}
+                    onClick={handleRaffleCheckout}
                     disabled={isPurchasing || availableTickets<=0 || quantity>availableTickets || quantity>raffleData?.max_tickets_per_user}
                     className="w-full py-6 text-lg font-bold bg-green-600 hover:bg-green-700"
                     size="lg"
                   >
                     {isPurchasing ? <Loader2 className="animate-spin mr-2" /> : <Wallet className="mr-2" />}
-                    {isPurchasing ? "Achat en cours..." : `Acheter ${quantity} ticket${quantity>1?'s':''}`}
+                    {isPurchasing
+                      ? "Achat en cours..."
+                      : rafflePaymentMethod === "ussd"
+                        ? `Payer ${totalCostFcfa.toLocaleString("fr-FR")} FCFA`
+                        : `Acheter ${quantity} ticket${quantity>1?'s':''}`}
                   </Button>
 
                   <div className="text-sm text-gray-400 space-y-1 text-center">
@@ -317,6 +408,21 @@ const RaffleInterface = ({
         onClose={() => setShowWalletModal(false)}
         requiredAmount={totalCostPi}
         currentBalance={userProfile?.coin_balance || 0}
+      />
+
+      <USSDPaymentModal
+        open={showUSSDModal}
+        onClose={() => {
+          setShowUSSDModal(false);
+          if (ussdSuccess) setUssdSuccess(false);
+          else openBonplaninfosRelance(ussdAmount);
+        }}
+        amountFcfa={ussdAmount}
+        title="Paiement Mobile Money — Tombola"
+        subtitle="Payez par USSD puis confirmez avec la capture d'écran du dépôt. Vos tickets de tombola seront créés après validation."
+        submitLabel="J'ai payé mes tickets"
+        requirePhone={true}
+        onConfirm={confirmRaffleUSSD}
       />
     </div>
   );
