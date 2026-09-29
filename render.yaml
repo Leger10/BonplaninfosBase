@@ -1,0 +1,76 @@
+# render.yaml — Blueprint Render pour BonPlan Infos
+#
+# Un seul processus Node (server/index.mjs) sert l'API, les fonctions qui
+# émulent Netlify (/.netlify/functions/*) et le build statique Vite (dist/).
+# Il n'y a donc PAS de fonction séparée à configurer chez Render ni chez
+# Hostinger : INTERNAL_RPC_KEY est identique des deux côtés par construction.
+#
+# Déploiement :
+#   dashboard Render > "New" > "Blueprint" > choisir ce dépôt (render.yaml à la racine)
+# Service Web manuel équivalent :
+#   Build   : npm ci && npx prisma generate && npm run build
+#   Start   : node server/index.mjs
+#
+# VARS à renseigner dans le dashboard après connexion du dépôt (sync: false) :
+#   DATABASE_URL, VITE_SITE_URL, DEPLOY_URL, LOGIN_URL, VITE_SUPABASE_URL,
+#   VITE_VAPID_PUBLIC_KEY, VITE_VAPID_PRIVATE_KEY, VITE_SUPABASE_SERVICE_ROLE_KEY.
+# JWT_SECRET et INTERNAL_RPC_KEY sont générés automatiquement (generateValue).
+#
+# IMPORTANT – Render n'héberge pas MySQL : DATABASE_URL doit pointer vers un
+# MySQL externe (base Hostinger, Aiven…). Les variables VITE_* sont figées dans
+# le build : VITE_SUPABASE_URL doit être l'URL publique finale du service.
+services:
+  - type: web
+    name: bonplaninfos
+    runtime: node
+    plan: starter
+    rootDir: .
+    buildCommand: npm ci && npx prisma generate && npm run build
+    startCommand: node server/index.mjs
+    healthCheckPath: /api/db/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "20.19.1"
+      # Base de données MySQL (Render ne fournit pas de MySQL) :
+      # mysql://UTILISATEUR:MOT_DE_PASSE@HOTE:3306/NOM_BASE
+      - key: DATABASE_URL
+        sync: false
+      # Secrets générés automatiquement par Render (jamais en clair dans le repo)
+      - key: JWT_SECRET
+        generateValue: true
+      # Même clé pour le processus Node et les fonctions émulées (un seul process)
+      - key: INTERNAL_RPC_KEY
+        generateValue: true
+      # URL publique du service, figée dans le build Vite
+      - key: VITE_SITE_URL
+        sync: false
+      - key: DEPLOY_URL
+        sync: false
+      - key: LOGIN_URL
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        value: sb_publishable_placeholder
+      - key: VITE_SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # Notifications push (VAPID)
+      - key: VITE_VAPID_PUBLIC_KEY
+        sync: false
+      - key: VITE_VAPID_PRIVATE_KEY
+        sync: false
+      # Dossier des images sur le disque persistant (voir disks ci-dessous)
+      - key: MEDIA_ROOT
+        value: /var/data/media
+      # USSD
+      - key: USSD_MERCHANT
+        value: BPI
+    # Disque persistant pour les médias : sans lui, les images uploadées
+    # sont perdues à chaque redéploiement (filesystem éphémère de Render).
+    disks:
+      - name: bonplaninfos-media
+        mountPath: /var/data
+        sizeGB: 1

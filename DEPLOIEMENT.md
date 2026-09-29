@@ -5,6 +5,9 @@ Le site est servi par **un seul processus Node** : `server/index.mjs` sert l'API
 medias (`/media`, `/storage/...`) et le build statique Vite (`dist/`) avec
 fallback SPA. Il n'y a donc pas besoin de Netlify.
 
+Ce guide couvre les deux hebergeurs possibles qui reposent sur la meme
+architecture : **Hostinger** (VPS / Business, § 0-9) et **Render** (§ 10).
+
 ## 0. Prerequis
 
 - Offre Hostinger **VPS** ou **Business** (l'offre mutualisee classique n'a pas
@@ -266,3 +269,56 @@ retrait, un paiement pieces.
 - L'interface n'a pas encore de bouton USSD pour stand, tombola et evenement
   protege.
 - `DATABASE_URL` dans le `.env` ne doit jamais etre committe ni partage.
+
+---
+
+# Deploiement alternatif : Render
+
+Render est un PaaS : pas de SSH, pas de reverse proxy a gerer — le service est
+durectement accessible en HTTPS. Les deux contraintes a connaitre :
+
+1. **Render n'heberge pas MySQL.** `DATABASE_URL` doit pointer vers un MySQL
+   externe (base MySQL Hostinger, Aiven, PlanetScale-equivalent…).
+2. **Filesystem ephemere.** Tout fichier ecrit dans le conteneur disparait au
+   prochain deploiement. Les images doivent vivre sur un **disque persistant**.
+
+Le depot contient deja `render.yaml` (Blueprint). Deux facons de deployer :
+
+## 10.1 Blueprint (recommande)
+
+hPanel / dashboard ne sert a rien ici : tout se passe dans le dashboard Render.
+
+1. Push du depot : `git push origin main`.
+2. dashboard Render > **New** > **Blueprint** > connecter
+   `https://github.com/Leger10/BonplaninfosBase.git` (branche `main`).
+3. Render lit `render.yaml`, cree le service web `bonplaninfos` + un disque
+   persistant monte sur `/var/data` (`MEDIA_ROOT=/var/data/media`).
+4. Renseigner les variables `sync: false` dans le service (onglet **Environment**) :
+   `DATABASE_URL`, `VITE_SITE_URL`, `DEPLOY_URL`, `LOGIN_URL`,
+   `VITE_SUPABASE_URL` (URL publique du service, figee dans le build),
+   `VITE_VAPID_PUBLIC_KEY`, `VITE_VAPID_PRIVATE_KEY`,
+   `VITE_SUPABASE_SERVICE_ROLE_KEY`.
+   `JWT_SECRET` et `INTERNAL_RPC_KEY` sont generes automatiquement
+   (regenerables depuis l'onglet Environment si besoin).
+5. **Deploy** : build = `npm ci && npx prisma generate && npm run build`,
+   start = `node server/index.mjs`, health check = `/api/db/health`.
+6. Transferer une fois les medias existants sur le disque (S3/upload) ou les
+   re-uploader via l'interface ; desormais ils survivent aux redeloiements.
+7. Tester : `curl -I https://<service>.onrender.com/api/db/health` → 200.
+
+## 10.2 Service Web manuel (equivalent)
+
+Build   : `npm ci && npx prisma generate && npm run build`
+Start   : `node server/index.mjs`
+Disque  : onglet **Disks** > `bonplaninfos-media` monte sur `/var/data`
+Vars    : identiques a la liste ci-dessus (`PORT` est injecte par Render).
+
+## Rappels communs aux deux plates-formes
+
+- `INTERNAL_RPC_KEY` doit exister une seule fois (le processus sert aussi les
+  fonctions emulees : meme environnement). Sans elle, la validation USSD et
+  l'ajustement du stock sont refuses.
+- Les variables `VITE_*` sont compilees dans `dist/` : changer l'URL du service
+  (ou de domaine) impose un nouveau deploy.
+- Les suites de tests contenues dans `scripts/*` creent des donnees jetables
+  en base locale : **ne pas les lancer contre la base de production.**
