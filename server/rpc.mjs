@@ -434,8 +434,11 @@ const HANDLERS = {
   async track_event_view(args) {
     const { p_event_id, p_user_id } = args;
     if (!p_event_id) return fail('p_event_id requis');
+    const dbc = db();
+    const ev = await dbc.events.findUnique({ where: { id: p_event_id }, select: { id: true, views_count: true } });
+    if (!ev) return ok({ success: false, event_missing: true, new_views_count: 0 });
     const now = new Date();
-    await db().event_views.create({
+    await dbc.event_views.create({
       data: {
         id: uuidv4(),
         event_id: p_event_id,
@@ -447,9 +450,8 @@ const HANDLERS = {
         updated_at: now,
       },
     });
-    const ev = await db().events.findUnique({ where: { id: p_event_id } });
-    const newViews = (ev?.views_count || 0) + 1;
-    await db().events.update({ where: { id: p_event_id }, data: { views_count: newViews } });
+    const newViews = (ev.views_count || 0) + 1;
+    await dbc.events.update({ where: { id: p_event_id }, data: { views_count: newViews } });
     return ok({ success: true, new_views_count: newViews });
   },
 
