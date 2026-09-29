@@ -322,3 +322,7 @@ Vars    : identiques a la liste ci-dessus (`PORT` est injecte par Render).
   (ou de domaine) impose un nouveau deploy.
 - Les suites de tests contenues dans `scripts/*` creent des donnees jetables
   en base locale : **ne pas les lancer contre la base de production.**
+- Apres chaque deploiement, lancer le diagnostic (lecture seule) :
+  `node scripts/deploy-check.mjs https://<votre-domaine> --key <INTERNAL_RPC_KEY>`.
+  Il verifie health, build Vite servi, fonctions emulees, refus de lecture
+  sensible (RIB 403) et cle interne (200).
