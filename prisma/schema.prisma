@@ -1534,6 +1534,22 @@ model organizer_prices {
 }
 
 /// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+/// Agent de scan delgue par un organisateur : il peut verifier les billets de
+/// tous les evenements de cet organisateur. La reinitialisation d'un billet
+/// reste reservee a l'organisateur. Cree par scripts/create-table-scan-agents.mjs
+model organizer_scan_agents {
+  id             String    @id  @default(uuid())@db.Char(36)
+  organizer_id   String    @db.Char(36)
+  user_id        String    @db.Char(36)
+  granted_by     String?   @db.Char(36)
+  is_active      Boolean?  @default(true)
+  created_at     DateTime? @default(now()) @db.DateTime(0)
+  last_scanned_at DateTime? @db.DateTime(0)
+
+  @@unique([organizer_id, user_id], map: "uniq_scan_agent")
+  @@index([user_id], map: "idx_scan_agent_user")
+}
+
 model organizer_scanners {
   id           String    @id  @default(uuid())@db.Char(36)
   organizer_id String    @db.Char(36)

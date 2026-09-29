@@ -14,6 +14,8 @@ import { runQuery } from './queryEngine.mjs';
 import { authRouter } from './auth.mjs';
 import { storageRouter } from './storage.mjs';
 import { rpcRouter } from './rpc.mjs';
+import { requireActorForWrites, requireAdmin } from './session.mjs';
+import { checkWritePolicy, checkReadPolicy } from './queryPolicy.mjs';
 
 const app = express();
 app.set('json spaces', 2);
@@ -22,15 +24,42 @@ app.use(express.json({ limit: '30mb' }));
 const PORT = process.env.PORT || 8888;
 
 // API
+// Administration des comptes : les gardes sont posés ici, pas dans le routeur,
+// pour ne pas créer de cycle d'import entre auth.mjs et session.mjs.
+app.use('/api/auth/admin/list-users', requireAdmin());
+app.use('/api/auth/admin/create-user', requireAdmin({ superOnly: true }));
 app.use('/api/auth', authRouter);
 app.use('/api/storage', storageRouter);
 app.use('/api/rpc', rpcRouter);
-app.post('/api/query', async (req, res) => {
+// CRUD générique : les lectures restent publiques (pages visibles sans compte),
+// les écritures exigent une session (utilisateur ou clé interne des fonctions)
+// ET passent par server/queryPolicy.mjs, qui restreint chaque écriture aux
+// lignes de l'appelant ou aux rôles d'administration.
+app.post('/api/query', requireActorForWrites, async (req, res) => {
   const q = req.body || {};
+  const method = String(q.method || 'select').toLowerCase();
   try {
-    const result = await runQuery(q);
+    let query = q;
+    // Lecture : les tables sensibles (RIB, salaires, logs, retraits…) sont
+    // réservées à l'administration, ou restreintes aux propres lignes de
+    // l'appelant pour les tables mixtes.
+    const readVerdict = await checkReadPolicy(q, req.actor);
+    if (!readVerdict.ok) {
+      console.log(`[query] read ${method} ${q.table} -> ${readVerdict.status} ${readVerdict.body.error.message}`);
+      return res.status(readVerdict.status).json(readVerdict.body);
+    }
+    query = readVerdict.query;
+    if (method !== 'select' && method !== 'head') {
+      const verdict = await checkWritePolicy(query, req.actor);
+      if (!verdict.ok) {
+        console.log(`[query] ${method} ${q.table} -> ${verdict.status} ${verdict.body.error.message}`);
+        return res.status(verdict.status).json(verdict.body);
+      }
+      query = verdict.query;
+    }
+    const result = await runQuery(query);
     if (result.error) {
-      console.log(`[query] ${q.method || 'select'} ${q.table} -> ${result.status} ${result.error.code || ''} ${JSON.stringify(result.error.message)?.slice(0, 160)}`);
+      console.log(`[query] ${method} ${q.table} -> ${result.status} ${result.error.code || ''} ${JSON.stringify(result.error.message)?.slice(0, 160)}`);
       return res.status(result.status || 400).json(result);
     }
     res.json(result);

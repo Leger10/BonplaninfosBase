@@ -307,7 +307,7 @@ const startUSSDFlow = async (amountFcfa, coinsAmount, packId) => {
     setShowUSSDModal(true);
   };
 
-  const confirmUSSD = async (smsReference, proofDataUrl) => {
+  const confirmUSSD = async (proofDataUrl) => {
     const txnId = `ussd_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
     try {
@@ -317,7 +317,6 @@ const startUSSDFlow = async (amountFcfa, coinsAmount, packId) => {
         body: JSON.stringify({
           action: 'submit',
           type: 'credits',
-          smsReference,
           proofDataUrl: proofDataUrl || null,
           amountFcfa: ussdAmount,
           phone: userPhone,

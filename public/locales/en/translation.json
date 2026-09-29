@@ -1575,11 +1575,12 @@
   "_comment_profileTabs": "📌 Profile tabs (ProfilePageContent)",
   "profileTabs": {
     "events": "Events",
-    "creator": "Withdrawals",
+    "creator": "Creator",
     "tickets": "Tickets",
     "transactions": "History",
     "referral": "Referral",
-    "withdrawals": "Creator"
+    "scanners": "Scan team",
+    "withdrawals": "Withdrawals"
   },
 
   "_comment_transferHistory": "📜 Transfer history (TransferHistory)",

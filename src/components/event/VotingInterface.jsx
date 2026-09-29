@@ -67,6 +67,16 @@ import USSDPaymentModal, { openBonplaninfosRelance, buildUSSDCode } from "@/comp
 import Confetti from "react-confetti";
 import generateRankingPDF from "@/utils/generateRankingPDF";
 
+// Cle d'idempotence : une intention de vote = un UUID. Si l'utilisateur clique
+// deux fois (ou relance apres timeout), le serveur renvoie le resultat deja
+// enregistre au lieu de debiter deux fois.
+const newVoteIdempotencyKey = () => {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+};
+
 const Separator = ({
   className = "",
   orientation = "horizontal",
@@ -597,6 +607,7 @@ if (maxVotesPerUser > 0 && !(maxVotesPerPhone > 0 && storedPhone) && used + vote
         p_event_id: event.id,
         p_votes: [{ candidate_id: candidate.id, vote_count: voteCount }],
         p_voter_phone: voterPhone || null,
+        p_idempotency_key: newVoteIdempotencyKey(),
       });
 
       if (voteError) throw voteError;
@@ -697,7 +708,7 @@ if (maxVotesPerUser > 0 && !(maxVotesPerPhone > 0 && storedPhone) && used + vote
     }
   };
 
-  const confirmVoteUSSD = async (smsReference, proofDataUrl, phoneInput) => {
+  const confirmVoteUSSD = async (proofDataUrl, phoneInput) => {
     const txnId = `ussd_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const response = await fetch("/.netlify/functions/ussd-payment", {
       method: "POST",
@@ -705,7 +716,6 @@ if (maxVotesPerUser > 0 && !(maxVotesPerPhone > 0 && storedPhone) && used + vote
       body: JSON.stringify({
         action: "submit",
         type: "votes",
-        smsReference,
         proofDataUrl: proofDataUrl || null,
         amountFcfa: ussdFcfa,
         phone: phoneInput || user?.user_metadata?.phone || user?.phone || "",
@@ -2138,6 +2148,7 @@ if ((userData?.coin_balance || 0) < totalCost) {
           vote_count: item.quantity,
         })),
         p_voter_phone: checkoutPhone || null,
+        p_idempotency_key: newVoteIdempotencyKey(),
       });
 
       if (cartVoteError) throw cartVoteError;
@@ -2172,7 +2183,7 @@ if ((userData?.coin_balance || 0) < totalCost) {
   };
 
   // Confirmation du paiement USSD du panier (plusieurs candidats)
-  const confirmCartUSSD = async (smsReference, proofDataUrl, phoneInput) => {
+  const confirmCartUSSD = async (proofDataUrl, phoneInput) => {
     const txnId = `ussd_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const votes = cartItems.map((item) => ({
       candidateId: item.candidate.id,
@@ -2185,7 +2196,6 @@ if ((userData?.coin_balance || 0) < totalCost) {
       body: JSON.stringify({
         action: "submit",
         type: "votes",
-        smsReference,
         proofDataUrl: proofDataUrl || null,
         amountFcfa: cartUssdAmount,
         phone: phoneInput || user?.user_metadata?.phone || user?.phone || "",

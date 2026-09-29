@@ -47,6 +47,7 @@ const ProfilePage = () => {
   const [userEvents, setUserEvents] = useState([]);
   const [userTransactions, setUserTransactions] = useState([]);
   const [totalPending, setTotalPending] = useState(0);
+  const [recentEarnings, setRecentEarnings] = useState([]);
 
   const [transferModalOpen, setTransferModalOpen] = useState(false);
   const [coinTransferModalOpen, setCoinTransferModalOpen] = useState(false);
@@ -114,24 +115,32 @@ const ProfilePage = () => {
     if (!user || !session) return;
 
     try {
+      // On récupère le détail des gains récents : la `description` porte le
+      // détail d'une vente avec code promo (prix plein / remise / montant net),
+      // ce qui explique à l'organisateur d'où vient la différence.
       const { data, error } = await fetchWithRetry(() =>
         supabase
           .from("organizer_earnings")
-          .select("earnings_coins")
+          .select(
+            "id, earnings_coins, earnings_fcfa, amount_pi, platform_commission, transaction_type, earning_type, description, status, created_at"
+          )
           .eq("organizer_id", user.id)
-          .eq("status", "pending")
+          .order("created_at", { ascending: false })
+          .limit(20)
       );
 
       if (error) throw error;
 
-      const total = (data || []).reduce(
-        (sum, item) => sum + Number(item.earnings_coins || 0),
-        0
-      );
+      const rows = data || [];
+      const total = rows
+        .filter((item) => (item.status || "pending") === "pending")
+        .reduce((sum, item) => sum + Number(item.earnings_coins || 0), 0);
       setTotalPending(total);
+      setRecentEarnings(rows);
     } catch (err) {
       console.error("[ProfilePage] Error fetching earnings:", err);
       setTotalPending(0);
+      setRecentEarnings([]);
     }
   }, [user, session]);
 
@@ -440,6 +449,52 @@ const ProfilePage = () => {
                   {t('profile.pendingEarnings.noEarningsDescription')}
                 </AlertDescription>
               </Alert>
+            )}
+
+            {/* --- DÉTAIL DES GAINS (remise code promo incluse) --- */}
+            {isWalletUnlocked && recentEarnings.length > 0 && (
+              <div className="mt-6 pt-4 border-t border-gray-100">
+                <p className="text-sm font-semibold text-gray-700 mb-2">
+                  Détail des gains
+                </p>
+                <ul className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                  {recentEarnings.map((e) => (
+                    <li
+                      key={e.id}
+                      className="p-3 rounded-lg border border-gray-100 bg-gray-50/60 text-xs"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-gray-700 font-medium break-words">
+                            {e.description || "Gain"}
+                          </p>
+                          {e.created_at && (
+                            <p className="text-gray-400 mt-0.5">
+                              {new Date(e.created_at).toLocaleString("fr-FR")}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="font-bold text-green-600">
+                            +{Number(e.earnings_coins || 0)}{" "}
+                            {t('profile.balance.coins')}
+                          </p>
+                          <p className="text-gray-400">
+                            {Number(e.earnings_fcfa || 0).toLocaleString("fr-FR")} F
+                          </p>
+                        </div>
+                      </div>
+                      {Number(e.platform_commission || 0) > 0 && (
+                        <p className="text-gray-400 mt-1">
+                          Frais plateforme : −
+                          {Number(e.platform_commission || 0).toLocaleString("fr-FR")}{" "}
+                          {t('profile.balance.coins')}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </CardContent>
         </Card>

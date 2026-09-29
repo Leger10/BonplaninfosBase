@@ -57,6 +57,13 @@ const USSDPaymentsTab = ({ actorId }) => {
   const [billetPayment, setBilletPayment] = useState(null);
   const [showBilletModal, setShowBilletModal] = useState(false);
   const [pdfBusy, setPdfBusy] = useState(null);
+  // Paiements dont l'admin a coché « dépôt vérifié ». La validation est bloquée
+  // tant que la capture d'écran du dépôt n'a pas été contrôlée.
+  const [verifiedDeposits, setVerifiedDeposits] = useState({});
+
+  const toggleDepositVerified = (paymentId) => {
+    setVerifiedDeposits((prev) => ({ ...prev, [paymentId]: !prev[paymentId] }));
+  };
 
   const fetchPayments = useCallback(async () => {
     setLoading(true);
@@ -94,7 +101,7 @@ const USSDPaymentsTab = ({ actorId }) => {
 
       if (error) throw error;
 
-      // Détails USSD (réf. SMS + capture d'écran) stockés dans transactions.metadata
+      // Détails USSD (capture du dépôt) stockés dans transactions.metadata
       const { data: txs, error: txsErr } = await srv
         .from("transactions")
         .select("id, created_at, user_id, metadata")
@@ -114,7 +121,6 @@ const USSDPaymentsTab = ({ actorId }) => {
           if (u && meta?.payment_id) {
             if (!proofMap[meta.payment_id]) {
               proofMap[meta.payment_id] = {
-                sms_reference: u.sms_reference || "",
                 proof_url: u.proof_url || "",
               };
             }
@@ -184,7 +190,7 @@ const USSDPaymentsTab = ({ actorId }) => {
       setPayments(
         (data || []).map((p) => ({
           ...p,
-          ussd: proofMap[p.id] || { sms_reference: "", proof_url: "" },
+          ussd:       proofMap[p.id] || { proof_url: "" },
           tickets: ticketsMap[p.transaction_id] || [],
           validatedByName: p.validated_by ? actorNames[p.validated_by] : "",
           rejectedByName: p.rejected_by ? actorNames[p.rejected_by] : "",
@@ -207,12 +213,27 @@ const USSDPaymentsTab = ({ actorId }) => {
   }, [fetchPayments]);
 
   const act = async (payment, action) => {
+    // Garde-fou : on ne valide un dépôt qu'après contrôle explicite de la capture.
+    if (action === "validate" && !verifiedDeposits[payment.id]) {
+      toast({
+        title: "Dépôt non vérifié",
+        description:
+          "Ouvrez la capture d'écran du dépôt, vérifiez le montant et cochez « Dépôt vérifié » avant de valider.",
+        variant: "destructive",
+      });
+      return;
+    }
     setProcessingId(payment.id);
     try {
       const res = await fetch("/.netlify/functions/ussd-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ action, paymentId: payment.id, actorId: actorId || null }),
+        body: JSON.stringify({
+          action,
+          paymentId: payment.id,
+          actorId: actorId || null,
+          depositVerified: action === "validate" ? true : null,
+        }),
       });
       const text = await res.text();
       let result;
@@ -400,12 +421,10 @@ const USSDPaymentsTab = ({ actorId }) => {
     if (search.trim()) {
       const q = search.toLowerCase();
       const profile = p.profiles || {};
-      const ref = p.ussd?.sms_reference || "";
       return (
         (profile.full_name || "").toLowerCase().includes(q) ||
         (profile.phone || "").includes(q) ||
-        (p.transaction_id || "").toLowerCase().includes(q) ||
-        ref.toLowerCase().includes(q)
+        (p.transaction_id || "").toLowerCase().includes(q)
       );
     }
     return true;
@@ -448,7 +467,7 @@ const USSDPaymentsTab = ({ actorId }) => {
           <div className="relative flex-1 w-full">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <Input
-              placeholder="Rechercher (nom, téléphone, référence SMS, ID)..."
+              placeholder="Rechercher (nom, téléphone, ID)..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
@@ -473,8 +492,7 @@ const USSDPaymentsTab = ({ actorId }) => {
                   <TableHead>Téléphone</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Montant</TableHead>
-                  <TableHead>Réf. SMS</TableHead>
-                  <TableHead>Preuve</TableHead>
+                  <TableHead>Dépôt (capture)</TableHead>
                   <TableHead>Statut</TableHead>
                   <TableHead>Traite par</TableHead>
                   <TableHead>Date</TableHead>
@@ -485,8 +503,8 @@ const USSDPaymentsTab = ({ actorId }) => {
                 {filtered.map((p) => {
                   const st = STATUS_LABELS[p.status] || STATUS_LABELS.pending;
                   const isTickets = p.pack_id === "ticket_payment";
-                  const smsRef = p.ussd?.sms_reference || "—";
                   const proofUrl = p.ussd?.proof_url || "";
+                  const depositVerified = !!verifiedDeposits[p.id];
                   return (
                     <TableRow key={p.id}>
                       <TableCell>
@@ -506,18 +524,47 @@ const USSDPaymentsTab = ({ actorId }) => {
                           <div className="text-xs text-muted-foreground">+{p.coins_amount} pièces</div>
                         )}
                       </TableCell>
-                      <TableCell className="font-mono text-sm">{smsRef}</TableCell>
                       <TableCell>
                         {proofUrl ? (
-                          <a href={proofUrl} target="_blank" rel="noreferrer" title="Voir la capture d'écran (nouvel onglet)">
-                            <img
-                              src={proofUrl}
-                              alt="Preuve de paiement"
-                              className="w-14 h-14 object-cover rounded-md border border-gray-700 hover:opacity-80 cursor-pointer"
-                            />
-                          </a>
+                          <div className="space-y-1.5">
+                            <a
+                              href={proofUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              title="Ouvrir la capture d'écran du dépôt (nouvel onglet)"
+                              className="block"
+                            >
+                              <img
+                                src={proofUrl}
+                                alt="Capture d'écran du dépôt"
+                                className="w-20 h-20 object-cover rounded-md border border-gray-700 hover:opacity-80 cursor-pointer"
+                              />
+                            </a>
+                            <a
+                              href={proofUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[11px] text-blue-400 hover:underline inline-flex items-center gap-1"
+                            >
+                              <Eye className="w-3 h-3" /> Voir le dépôt
+                            </a>
+                            {p.status === "pending" && (
+                              <label className="flex items-center gap-1.5 text-[11px] text-gray-300 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={depositVerified}
+                                  onChange={() => toggleDepositVerified(p.id)}
+                                  className="w-3.5 h-3.5 accent-green-500"
+                                />
+                                Dépôt vérifié
+                              </label>
+                            )}
+                            {p.status !== "pending" && depositVerified && (
+                              <div className="text-[11px] text-green-400">Dépôt vérifié</div>
+                            )}
+                          </div>
                         ) : (
-                          <span className="text-xs text-muted-foreground">Aucune</span>
+                          <span className="text-xs text-red-400 font-medium">Capture manquante</span>
                         )}
                       </TableCell>
                       <TableCell>
@@ -555,7 +602,12 @@ const USSDPaymentsTab = ({ actorId }) => {
                               <Button
                                 size="sm"
                                 onClick={() => act(p, "validate")}
-                                disabled={processingId === p.id}
+                                disabled={processingId === p.id || !depositVerified}
+                                title={
+                                  depositVerified
+                                    ? "Valider le dépôt et livrer les billets / crédits"
+                                    : "Vérifiez d'abord la capture d'écran du dépôt"
+                                }
                                 className="bg-green-600 hover:bg-green-700 text-white"
                               >
                                 {processingId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 mr-1" />}

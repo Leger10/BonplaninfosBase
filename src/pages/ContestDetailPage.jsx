@@ -12,7 +12,6 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import PaymentModal from '@/components/PaymentModal';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { CoinService } from '@/services/CoinService';
 import WalletInfoModal from '@/components/WalletInfoModal';
 import USSDPaymentModal, { openBonplaninfosRelance, buildUSSDCode } from '@/components/payment/USSDPaymentModal';
 
@@ -124,7 +123,6 @@ const ContestDetailPage = () => {
             return;
         }
         const { candidate, quantity } = voteState;
-        const totalCost = contest.vote_cost_coins * quantity;
 
         // Paiement par USSD : ouvrir la modale USSD au lieu de débiter les pièces
         if (votePaymentMethod === 'ussd') {
@@ -139,35 +137,39 @@ const ContestDetailPage = () => {
         setActionLoading(true);
         setVoteState(prev => ({ ...prev, isOpen: false }));
 
-        const onSuccess = async () => {
-            try {
-                await CoinService.debitCoins(user.id, totalCost, `Vote: ${contest.title}`);
-                const { error: voteError } = await supabase.rpc('increment_vote_count', {
-                    candidate_id_to_inc: candidate.id,
-                    inc_amount: quantity
-                });
-                if (voteError) throw voteError;
-
-                await forceRefreshUserProfile();
-                toast({ title: "Vote réussi!", description: `Vous avez donné ${quantity} voix à ${candidate.name}.` });
-            } catch (error) {
-                toast({ title: "Erreur de vote", description: error.message, variant: "destructive" });
-            } finally {
-                setActionLoading(false);
+        // VOTE PAYANT ATOMIQUE : paiement + inscription + journal se font en une
+        // seule transaction serveur (cast_contest_votes). Avant, le débit était
+        // séparé (CoinService.debitCoins) puis increment_vote_count ajoutait les
+        // voix : une panne entre les deux faisait perdre les pièces SANS voix, et
+        // increment_vote_count pouvait être appelé seul pour fabriquer des voix
+        // gratuites. Plus AUCUNE écriture directe ici : si la RPC échoue, rien
+        // n'est débité.
+        try {
+            const { data: voteData, error: voteError } = await supabase.rpc('cast_contest_votes', {
+                p_user_id: user.id,
+                p_event_id: contest.id,
+                p_votes: [{ candidate_id: candidate.id, vote_count: quantity }],
+                p_idempotency_key:
+                    (typeof crypto !== 'undefined' && crypto.randomUUID)
+                        ? crypto.randomUUID()
+                        : `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`,
+            });
+            if (voteError) throw voteError;
+            if (!voteData?.success) {
+                const err = { code: voteData?.error?.code || 'VOTE_FAILED', message: voteData?.error?.message || voteData?.message || 'Échec du vote' };
+                throw err;
             }
-        };
-
-        const onInsufficientBalance = () => {
-            setShowWalletInfoModal(true);
+            await forceRefreshUserProfile();
+            toast({ title: "Vote réussi!", description: `Vous avez donné ${quantity} voix à ${candidate.name}.` });
+        } catch (error) {
+            if (String(error?.code || '').includes('INSUFFICIENT')) {
+                setShowWalletInfoModal(true);
+            } else {
+                toast({ title: "Erreur de vote", description: error?.message || error, variant: "destructive" });
+            }
+        } finally {
             setActionLoading(false);
-        };
-
-        await CoinService.handleAction({
-            userId: user.id,
-            requiredCoins: totalCost,
-            onSuccess,
-            onInsufficientBalance,
-        });
+        }
     };
 
     const openVoteDialog = (candidate) => {
@@ -178,7 +180,7 @@ const ContestDetailPage = () => {
         setVoteState(prev => ({ ...prev, quantity: Math.max(1, prev.quantity + amount) }));
     };
 
-    const confirmVoteUSSD = async (smsReference, proofDataUrl, phoneInput) => {
+    const confirmVoteUSSD = async (proofDataUrl, phoneInput) => {
         const txnId = `ussd_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
         const response = await fetch('/.netlify/functions/ussd-payment', {
             method: 'POST',
@@ -186,7 +188,6 @@ const ContestDetailPage = () => {
             body: JSON.stringify({
                 action: 'submit',
                 type: 'votes',
-                smsReference,
                 proofDataUrl: proofDataUrl || null,
                 amountFcfa: ussdAmount,
                 phone: phoneInput || userProfile?.phone || '',

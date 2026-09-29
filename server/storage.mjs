@@ -5,6 +5,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { resolveActor } from './session.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -13,6 +14,23 @@ fs.mkdirSync(MEDIA_ROOT, { recursive: true });
 
 const r = Router();
 r.use(expressRaw());
+
+// /api/storage manipule le système de fichiers de l'application : upload,
+// suppression, liste, signatures d'URL. Aucune de ces routes n'était
+// authentifiée : n'importe quel visiteur pouvait écraser les images, supprimer
+// des médias ou lister l'arborescence stockée. Toute opération exige désormais
+// un utilisateur connecté (Jeton utilisateur vérifié) ou la clé interne.
+r.use(async (req, res, next) => {
+  const actor = await resolveActor(req).catch(() => null);
+  if (!actor) {
+    return res.status(401).json({
+      data: null,
+      error: { message: 'Authentification requise', code: 'not_authenticated', details: null, hint: null },
+    });
+  }
+  req.actor = actor;
+  next();
+});
 
 function expressRaw() {
   return (req, res, next) => {

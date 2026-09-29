@@ -155,11 +155,10 @@ class LocalQuery {
   catch(reject) { return this.execute().catch(reject); }
   finally(fn) { return this.execute().finally(fn); }
   async execute() {
-    const res = await api('/query', {
+    const res = await api('/query', withBearer({
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(this.state),
-    });
+    }));
     if (res.error) return res;
     // rewriting médias + shapes de données
     let data = rewriteMedia(res.data);
@@ -179,7 +178,7 @@ class LocalStorageFile {
     const params = new URLSearchParams({ bucket: this.bucket, path });
     if (options.contentType) params.set('contentType', options.contentType);
     if (options.cacheControl) params.set('cacheControl', options.cacheControl);
-    return api(`/storage/upload?${params}`, { method: 'POST', body: fileBody });
+    return api(`/storage/upload?${params}`, withStorageAuth({ method: 'POST', body: fileBody }));
   }
   getPublicUrl(path) {
     // ⚠️ Supabase-js renvoie le résultat SYNCrone : `const { data: { publicUrl } } = ...getPublicUrl(p)`.
@@ -193,13 +192,13 @@ class LocalStorageFile {
     return { data: { publicPath: `${this.bucket}/${cleanPath}`, publicUrl }, error: null };
   }
   async createSignedUrl(path, _expiresIn) {
-    return api('/storage/signed-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bucket: this.bucket, path }) });
+    return api('/storage/signed-url', withStorageAuth({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bucket: this.bucket, path }) }));
   }
   async remove(paths) {
-    return api('/storage/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bucket: this.bucket, paths }) });
+    return api('/storage/remove', withStorageAuth({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bucket: this.bucket, paths }) }));
   }
   async list(path, _opts) {
-    return api('/storage/list', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bucket: this.bucket, path: path || '' }) });
+    return api('/storage/list', withStorageAuth({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bucket: this.bucket, path: path || '' }) }));
   }
 }
 
@@ -322,6 +321,20 @@ function withBearer(options) {
   };
 }
 
+// Storage : le JETON uniquement, sans « Content-Type » imposé — l'upload envoie
+// un corps binaire (octet-stream), mettre application/json le casserait
+// (express.json tenterait de parser les octets).
+function withStorageAuth(options) {
+  const session = getStoredSession();
+  return {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    },
+  };
+}
+
 const authListeners = new Set();
 function emitAuth(event, session) {
   authListeners.forEach((cb) => {
@@ -410,11 +423,10 @@ const auth = {
 
 // ---------- rpc ----------
 async function rpc(name, args, options = {}) {
-  const res = await api('/rpc', {
+  const res = await api('/rpc', withBearer({
     method: options.method || 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, args: args || {} }),
-  });
+  }));
   if (res.error) return res;
   return { data: rewriteMedia(res.data), error: null };
 }

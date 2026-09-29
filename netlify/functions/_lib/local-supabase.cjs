@@ -20,6 +20,12 @@ const MAX_BODY = 100 * 1024 * 1024;
 function request(path, { method = 'POST', payload, raw } = {}) {
   return new Promise((resolve, reject) => {
     const body = raw !== undefined ? raw : payload !== undefined ? JSON.stringify(payload) : '';
+    // /api/query et /api/rpc exigent une identité. Les fonctions Netlify
+    // n'ont pas de session utilisateur : elles s'identifient avec la clé
+    // interne partagée (INTERNAL_RPC_KEY), même secret que server/session.mjs.
+    const internalHeaders = process.env.INTERNAL_RPC_KEY
+      ? { 'X-Internal-Key': process.env.INTERNAL_RPC_KEY }
+      : {};
     const req = http.request(
       {
         host: API_HOST,
@@ -29,6 +35,7 @@ function request(path, { method = 'POST', payload, raw } = {}) {
         headers: {
           'Content-Type': raw !== undefined ? 'application/octet-stream' : 'application/json',
           'Content-Length': Buffer.byteLength(body),
+          ...internalHeaders,
         },
       },
       (res) => {

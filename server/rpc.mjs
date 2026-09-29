@@ -4,6 +4,8 @@ import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import bcrypt from 'bcryptjs';
 import { getDb } from './db.mjs';
+import { requireActorUnless, ADMIN_ROLES } from './session.mjs';
+import { checkPolicy } from './rpcPolicy.mjs';
 
 const r = Router();
 
@@ -13,6 +15,24 @@ const fail = (message, code = 'RPC_ERROR', details = null) => ({ data: null, err
 
 function normalizePhone(p) {
   return String(p || '').replace(/\D/g, '');
+}
+
+// Droits de LECTURE des statistiques d'un événement : la métadonnée d'un
+// événement appartient à son organisateur, aux agents mis à sa disposition
+// (organizer_scan_agents actifs) et à l'administration. Tout le reste est
+// refusé. Utilisé par get_verification_stats et get_promo_code_stats.
+async function canReadEventStats(actor, eventId) {
+  if (!actor || !eventId) return false;
+  if (actor.source === 'internal') return true;
+  if (ADMIN_ROLES.includes(actor.user_type)) return true;
+  const ev = await db().events.findUnique({ where: { id: eventId }, select: { organizer_id: true } });
+  if (!ev?.organizer_id) return false;
+  if (ev.organizer_id === actor.id) return true;
+  const delegation = await db().organizer_scan_agents.findFirst({
+    where: { organizer_id: ev.organizer_id, user_id: actor.id, is_active: true },
+    select: { id: true },
+  });
+  return !!delegation;
 }
 
 function parseValidDates(raw) {
@@ -65,13 +85,21 @@ async function creditOrganizerEarnings(params = {}) {
     p_transaction_type = 'ticket_sale', p_earnings_coins = 0,
     p_earnings_fcfa = null, p_ticket_count = null, p_description = null,
     p_created_at = null,
+    // Client Prisma a utiliser : passez le client de transaction pour que le
+    // gain soit ecrit dans la MEME transaction que le debit (votes atomiques).
+    p_dbc = null,
+    // La commission influenceur est un gain net verse par la plateforme :
+    // elle ne doit pas subir une seconde fois les 5% de frais de plateforme.
+    p_apply_platform_fee = true,
+    p_event_type = 'ticketing',
+    p_earning_type = null,
   } = params;
   if (!p_organizer_id) return { success: false, message: 'Organisateur introuvable.' };
   const coins = Math.max(0, Math.floor(Number(p_earnings_coins) || 0));
   if (!coins) return { success: false, message: 'Gain nul : rien a crediter.' };
-  const dbc = db();
+  const dbc = p_dbc || db();
   const now = p_created_at ? new Date(p_created_at) : new Date();
-  const platformCommission = Math.floor(coins * PLATFORM_FEE_RATE);
+  const platformCommission = p_apply_platform_fee ? Math.floor(coins * PLATFORM_FEE_RATE) : 0;
   const row = await dbc.organizer_earnings.create({
     data: {
       id: uuidv4(),
@@ -85,21 +113,207 @@ async function creditOrganizerEarnings(params = {}) {
       platform_commission: platformCommission,
       platform_fee: platformCommission * 10,
       net_amount: (coins - platformCommission) * 10,
-      fee_percent: PLATFORM_FEE_RATE * 100,
+      fee_percent: p_apply_platform_fee ? PLATFORM_FEE_RATE * 100 : 0,
       ticket_count: p_ticket_count || null,
-      earning_type: p_transaction_type,
-      event_type: 'ticketing',
+      earning_type: p_earning_type || p_transaction_type,
+      event_type: p_event_type,
       description: p_description,
       created_at: now,
       updated_at: now,
     },
   });
-  const profile = await dbc.profiles.findUnique({ where: { id: p_organizer_id }, select: { total_earnings: true } });
-  const pendingTotal = (profile?.total_earnings || 0) + coins;
-  if (profile) {
-    await dbc.profiles.update({ where: { id: p_organizer_id }, data: { total_earnings: pendingTotal, updated_at: now } });
+  // Incrément atomique : deux ventes simultanées ne s'écrasent pas.
+  let pendingTotal = coins;
+  try {
+    const updated = await dbc.profiles.update({
+      where: { id: p_organizer_id },
+      data: { total_earnings: { increment: coins }, updated_at: now },
+      select: { total_earnings: true },
+    });
+    pendingTotal = Number(updated?.total_earnings ?? coins);
+  } catch (e) {
+    console.error('⚠️ total_earnings non incrémenté:', e.message);
   }
   return { success: true, earning_id: row.id, pending_coins: pendingTotal, platform_commission: platformCommission };
+}
+
+// Commission du code promo versée à l'influenceur (en pièces ET en FCFA).
+// Idempotent sur (transaction_id, transaction_type) : un rejeu ne double pas la commission.
+async function creditPromoCommissionOnce({ transactionRef, influencerId, eventId, baseCoins, rate, code }) {
+  const rateNum = Number(rate) || 0;
+  const base = Math.max(0, Math.floor(Number(baseCoins) || 0));
+  if (!influencerId || rateNum <= 0 || !base) return { credited: false, reason: 'nothing_to_credit' };
+  const coins = Math.floor((base * rateNum) / 100);
+  if (coins <= 0) return { credited: false, reason: 'zero_commission' };
+
+  const dbc = db();
+  const existing = await dbc.organizer_earnings.findFirst({
+    where: { transaction_id: transactionRef, transaction_type: 'promo_commission' },
+    select: { id: true },
+  });
+  if (existing) return { credited: false, reason: 'already_credited', earning_id: existing.id };
+
+  const res = await creditOrganizerEarnings({
+    p_organizer_id: influencerId,
+    p_event_id: eventId || null,
+    p_transaction_id: transactionRef,
+    p_transaction_type: 'promo_commission',
+    p_earnings_coins: coins,
+    p_earnings_fcfa: coins * 10,
+    p_ticket_count: null,
+    p_description: `Commission code promo ${code} (${rateNum}%)`,
+    p_apply_platform_fee: false,
+    p_event_type: 'ticketing',
+    p_earning_type: 'promo_commission',
+  });
+  if (!res.success) return { credited: false, reason: res.message };
+  return { credited: true, coins, fcfa: coins * 10, rate: rateNum, earning_id: res.earning_id };
+}
+
+// Ajustement atomique du stock vendu, utilisé par le parcours "pièces"
+// (purchase_tickets_v2) et par la validation USSD (ussd-payment.cjs) afin
+// qu'il n'existe qu'un seul compteur par type de billet.
+//
+// Tout se joue dans UNE transaction : le verrou de ligne sur l'événement
+// sérialise les ajustements concurrents, chaque type est mis à jour par un
+// seul UPDATE conditionnel (contrôle de capacité inclus) et le compteur
+// événement est ajusté dans le même lot. Si une ligne échoue, rien n'est
+// appliqué (plus de compteurs à moitié mis à jour).
+//
+// `p_evidence_row_id` rend l'appel idempotent : la ligne de preuve USSD porte
+// un marqueur `metadata.ussd.stock_applied` écrit par un UPDATE conditionnel.
+// Un rejeu de la validationUSSD retrouve le marqueur et n'incrémente pas
+// une seconde fois le stock.
+async function adjustTicketStock({ p_event_id, p_lines, p_delta, p_evidence_row_id }) {
+  const dbc = db();
+  const delta = Math.trunc(Number(p_delta) || 0);
+  if (!p_event_id || !delta || (delta !== 1 && delta !== -1)) {
+    return { success: false, message: 'Ajustement de stock invalide (delta doit valoir +1 ou -1).' };
+  }
+
+  const rawLines = Array.isArray(p_lines) ? p_lines : [];
+  const perType = {};
+  for (const l of rawLines) {
+    const typeId = l && (l.type_id || l.ticket_type_id || l.id);
+    const qty = Math.trunc(Number(l && (l.qty ?? l.quantity ?? l.count)) || 0);
+    if (!typeId || qty <= 0) continue;
+    perType[typeId] = (perType[typeId] || 0) + qty;
+  }
+  const typeIds = Object.keys(perType);
+  if (!typeIds.length) return { success: false, message: 'Aucune ligne de stock à ajuster.' };
+  const totalQty = typeIds.reduce((s, id) => s + perType[id], 0);
+
+  try {
+    return await dbc.$transaction(async (tx) => {
+      // 1. Idempotence : on réclame le marqueur AVANT tout compteur. Si la
+      //    colonne existe déjà, l'ajustement a déjà été fait (rejeu).
+      if (p_evidence_row_id) {
+        const claimed = await tx.$executeRawUnsafe(
+          `UPDATE transactions
+              SET metadata = JSON_SET(
+                    COALESCE(metadata, '{}'),
+                    '$.ussd.stock_applied', 'yes',
+                    '$.ussd.stock_applied_at', DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s')
+                  )
+            WHERE id = ?
+              AND JSON_EXTRACT(COALESCE(metadata, '{}'), '$.ussd.stock_applied') IS NULL`,
+          p_evidence_row_id,
+        );
+        if (!claimed) {
+          return { success: true, already_applied: true, delta: 0, total: 0, ticket_types: [] };
+        }
+      }
+
+      // 2. Verrou de l'événement : sérialise les ajustements concurrents.
+      await tx.$queryRawUnsafe(
+        `SELECT id FROM ticketing_events WHERE event_id = ? FOR UPDATE`,
+        p_event_id,
+      );
+
+      // 3. Un UPDATE conditionnel par type : le contrôle de capacité est
+      //    évalué par MySQL au moment de l'écriture (plus de sur-vente).
+      for (const [typeId, qty] of Object.entries(perType)) {
+        const guard =
+          delta > 0
+            ? 'AND GREATEST(COALESCE(quantity_sold,0), COALESCE(tickets_sold,0)) + ? <= COALESCE(quantity_available,0)'
+            : 'AND GREATEST(COALESCE(quantity_sold,0), COALESCE(tickets_sold,0)) >= ? AND COALESCE(quantity_sold,0) >= ?';
+        const params =
+          delta > 0
+            ? [delta * qty, delta * qty, typeId, p_event_id, qty]
+            : [delta * qty, delta * qty, typeId, p_event_id, qty, qty];
+        const applied = await tx.$executeRawUnsafe(
+          `UPDATE ticket_types
+              SET quantity_sold = COALESCE(quantity_sold,0) + ?,
+                  tickets_sold  = COALESCE(tickets_sold,0)  + ?,
+                  updated_at    = NOW()
+            WHERE id = ?
+              AND (event_id = ? OR event_id IS NULL)
+              ${guard}`,
+          ...params,
+        );
+        if (!applied) {
+          const tt = await tx.ticket_types.findUnique({
+            where: { id: typeId },
+            select: { name: true, quantity_available: true, quantity_sold: true, tickets_sold: true },
+          });
+          if (!tt) throw stockError(`Type de billet introuvable: ${typeId}`, 'TICKET_TYPE_NOT_FOUND');
+          const sold = Math.max(Number(tt.quantity_sold || 0), Number(tt.tickets_sold || 0));
+          const avail = Number(tt.quantity_available || 0);
+          throw stockError(
+            delta > 0
+              ? `Stock insuffisant pour « ${tt.name || typeId} » (dispo: ${Math.max(0, avail - sold)})`
+              : `Stock vendu insuffisant pour « ${tt.name || typeId} »`,
+            delta > 0 ? 'TICKET_TYPE_OUT_OF_STOCK' : 'TICKET_TYPE_CONFLICT',
+          );
+        }
+      }
+
+      // 4. Compteur événement (ticketing_events n'a pas de colonne updated_at).
+      await tx.$executeRawUnsafe(
+        `UPDATE ticketing_events
+            SET tickets_sold = GREATEST(COALESCE(tickets_sold, 0) + ?, 0)
+          WHERE event_id = ?`,
+        delta * totalQty,
+        p_event_id,
+      );
+
+      // 5. Valeurs finales, lues dans la transaction.
+      const rows = await tx.$queryRawUnsafe(
+        `SELECT id, name, quantity_available, quantity_sold, tickets_sold
+           FROM ticket_types
+          WHERE id IN (${typeIds.map(() => '?').join(',')})`,
+        ...typeIds,
+      );
+
+      return {
+        success: true,
+        already_applied: false,
+        delta,
+        total: delta * totalQty,
+        event_id: p_event_id,
+        ticket_types: rows.map((r) => ({
+          type_id: r.id,
+          name: r.name,
+          quantity_available: Number(r.quantity_available || 0),
+          quantity_sold: Number(r.quantity_sold || 0),
+          tickets_sold: Number(r.tickets_sold || 0),
+        })),
+      };
+    });
+  } catch (e) {
+    if (e && e.__stock) return { success: false, code: e.code, message: e.message };
+    console.error('❌ Ajustement de stock échoué:', e?.message);
+    return { success: false, code: 'STOCK_UPDATE_FAILED', message: e?.message?.split('\n')[0] || 'Ajustement de stock impossible' };
+  }
+}
+
+// Erreur métier d'ajustement de stock : porte un code pour être traduite en
+// réponse RPC lisible, et déclenche le rollback de la transaction.
+function stockError(message, code) {
+  const err = new Error(message);
+  err.__stock = true;
+  err.code = code;
+  return err;
 }
 
 async function upsertProtection(p_event_id, p_user_id, params = {}) {
@@ -350,11 +564,12 @@ const HANDLERS = {
     if (!p_user_id) return fail('p_user_id requis');
     const amount = Number(p_amount) || 0;
     const creditor = p_creditor_id ? await db().profiles.findUnique({ where: { id: p_creditor_id } }) : null;
-    if (creditor && creditor.user_type !== 'super_admin' && creditor.user_type !== 'secretary') {
-      return ok({ success: false, message: 'Permission non accordée.' });
+    if (!creditor) return fail('Identifiant du créditeur requis', 'CREDITOR_REQUIRED');
+    if (creditor.user_type !== 'super_admin' && creditor.user_type !== 'secretary') {
+      return fail('Permission non accordée.', 'FORBIDDEN');
     }
     const target_profile = await db().profiles.findUnique({ where: { id: p_user_id } });
-    if (!target_profile) return ok({ success: false, message: 'Utilisateur non trouvé.' });
+    if (!target_profile) return fail('Utilisateur non trouve.', 'USER_NOT_FOUND');
     const newBalance = (target_profile.coin_balance || 0) + amount;
     await db().profiles.update({ where: { id: p_user_id }, data: { coin_balance: newBalance } });
     const rateRow = await db().app_settings.findFirst();
@@ -378,11 +593,12 @@ const HANDLERS = {
     if (!p_user_id) return fail('p_user_id requis');
     const amount = Number(p_amount) || 0;
     const debitor = p_debitor_id ? await db().profiles.findUnique({ where: { id: p_debitor_id } }) : null;
-    if (debitor && debitor.user_type !== 'super_admin' && !(debitor.user_type === 'secretary' && debitor.appointed_by_super_admin)) {
-      return ok({ success: false, message: 'Permission non accordée.' });
+    if (!debitor) return fail('Identifiant du débiteur requis', 'DEBITOR_REQUIRED');
+    if (debitor.user_type !== 'super_admin' && !(debitor.user_type === 'secretary' && debitor.appointed_by_super_admin)) {
+      return fail('Permission non accordée.', 'FORBIDDEN');
     }
     const profile = await db().profiles.findUnique({ where: { id: p_user_id } });
-    if (!profile) return ok({ success: false, message: 'Utilisateur non trouvé.' });
+    if (!profile) return fail('Utilisateur non trouve.', 'USER_NOT_FOUND');
     const total = (profile.coin_balance || 0) + (profile.free_coin_balance || 0);
     if (total < amount) return fail('Solde insuffisant', 'INSUFFICIENT_FUNDS');
     const paidUsed = Math.min(profile.coin_balance || 0, amount);
@@ -413,6 +629,76 @@ const HANDLERS = {
     return ok({ success: true, message: 'Le compte a été débité avec succès.', coin_balance: (profile.coin_balance || 0) - paidUsed, free_coin_balance: (profile.free_coin_balance || 0) - freeUsed });
   },
 
+  // Dépense de pièces par l'utilisateur lui-même, pour une action de l'interface
+  // (boost, promotion, vote payant). C'est le SEUL chemin de dépense autorisé
+  // côté application : `debit_user_coins` reste un débit administratif.
+  //
+  // Avant, le navigateur appelait `debit_user_coins`, qui refusait un
+  // utilisateur normal en renvoyant { success: false } SANS erreur. Les
+  // appelants ne testaient que le champ `error` : le débit n'était jamais
+  // appliqué et l'action boost/promotion/vote partait quand même, gratuitement.
+  // C'est aussi ce qui a laissé `CoinService` se rabattre sur une écriture
+  // manuelle de profiles.coin_balance depuis le navigateur.
+  async spend_user_coins(args) {
+    const { p_user_id, p_amount, p_reason, p_reference_type, p_reference_id } = args;
+    if (!p_user_id) return fail('p_user_id requis');
+    const amount = Number(p_amount);
+    if (!Number.isFinite(amount) || amount <= 0) return fail('Montant invalide', 'INVALID_AMOUNT');
+    // La dépense ne peut jamais être négative : sans ce garde-fou, un montant
+    // négatif rechargerait le portefeuille au lieu de le débiter.
+    if (!p_reason) return fail('Motif requis', 'REASON_REQUIRED');
+
+    const profile = await db().profiles.findUnique({ where: { id: p_user_id } });
+    if (!profile) return fail('Utilisateur introuvable', 'USER_NOT_FOUND');
+    if (profile.is_active === false) return fail('Compte inactif', 'ACCOUNT_INACTIVE');
+
+    const freeUsed = Math.min(profile.free_coin_balance || 0, amount);
+    const paidUsed = amount - freeUsed;
+    const coinBalance = (profile.coin_balance || 0) - paidUsed;
+    const freeBalance = (profile.free_coin_balance || 0) - freeUsed;
+    if (coinBalance < 0 || freeBalance < 0) return fail('Solde insuffisant', 'INSUFFICIENT_FUNDS');
+
+    // Comparaison-échange : la condition sur les soldes lus fait échouer
+    // l'écriture si un autre débit a eu lieu entre-temps, ce qui empêche de
+    // dépenser deux fois la même pièce lors de deux requêtes simultanées.
+    const applied = await db().profiles.updateMany({
+      where: {
+        id: p_user_id,
+        coin_balance: profile.coin_balance || 0,
+        free_coin_balance: profile.free_coin_balance || 0,
+      },
+      data: { coin_balance: coinBalance, free_coin_balance: freeBalance },
+    });
+    if (applied.count !== 1) return fail('Solde modifié en cours de traitement', 'CONCURRENT_UPDATE');
+
+    const rateRow = await db().app_settings.findFirst();
+    const rate = Number(rateRow?.coin_to_fcfa_rate) || 10;
+    await db().transactions.create({
+      data: {
+        user_id: p_user_id,
+        transaction_type: p_reference_type ? `spend_${String(p_reference_type).slice(0, 24)}` : 'spend',
+        amount_pi: -amount,
+        amount_fcfa: -amount * rate,
+        description: p_reason,
+        transaction_reference: p_reference_id || null,
+        metadata: JSON.stringify({ free_used: freeUsed, paid_used: paidUsed }),
+        status: 'completed',
+        city: profile.city,
+        region: profile.region,
+        country: profile.country,
+      },
+    });
+
+    return ok({
+      success: true,
+      spent: amount,
+      free_used: freeUsed,
+      paid_used: paidUsed,
+      coin_balance: coinBalance,
+      free_coin_balance: freeBalance,
+    });
+  },
+
   async increment_user_coins(args) {
     const { p_user_id, p_coin_increment } = args;
     const amount = Number(p_coin_increment) || 0;
@@ -440,10 +726,18 @@ const HANDLERS = {
   },
 
   // ---------- Événements ----------
-  async delete_event_completely(args) {
+  async delete_event_completely(args, actor) {
     const { p_event_id } = args;
     if (!p_event_id) return fail('p_event_id requis');
     const dbc = db();
+    // L'organisateur peut supprimer son propre événement (« Mes événements »),
+    // l'administration peut supprimer n'importe lequel. Sans session, refus.
+    if (!actor || actor.source === 'internal') return fail('Authentification requise', 'FORBIDDEN');
+    if (actor.source === 'user' && !ADMIN_ROLES.includes(actor.user_type)) {
+      const ev = await dbc.events.findUnique({ where: { id: p_event_id }, select: { organizer_id: true } });
+      if (!ev) return fail('Événement introuvable', 'NOT_FOUND');
+      if (ev.organizer_id !== actor.id) return fail("Vous n'êtes pas l'organisateur de cet événement", 'FORBIDDEN');
+    }
     // suppression en cascade manuelle (aucune FK déclarée)
     const tables = ['event_bookmarks', 'event_reactions', 'event_views', 'event_votes', 'user_votes', 'participant_votes', 'votes', 'event_participations', 'participations', 'participant_refunds', 'event_promotions', 'event_promo_config', 'event_settings', 'event_protections', 'protected_event_access', 'event_stands', 'stand_rentals', 'stand_bookings', 'event_raffles', 'raffles', 'raffle_tickets', 'raffle_participants', 'raffle_prizes', 'raffle_draw_history', 'raffle_draw_sessions', 'raffle_draw_status', 'raffle_winners', 'raffle_live_numbers', 'tickets', 'ticket_purchases', 'ticket_orders', 'event_community_verifications', 'candidates'];
     for (const t of tables) {
@@ -463,43 +757,65 @@ const HANDLERS = {
   },
 
   // ---------- Médias / vidéos ----------
-  async get_todays_mandatory_video(args) {
-    const { user_uuid } = args;
-    const today = new Date().toISOString().slice(0, 10);
+  async get_todays_mandatory_video(args, actor) {
+    // Identité du jeton, jamais du paramètre : impossible de regarder « le
+    // visionnage d'aujourd'hui » d'un autre compte.
+    const uid = actor?.id || args.user_uuid;
+    if (!uid) return fail('Utilisateur requis', 'USER_REQUIRED');
     const video = await db().mandatory_videos.findFirst({ where: { is_active: true }, orderBy: { created_at: 'asc' } });
-    const watchedToday = await db().user_video_watches.findFirst({ where: { user_id: user_uuid, watched_date: new Date(today) } });
-    return ok({ video: video || null, already_watched: !!watchedToday, watched_today: !!watchedToday });
+    // user_video_watches ne porte que rewarded_at (pas de date « visionnage ») :
+    // la déduplication se fait par (utilisateur, vidéo).
+    const watched = video
+      ? await db().user_video_watches.findFirst({ where: { user_id: uid, video_id: video.id } })
+      : null;
+    return ok({ video: video || null, already_watched: !!watched, watched_today: !!watched });
   },
 
-  async credit_user_for_video(args) {
-    const { p_user_id, p_video_id, p_reward_coins } = args;
-    const reward = Number(p_reward_coins) || 0;
-    const profile = await db().profiles.findUnique({ where: { id: p_user_id } });
-    if (!profile) return fail('Profil introuvable', 'NOT_FOUND');
-    const balance = (profile.coin_balance || 0) + reward;
-    await db().profiles.update({ where: { id: p_user_id }, data: { coin_balance: balance } });
-    await db().user_video_watches.create({
-      data: { id: uuidv4(), user_id: p_user_id, video_id: p_video_id, reward_coins: reward, watched_date: new Date(), created_at: new Date() },
-    });
-    return ok({ success: true, reward_coins: reward, coin_balance: balance });
-  },
-
-  async complete_mandatory_video(args) {
-    const { user_uuid, video_uuid, watch_duration, device_data } = args;
+  // Crédit vidéo : la récompense est LUE sur le serveur (mandatory_videos.
+  // reward_coins), jamais acceptée du client. Une seule récompense par
+  // (utilisateur, vidéo) : un double clic ne crédite pas deux fois, et un
+  // utilisateur ne peut pas inventer un montant.
+  async credit_user_for_video(args, actor) {
+    const uid = actor?.id || args.p_user_id;
+    const { p_video_id } = args;
+    if (!uid || !p_video_id) return fail('p_user_id et p_video_id requis', 'PARAMS_MISSING');
     const dbc = db();
-    const today = new Date().toISOString().slice(0, 10);
-    const existing = await dbc.user_video_watches.findFirst({ where: { user_id: user_uuid, video_id: video_uuid, watched_date: new Date(today) } });
-    const profile = await dbc.profiles.findUnique({ where: { id: user_uuid } });
-    if (existing) return ok({ success: true, already_completed: true });
-    const video = await dbc.mandatory_videos.findUnique({ where: { id: video_uuid } });
-    const reward = video?.reward_coins || 0;
-    await dbc.user_video_watches.create({
-      data: { id: uuidv4(), user_id: user_uuid, video_id: video_uuid, reward_coins: reward, watch_duration: Number(watch_duration) || 0, device: JSON.stringify(device_data || {}), watched_date: new Date(today), created_at: new Date() },
+    const video = await dbc.mandatory_videos.findUnique({
+      where: { id: p_video_id },
+      select: { id: true, is_active: true, reward_coins: true },
     });
-    if (profile) {
+    if (!video || video.is_active === false) return fail('Vidéo introuvable ou désactivée', 'VIDEO_NOT_ACTIVE');
+    const reward = Math.max(0, Math.floor(Number(video.reward_coins || 0)));
+    if (reward <= 0) return fail('Cette vidéo ne récompense pas de pièces', 'NO_REWARD');
+    const profile = await dbc.profiles.findUnique({ where: { id: uid } });
+    if (!profile) return fail('Profil introuvable', 'NOT_FOUND');
+    const dup = await dbc.user_video_watches.findFirst({ where: { user_id: uid, video_id: p_video_id } });
+    const newBalance = (profile.coin_balance || 0) + reward;
+    if (dup) return ok({ success: true, already_credited: true, reward_coins: reward, coin_balance: newBalance });
+    await dbc.user_video_watches.create({
+      data: { id: uuidv4(), user_id: uid, video_id: p_video_id, rewarded_at: new Date() },
+    });
+    await dbc.profiles.update({ where: { id: uid }, data: { coin_balance: newBalance } });
+    return ok({ success: true, reward_coins: reward, coin_balance: newBalance });
+  },
+
+  async complete_mandatory_video(args, actor) {
+    const uid = actor?.id || args.user_uuid;
+    const { video_uuid } = args;
+    if (!uid || !video_uuid) return fail('user_uuid et video_uuid requis', 'PARAMS_MISSING');
+    const dbc = db();
+    const existing = await dbc.user_video_watches.findFirst({ where: { user_id: uid, video_id: video_uuid } });
+    const profile = await dbc.profiles.findUnique({ where: { id: uid } });
+    if (existing) return ok({ success: true, already_completed: true });
+    const video = await dbc.mandatory_videos.findUnique({ where: { id: video_uuid }, select: { reward_coins: true } });
+    const reward = Number(video?.reward_coins || 0);
+    await dbc.user_video_watches.create({
+      data: { id: uuidv4(), user_id: uid, video_id: video_uuid, rewarded_at: new Date() },
+    });
+    if (profile && reward > 0) {
       const balance = (profile.coin_balance || 0) + reward;
       const completed = (profile.mandatory_videos_completed || 0) + 1;
-      await dbc.profiles.update({ where: { id: user_uuid }, data: { coin_balance: balance, mandatory_videos_completed: completed, last_video_watched_at: new Date() } });
+      await dbc.profiles.update({ where: { id: uid }, data: { coin_balance: balance, mandatory_videos_completed: completed, last_video_watched_at: new Date() } });
     }
     return ok({ success: true, reward_coins: reward });
   },
@@ -573,8 +889,8 @@ const HANDLERS = {
       const tt = await dbc.ticket_types.findUnique({ where: { id: typeId } });
       if (!tt) return fail(`Type de billet introuvable: ${typeId}`, 'TICKET_TYPE_NOT_FOUND');
       if (tt.event_id && tt.event_id !== p_event_id) return fail(`Type de billet ${typeId} hors événement`, 'TICKET_TYPE_WRONG_EVENT');
-      const sold = tt.quantity_sold ?? tt.tickets_sold ?? 0;
-      const avail = tt.quantity_available ?? 0;
+      const sold = Math.max(Number(tt.quantity_sold || 0), Number(tt.tickets_sold || 0));
+      const avail = Number(tt.quantity_available || 0);
       if (sold + qty > avail) return fail(`Stock insuffisant pour « ${tt.name} » (dispo: ${Math.max(0, avail - sold)})`, 'TICKET_TYPE_OUT_OF_STOCK');
       const coins = tt.price_coins || tt.price_pi || Math.round(Number(tt.price || 0) / 10);
       baseTotalFcfa += coins * qty;
@@ -583,23 +899,50 @@ const HANDLERS = {
     if (!items.length) return fail('Aucun billet valide dans le panier', 'EMPTY_CART');
 
     // 2. Réduction promo (si code promo valide fourni)
+    //    La remise est supportée par le gain organisateur : l'organisateur est
+    //    crédité du montant RÉELLEMENT encaissé (base - remise), et la remise
+    //    est explicitée dans sa description pour qu'il voie pourquoi.
     let promoReduction = 0;      // en pièces
     let promoMeta = null;
     if (p_promo_code_id) {
       const promo = await dbc.promo_codes.findUnique({ where: { id: p_promo_code_id } });
       if (!promo) return fail('Code promo introuvable', 'PROMO_NOT_FOUND');
-      const cfg = promo.event_id
-        ? await dbc.event_promo_config.findFirst({ where: { event_id: p_event_id, id: promo.promo_config_id || undefined } })
-        : await dbc.event_promo_config.findFirst({ where: { event_id: p_event_id } });
+      if (promo.is_active === false) return fail('Ce code promo est désactivé', 'PROMO_INACTIVE');
+      if (promo.event_id && promo.event_id !== p_event_id) {
+        return fail('Code promo non applicable à cet événement', 'PROMO_NOT_APPLICABLE');
+      }
+      if (promo.expires_at && new Date(promo.expires_at) < new Date()) {
+        return fail('Ce code promo a expiré', 'PROMO_EXPIRED');
+      }
+      // La limite la plus contraignante entre le code et la config de l'événement.
+      const promoLimit = promo.usage_limit ?? null;
+      const promoUsed = promo.usage_count ?? 0;
+      if (promoLimit !== null && promoUsed >= promoLimit) {
+        return fail('Ce code promo a atteint sa limite d\'utilisation', 'PROMO_LIMIT_REACHED');
+      }
+      const cfg = await dbc.event_promo_config.findFirst({ where: { event_id: p_event_id } });
       const cfgActive = cfg?.enabled !== false;
       const now = new Date();
       const withinDates = (!cfg?.valid_from || now >= cfg.valid_from) && (!cfg?.valid_to || now <= cfg.valid_to);
       if (!cfgActive || !withinDates) return fail('Code promo non applicable à cet événement', 'PROMO_NOT_APPLICABLE');
+      const cfgLimit = cfg?.usage_limit ?? null;
+      if (cfgLimit !== null && promoUsed >= cfgLimit) {
+        return fail('Ce code promo a atteint sa limite d\'utilisation', 'PROMO_LIMIT_REACHED');
+      }
       const dType = cfg?.discount_type || 'percentage';
       const dVal = Number(cfg?.discount_value || 0);
       promoReduction = dType === 'fixed' ? Math.min(dVal, baseTotalFcfa) : Math.round((baseTotalFcfa * dVal) / 100);
       promoReduction = Math.min(promoReduction, baseTotalFcfa);
-      promoMeta = { promo_code_id: promo.id, discount_type: dType, discount_value: dVal, commission_rate: cfg?.commission_rate || 0 };
+      promoMeta = {
+        promo_code_id: promo.id,
+        code: promo.code,
+        influencer_id: promo.influencer_id || null,
+        discount_type: dType,
+        discount_value: dVal,
+        discount_coins: promoReduction,
+        base_coins: baseTotalFcfa,
+        commission_rate: Number(cfg?.commission_rate || 0),
+      };
     }
     const totalCoins = Math.max(1, baseTotalFcfa - promoReduction);
     // Débit explicite auteur (p_final_amount non fiable côté client) : on utilise totalCoins.
@@ -614,6 +957,18 @@ const HANDLERS = {
     const now = new Date();
     const orderId = p_transaction_reference || `TKT-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
     const createdTickets = [];
+
+    // Garde-fou anti-double achat : un rejeu du même orderId ne doit pas
+    // recréer de billets ni re-débiter le portefeuille.
+    if (p_transaction_reference) {
+      const already = await dbc.tickets.findFirst({
+        where: { transaction_reference: orderId, event_id: p_event_id },
+        select: { id: true },
+      });
+      if (already) {
+        return fail('Cette commande a déjà été traitée (billets existants pour cette référence).', 'DUPLICATE_ORDER');
+      }
+    }
 
     for (const { tt, qty, coins } of items) {
       for (let i = 0; i < qty; i++) {
@@ -642,7 +997,23 @@ const HANDLERS = {
         });
         createdTickets.push(t);
       }
-      await dbc.ticket_types.update({ where: { id: tt.id }, data: { tickets_sold: (tt.tickets_sold ?? 0) + qty, quantity_sold: (tt.quantity_sold ?? 0) + qty, updated_at: now } });
+    }
+
+    // Décrément du stock : compteur ticket_types + compteur événement.
+    // Doit précéder le débit du portefeuille pour ne jamais délivrer de billet gratuit.
+    const stockRes = await adjustTicketStock({
+      p_event_id: p_event_id,
+      p_delta: 1,
+      p_lines: items.map(({ tt, qty }) => ({ type_id: tt.id, qty })),
+    });
+    if (!stockRes.success) {
+      // Annulation des billets déjà créés : le client n'a pas encore été débité.
+      try {
+        await dbc.tickets.deleteMany({ where: { transaction_reference: orderId, event_id: p_event_id } });
+      } catch (e) {
+        console.error('⚠️ rollback billets:', e.message);
+      }
+      return fail(stockRes.message, stockRes.code || 'STOCK_UPDATE_FAILED');
     }
 
     try {
@@ -682,13 +1053,21 @@ const HANDLERS = {
       console.error('⚠️ Erreur miroir event_tickets:', e.message);
     }
 
-    await dbc.profiles.update({
-      where: { id: p_user_id },
-      data: {
-        coin_balance: Math.max(0, balance - totalCoins),
-        updated_at: now,
-      },
+    // Débit atomique conditionné au solde lu : en cas de deux achats
+    // simultanés, un seul passe le contrôle `coin_balance >= totalCoins`.
+    const debited = await dbc.profiles.updateMany({
+      where: { id: p_user_id, coin_balance: { gte: totalCoins } },
+      data: { coin_balance: { decrement: totalCoins }, updated_at: now },
     });
+    if (!debited.count) {
+      await dbc.tickets.deleteMany({ where: { transaction_reference: orderId, event_id: p_event_id } });
+      await adjustTicketStock({
+        p_event_id,
+        p_delta: -1,
+        p_lines: items.map(({ tt, qty }) => ({ type_id: tt.id, qty })),
+      });
+      return fail('Solde insuffisant (paiement concurrent)', 'INSUFFICIENT_COINS');
+    }
 
     const payment = await dbc.payments.create({
       data: {
@@ -726,6 +1105,12 @@ const HANDLERS = {
     try {
       const organ = await dbc.events.findUnique({ where: { id: p_event_id }, select: { organizer_id: true } });
       if (organ?.organizer_id) {
+        // La remise promo est portée par l'organisateur : on explicite les 3 lignes
+        // (prix plein / remise code promo / montant net réellement encaissé) pour
+        // qu'il voie exactement d'où vient la différence dans son relevé de gains.
+        const promoLine = promoMeta && promoMeta.discount_coins > 0
+          ? ` — prix plein ${baseTotalFcfa} pièces − remise code ${promoMeta.code} ${promoMeta.discount_coins} pièces = ${totalCoins} pièces encaissées`
+          : '';
         await creditOrganizerEarnings({
           p_organizer_id: organ.organizer_id,
           p_event_id,
@@ -734,12 +1119,41 @@ const HANDLERS = {
           p_earnings_coins: totalCoins,
           p_earnings_fcfa: totalCoins * 10,
           p_ticket_count: createdTickets.length,
-          p_description: `Vente de ${createdTickets.length} billet(s) — en attente de validation`,
+          p_description: `Vente de ${createdTickets.length} billet(s)${promoLine}`,
           p_created_at: now,
         });
       }
     } catch (e) {
       console.error('⚠️ Gains organisateur non crédités:', e.message);
+    }
+
+    // Commission du code promo à l'influenceur, en pièces ET en FCFA.
+    let promoCommission = null;
+    if (promoMeta && promoMeta.influencer_id && promoMeta.commission_rate > 0) {
+      try {
+        promoCommission = await creditPromoCommissionOnce({
+          transactionRef: orderId,
+          influencerId: promoMeta.influencer_id,
+          eventId: p_event_id,
+          baseCoins: baseTotalFcfa,
+          rate: promoMeta.commission_rate,
+          code: promoMeta.code,
+        });
+      } catch (e) {
+        console.error('⚠️ Commission influenceur non créditée:', e.message);
+      }
+    }
+
+    // Compteur d'usage du code promo ( alimenté uniquement après achat réussi ).
+    if (promoMeta) {
+      try {
+        await dbc.promo_codes.update({
+          where: { id: promoMeta.promo_code_id },
+          data: { usage_count: { increment: 1 }, updated_at: now },
+        });
+      } catch (e) {
+        console.error('⚠️ usage_count du code promo non incrémenté:', e.message);
+      }
     }
 
     return ok({
@@ -752,8 +1166,28 @@ const HANDLERS = {
       base_total_coins: baseTotalFcfa,
       promo: promoMeta,
       promo_applied: !!promoMeta,
+      promo_discount_coins: promoReduction,
+      promo_commission: promoCommission,
       tickets: createdTickets.map((t) => ({ id: t.id, qr_code: t.qr_code, ticket_number: t.ticket_number, price: t.total_amount_pi, price_fcfa: (t.total_amount_fcfa || 0), ticket_code_short: t.ticket_code_short, status: t.status })),
     });
+  },
+
+  // Stock partagé entre le parcours "pièces" (purchase_tickets_v2) et le parcours
+  // USSD (netlify/functions/ussd-payment.cjs) pour garantir un compteur unique.
+  // /api/rpc n'est pas authentifié : ce RPC n'est donc réservé qu'aux appels
+  // serveur porteurs de la clé interne (INTERNAL_RPC_KEY), jamais au navigateur.
+  async adjust_ticket_stock(args) {
+    const { p_event_id, p_lines, p_delta, p_evidence_row_id, p_internal_key } = args || {};
+    const expectedKey = process.env.INTERNAL_RPC_KEY || '';
+    if (!expectedKey) {
+      console.error('❌ INTERNAL_RPC_KEY absent : adjust_ticket_stock refusé.');
+      return fail('Ajustement de stock indisponible (INTERNAL_RPC_KEY non configuré).', 'INTERNAL_RPC_KEY_MISSING');
+    }
+    if (!p_internal_key || p_internal_key !== expectedKey) {
+      return fail("Appel interne non autorisé pour l'ajustement du stock.", 'UNAUTHORIZED');
+    }
+    const res = await adjustTicketStock({ p_event_id, p_lines, p_delta, p_evidence_row_id });
+    return res.success ? ok(res) : fail(res.message, res.code || 'STOCK_UPDATE_FAILED');
   },
 
   async rent_stand(args) {
@@ -1023,175 +1457,267 @@ const HANDLERS = {
     });
   },
 
-  async cast_votes(args) {
-    const { p_user_id, p_event_id, p_votes, p_voter_phone } = args || {};
-    if (!p_user_id || !p_event_id) return fail('utilisateur et evenement requis');
+  // Vote PAYANT atomique (coins). Avant, cast_votes enchaînait des écritures
+  // séparées et débitait le solde en DERNIER : une panne en cours de route
+  // laissait les voix enregistrées sans débit, et le montant était calculé sur
+  // un solde lu hors transaction (deux clics simultanés pouvaient dépasser le
+  // solde). Tout est désormais dans une seule transaction Prisma : débit
+  // conditionnel (comparaison-échange) + user_votes + candidates + payments +
+  // transactions + gain organisateur. Si une seule écriture échoue, tout est
+  // annulé et les pièces reviennent.
+  //
+  // Idempotence : le client fournit p_idempotency_key (un UUID par intention de
+  // vote). Si la même clé est rejouée (double clic, retry après timeout), la
+  // fonction renvoie le résultat déjà enregistré au lieu de débiter à nouveau.
+  async cast_contest_votes(args, actor) {
+    const { p_user_id, p_event_id, p_votes, p_voter_phone, p_idempotency_key } = args || {};
+    const userId = actor?.id || p_user_id;
+    if (!userId || !p_event_id) return fail('utilisateur et evenement requis');
     const lines = (Array.isArray(p_votes) ? p_votes : [])
       .map((v) => ({ candidateId: v && (v.candidate_id || v.candidateId), voteCount: Math.max(0, parseInt(v && (v.vote_count || v.voteCount), 10) || 0) }))
       .filter((v) => v.candidateId && v.voteCount > 0);
     if (!lines.length) return fail('Aucun vote valide', 'EMPTY_VOTES');
 
+    // Cle d'idempotence : deduite d'un UUID du client, unique par intention.
+    // Sans elle, on retombe sur un identifiant horodate : utile en dernier
+    // recours mais les doublons de clic restent possibles (le front doit la
+    // fournir). Transaction_id enregistre dans payments pour rejouer le resultat.
+    const orderId = p_idempotency_key
+      ? `VOTE-${String(p_idempotency_key).slice(0, 48)}`
+      : `VOTE-${Date.now()}-${Math.floor(Math.random() * 99999)}`;
+
     const dbc = db();
-    const profile = await dbc.profiles.findUnique({ where: { id: p_user_id } });
-    if (!profile) return fail('Profil introuvable', 'PROFILE_NOT_FOUND');
-    const ev = await dbc.events.findUnique({ where: { id: p_event_id }, select: { id: true, title: true, organizer_id: true, price_pi: true, price_fcfa: true, is_sales_closed: true, status: true } });
-    if (!ev) return fail('Evenement introuvable', 'EVENT_NOT_FOUND');
-    if (ev.is_sales_closed) return fail('Les votes sont fermes', 'VOTING_CLOSED');
-    const price = Math.max(0, Math.floor(Number(ev.price_pi || 0)));
-    if (price <= 0) return fail('Ce vote est gratuit : utilisez le parcours gratuit', 'FREE_VOTING');
-
-    const settings = await dbc.event_settings.findFirst({ where: { event_id: p_event_id } });
-    const requested = lines.reduce((s, l) => s + l.voteCount, 0);
-    const totalCoins = price * requested;
-
-    const resolved = [];
-    for (const line of lines) {
-      const cand = await dbc.candidates.findUnique({ where: { id: line.candidateId }, select: { id: true, name: true, event_id: true } });
-      if (!cand) return fail(`Candidat introuvable: ${line.candidateId}`, 'CANDIDATE_NOT_FOUND');
-      if (cand.event_id && cand.event_id !== p_event_id) return fail("Ce candidat n'appartient pas a cet evenement", 'CANDIDATE_WRONG_EVENT');
-      resolved.push({ cand, voteCount: line.voteCount });
-    }
-
-    const maxPerUser = Number(settings?.max_votes_per_user || 0);
-    if (maxPerUser > 0) {
-      const mine = await dbc.user_votes.findMany({ where: { user_id: p_user_id, event_id: p_event_id }, select: { vote_count: true } });
-      const already = mine.reduce((s, r) => s + Number(r.vote_count || 0), 0);
-      if (already + requested > maxPerUser) {
-        return fail(`Limite de ${maxPerUser} voix par personne (deja ${already})`, 'VOTE_USER_LIMIT');
-      }
-    }
-
-    const voterPhone = normalizePhone(p_voter_phone || profile.phone || '');
-    const maxPerPhone = Number(settings?.max_votes_per_phone || 0);
-    if (maxPerPhone > 0 && voterPhone) {
-      const rows = await dbc.user_votes.findMany({ where: { event_id: p_event_id }, select: { vote_count: true, voter_phone: true } });
-      let already = 0;
-      for (const r of rows) {
-        if (normalizePhone(r.voter_phone) === voterPhone) already += Number(r.vote_count || 0);
-      }
-      if (already + requested > maxPerPhone) {
-        return fail(`Limite de ${maxPerPhone} voix par telephone (deja ${already})`, 'VOTE_PHONE_LIMIT');
-      }
-    }
-
-    const balance = Number(profile.coin_balance || 0);
-    if (balance < totalCoins) {
-      return fail(`Solde insuffisant (disponible: ${balance}, requis: ${totalCoins})`, 'INSUFFICIENT_COINS');
-    }
-
-    const now = new Date();
-    const orderId = `VOTE-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
-
-    for (const { cand, voteCount } of resolved) {
-      const existing = await dbc.user_votes.findFirst({
-        where: { user_id: p_user_id, candidate_id: cand.id, event_id: p_event_id },
-      });
-      if (existing) {
-        await dbc.user_votes.update({
-          where: { id: existing.id },
-          data: {
-            vote_count: Number(existing.vote_count || 0) + voteCount,
-            vote_cost_pi: Number(existing.vote_cost_pi || 0) + price * voteCount,
-            vote_cost_fcfa: Number(existing.vote_cost_fcfa || 0) + price * voteCount * 10,
-            net_to_organizer: Number(existing.net_to_organizer || 0) + price * voteCount,
-            payment_method: 'coins',
-            payment_status: 'completed',
-            voter_phone: voterPhone || existing.voter_phone || null,
-          },
-        });
-      } else {
-        await dbc.user_votes.create({
-          data: {
-            id: uuidv4(),
-            user_id: p_user_id,
-            candidate_id: cand.id,
-            event_id: p_event_id,
-            vote_count: voteCount,
-            vote_cost_pi: price * voteCount,
-            vote_cost_fcfa: price * voteCount * 10,
-            net_to_organizer: price * voteCount,
-            fees: 0,
-            payment_method: 'coins',
-            payment_status: 'completed',
-            voter_phone: voterPhone || null,
-            created_at: now,
-          },
-        });
-      }
-      const current = await dbc.candidates.findUnique({ where: { id: cand.id }, select: { vote_count: true } });
-      await dbc.candidates.update({
-        where: { id: cand.id },
-        data: { vote_count: Number(current?.vote_count || 0) + voteCount },
-      });
-    }
-
-    await dbc.profiles.update({
-      where: { id: p_user_id },
-      data: { coin_balance: balance - totalCoins, updated_at: now },
+    // Rejeu : si cette intention a deja ete honoree, on renvoie le meme resultat
+    // sans debiter. Verifie hors transaction (lecture fraiche) puis re-verifie
+    // dans la transaction pour les cas strictement simultanes.
+    const prior = await dbc.payments.findFirst({
+      where: { user_id: userId, transaction_id: orderId },
+      select: { coins_amount: true },
     });
-
-    await dbc.payments.create({
-      data: {
-        user_id: p_user_id,
-        coins_amount: totalCoins,
-        amount_fcfa: totalCoins * 10,
-        status: 'paid',
-        payment_method: 'coins',
-        transaction_id: orderId,
-        pack_id: 'vote_purchase',
-        credits_added: true,
-        created_at: now,
-        updated_at: now,
-      },
-    });
-
-    await dbc.transactions.create({
-      data: {
-        user_id: p_user_id,
-        event_id: p_event_id,
-        transaction_type: 'vote_purchase',
-        amount_pi: totalCoins,
-        amount_fcfa: totalCoins * 10,
-        description: `${requested} voix pour ${ev.title || 'l\'evenement'}`,
-        status: 'completed',
-        amount_coins: totalCoins,
-        created_at: now,
-        completed_at: now,
-        payment_method: 'coins',
-        transaction_reference: orderId,
-      },
-    });
+    if (prior) {
+      const replayIdem = lines.reduce((s, l) => s + l.voteCount, 0);
+      return {
+        success: true, already_recorded: true, transaction_id: orderId,
+        total_coins: Number(prior.coins_amount || 0),
+        vote_count: replayIdem,
+      };
+    }
 
     try {
-      if (ev.organizer_id) {
-        await creditOrganizerEarnings({
-          p_organizer_id: ev.organizer_id,
-          p_event_id,
-          p_transaction_id: orderId,
-          p_transaction_type: 'vote',
-          p_earnings_coins: totalCoins,
-          p_earnings_fcfa: totalCoins * 10,
-          p_ticket_count: requested,
-          p_description: `${requested} voix payees - en attente de validation`,
-          p_created_at: now,
+      return await dbc.$transaction(async (tx) => {
+        // Re-verification idempotence dans la transaction (lecture deja commitee
+        // pour les deux requetes vraiment simultanees).
+        const alreadyInTx = await tx.payments.findFirst({
+          where: { user_id: userId, transaction_id: orderId },
+          select: { coins_amount: true },
         });
-      }
-    } catch (e) {
-      console.error('Gains vote non credites:', e.message);
-    }
+        if (alreadyInTx) {
+          const replayTx = lines.reduce((s, l) => s + l.voteCount, 0);
+          return { success: true, already_recorded: true, transaction_id: orderId, total_coins: Number(alreadyInTx.coins_amount || 0), vote_count: replayTx };
+        }
 
-    return ok({
-      success: true,
-      message: 'Vote enregistre',
-      transaction_id: orderId,
-      total_coins: totalCoins,
-      vote_count: requested,
-      price_per_vote: price,
-    });
+        const profile = await tx.profiles.findUnique({ where: { id: userId } });
+        if (!profile) return fail('Profil introuvable', 'PROFILE_NOT_FOUND');
+        if (profile.is_active === false) return fail('Compte inactif', 'ACCOUNT_INACTIVE');
+        const ev = await tx.events.findUnique({ where: { id: p_event_id }, select: { id: true, title: true, organizer_id: true, price_pi: true, price_fcfa: true, is_sales_closed: true, status: true } });
+        if (!ev) return fail('Evenement introuvable', 'EVENT_NOT_FOUND');
+        if (ev.is_sales_closed) return fail('Les votes sont fermes', 'VOTING_CLOSED');
+        const price = Math.max(0, Math.floor(Number(ev.price_pi || 0)));
+        if (price <= 0) return fail('Ce vote est gratuit : utilisez le parcours gratuit', 'FREE_VOTING');
+
+        const settings = await tx.event_settings.findFirst({ where: { event_id: p_event_id } });
+        const requested = lines.reduce((s, l) => s + l.voteCount, 0);
+        const totalCoins = price * requested;
+
+        const resolved = [];
+        for (const line of lines) {
+          const cand = await tx.candidates.findUnique({ where: { id: line.candidateId }, select: { id: true, name: true, event_id: true } });
+          if (!cand) return fail(`Candidat introuvable: ${line.candidateId}`, 'CANDIDATE_NOT_FOUND');
+          if (cand.event_id && cand.event_id !== p_event_id) return fail("Ce candidat n'appartient pas a cet evenement", 'CANDIDATE_WRONG_EVENT');
+          resolved.push({ cand, voteCount: line.voteCount });
+        }
+
+        const maxPerUser = Number(settings?.max_votes_per_user || 0);
+        if (maxPerUser > 0) {
+          const mine = await tx.user_votes.findMany({ where: { user_id: userId, event_id: p_event_id }, select: { vote_count: true } });
+          const already = mine.reduce((s, r) => s + Number(r.vote_count || 0), 0);
+          if (already + requested > maxPerUser) {
+            return fail(`Limite de ${maxPerUser} voix par personne (deja ${already})`, 'VOTE_USER_LIMIT');
+          }
+        }
+
+        const voterPhone = normalizePhone(p_voter_phone || profile.phone || '');
+        const maxPerPhone = Number(settings?.max_votes_per_phone || 0);
+        if (maxPerPhone > 0 && voterPhone) {
+          const rows = await tx.user_votes.findMany({ where: { event_id: p_event_id }, select: { vote_count: true, voter_phone: true } });
+          let already = 0;
+          for (const r of rows) {
+            if (normalizePhone(r.voter_phone) === voterPhone) already += Number(r.vote_count || 0);
+          }
+          if (already + requested > maxPerPhone) {
+            return fail(`Limite de ${maxPerPhone} voix par telephone (deja ${already})`, 'VOTE_PHONE_LIMIT');
+          }
+        }
+
+        // Débit conditionnel : la condition porte sur les soldes LUS à l'instant
+        // T. Une seconde requête simultanée voit l'écriture déjà appliquée,
+        // sa condition échoue (count 0) et la transaction est annulée : une
+        // même pièce ne peut pas être dépensée deux fois. Les pièces gratuites
+        // sont consommées en premier, comme spend_user_coins.
+        const coinAvail = Number(profile.coin_balance || 0);
+        const freeAvail = Number(profile.free_coin_balance || 0);
+        if (coinAvail + freeAvail < totalCoins) {
+          return fail(`Solde insuffisant (disponible: ${coinAvail + freeAvail}, requis: ${totalCoins})`, 'INSUFFICIENT_COINS');
+        }
+        const freeUsed = Math.min(freeAvail, totalCoins);
+        const paidUsed = totalCoins - freeUsed;
+        const applied = await tx.profiles.updateMany({
+          where: { id: userId, coin_balance: coinAvail, free_coin_balance: freeAvail },
+          data: { coin_balance: coinAvail - paidUsed, free_coin_balance: freeAvail - freeUsed },
+        });
+        if (applied.count !== 1) throw new Error('Solde modifie en cours de traitement');
+
+        const now = new Date();
+        for (const { cand, voteCount } of resolved) {
+          const existing = await tx.user_votes.findFirst({
+            where: { user_id: userId, candidate_id: cand.id, event_id: p_event_id },
+          });
+          if (existing) {
+            await tx.user_votes.update({
+              where: { id: existing.id },
+              data: {
+                vote_count: Number(existing.vote_count || 0) + voteCount,
+                vote_cost_pi: Number(existing.vote_cost_pi || 0) + price * voteCount,
+                vote_cost_fcfa: Number(existing.vote_cost_fcfa || 0) + price * voteCount * 10,
+                net_to_organizer: Number(existing.net_to_organizer || 0) + price * voteCount,
+                payment_method: 'coins',
+                payment_status: 'completed',
+                voter_phone: voterPhone || existing.voter_phone || null,
+              },
+            });
+          } else {
+            await tx.user_votes.create({
+              data: {
+                id: uuidv4(),
+                user_id: userId,
+                candidate_id: cand.id,
+                event_id: p_event_id,
+                vote_count: voteCount,
+                vote_cost_pi: price * voteCount,
+                vote_cost_fcfa: price * voteCount * 10,
+                net_to_organizer: price * voteCount,
+                fees: 0,
+                payment_method: 'coins',
+                payment_status: 'completed',
+                voter_phone: voterPhone || null,
+                created_at: now,
+              },
+            });
+          }
+          const current = await tx.candidates.findUnique({ where: { id: cand.id }, select: { vote_count: true } });
+          await tx.candidates.update({
+            where: { id: cand.id },
+            data: { vote_count: Number(current?.vote_count || 0) + voteCount },
+          });
+        }
+
+        await tx.payments.create({
+          data: {
+            user_id: userId,
+            coins_amount: totalCoins,
+            amount_fcfa: totalCoins * 10,
+            status: 'paid',
+            payment_method: 'coins',
+            transaction_id: orderId,
+            pack_id: 'vote_purchase',
+            credits_added: true,
+            created_at: now,
+            updated_at: now,
+          },
+        });
+
+        await tx.transactions.create({
+          data: {
+            user_id: userId,
+            event_id: p_event_id,
+            transaction_type: 'vote_purchase',
+            amount_pi: totalCoins,
+            amount_fcfa: totalCoins * 10,
+            description: `${requested} voix pour ${ev.title || 'l\'evenement'}`,
+            status: 'completed',
+            amount_coins: totalCoins,
+            created_at: now,
+            completed_at: now,
+            payment_method: 'coins',
+            transaction_reference: orderId,
+          },
+        });
+
+        if (ev.organizer_id) {
+          await creditOrganizerEarnings({
+            p_organizer_id: ev.organizer_id,
+            p_event_id,
+            p_transaction_id: orderId,
+            p_transaction_type: 'vote',
+            p_earnings_coins: totalCoins,
+            p_earnings_fcfa: totalCoins * 10,
+            p_ticket_count: requested,
+            p_description: `${requested} voix payees - en attente de validation`,
+            p_created_at: now,
+            p_dbc: tx,
+          });
+        }
+
+        return { success: true, transaction_id: orderId, total_coins: totalCoins, vote_count: requested, price_per_vote: price };
+      });
+    } catch (e) {
+      // Verifie si une transaction concurrente de meme cle a deja commite :
+      // dans ce cas la cle est mere, on renvoie le resultat au lieu d'une
+      // erreur trompeuse.
+      const committed = await dbc.payments.findFirst({
+        where: { user_id: userId, transaction_id: orderId },
+        select: { coins_amount: true },
+      });
+      if (committed) {
+        const replayC = lines.reduce((s, l) => s + l.voteCount, 0);
+        return {
+          success: true, already_recorded: true, transaction_id: orderId,
+          total_coins: Number(committed.coins_amount || 0), vote_count: replayC,
+        };
+      }
+      console.error('[cast_contest_votes]', e?.message);
+      return fail(e?.message || 'Vote non enregistre', 'VOTE_FAILED');
+    }
   },
 
-  async get_promo_code_stats(args) {
+  // Compat : le front appelle encore `cast_votes` (VotingInterface). Il délègue
+  // au moteur atomique, de sorte qu'il n'existe qu'un seul chemin de paiement.
+  async cast_votes(args, actor) {
+    return this.cast_contest_votes(args, actor);
+  },
+
+  async get_promo_code_stats(args, actor) {
     const { p_event_id } = args;
+    if (!p_event_id) return fail('p_event_id requis', 'EVENT_REQUIRED');
+    // Lecture réservée : organisateur de l'événement, influenceur propriétaire
+    // d'au moins un code actif de l'événement, ou administration. Ni un compte
+    // tiers, ni un agent de scan (délégué) ne doit pouvoir lister les
+    // codes/parrainages d'un événement : c'est de la donnée financière.
+    const ev = await db().events.findUnique({ where: { id: p_event_id }, select: { organizer_id: true } });
+    const isOrgOrAdmin =
+      actor?.source === 'internal' || ADMIN_ROLES.includes(actor.user_type) ||
+      (!!ev && ev.organizer_id === actor?.id);
+    if (isOrgOrAdmin) {
+      const codes = await db().promo_codes.findMany({ where: { event_id: p_event_id } });
+      return ok({ total: codes.length, used: codes.filter((c) => c.is_used).length, codes });
+    }
+    const isInfluencerOwner = await db().promo_codes.findFirst({
+      where: { event_id: p_event_id, influencer_id: actor?.id, is_active: true },
+      select: { id: true },
+    });
+    if (!isInfluencerOwner) {
+      return fail("Vous n'êtes pas autorisé à consulter les codes promo de cet événement", 'FORBIDDEN');
+    }
     const codes = await db().promo_codes.findMany({ where: { event_id: p_event_id } });
     return ok({ total: codes.length, used: codes.filter((c) => c.is_used).length, codes });
   },
@@ -1454,8 +1980,88 @@ const HANDLERS = {
     return ok({ stats: { total: rows.length, logs: rows }, total: rows.length });
   },
 
+  // ---------- Agents de scan ----------
+  // Ces trois RPC n'ont pas d'entrée dans RPC_POLICY : l'organisateur n'est
+  // jamais lu dans les arguments. Il vient toujours de l'identité vérifiée, ce
+  // qui rend impossible de gérer les agents d'un autre promoteur en forçant un
+  // id dans le corps de la requête. La clé interne, elle, n'a pas d'identité
+  // de promoteur : elle est refusée.
+  async list_scan_agents(args, actor) {
+    if (!actor?.id) return fail('Action réservée à un compte organisateur', 'NO_ORGANIZER');
+    const dbc = db();
+    const [agents, delegations] = await Promise.all([
+      dbc.organizer_scan_agents.findMany({
+        where: { organizer_id: actor.id },
+        orderBy: { created_at: 'desc' },
+      }),
+      dbc.organizer_scan_agents.findMany({
+        where: { user_id: actor.id, is_active: true },
+        select: { organizer_id: true },
+      }),
+    ]);
+    const ids = [...new Set(agents.map((a) => a.user_id))];
+    const profiles = ids.length
+      ? await dbc.profiles.findMany({ where: { id: { in: ids } }, select: { id: true, full_name: true, email: true, phone: true } })
+      : [];
+    return ok({
+      agents: agents.map((a) => ({
+        user_id: a.user_id,
+        is_active: !!a.is_active,
+        created_at: a.created_at,
+        last_scanned_at: a.last_scanned_at,
+        profile: profiles.find((p) => p.id === a.user_id) || null,
+      })),
+      // Ce que CE compte peut scanner, pour l'afficher dans l'interface.
+      scans_for_organizers: delegations.map((d) => d.organizer_id),
+    });
+  },
+
+  async add_scan_agent(args, actor) {
+    if (!actor?.id) return fail('Action réservée à un compte organisateur', 'NO_ORGANIZER');
+    const email = String(args.p_email || '').trim().toLowerCase();
+    if (!email) return fail('p_email requis', 'EMAIL_MISSING');
+    const dbc = db();
+    const orFilters = [{ email }];
+    if (args.p_phone) orFilters.push({ phone: String(args.p_phone).trim() });
+    const target = await dbc.profiles.findFirst({
+      where: { OR: orFilters },
+      select: { id: true, email: true, full_name: true, user_type: true },
+    });
+    if (!target) return fail('Aucun compte avec cette adresse email', 'AGENT_NOT_FOUND');
+    if (target.id === actor.id) return fail('Vous êtes déjà votre propre scanneur', 'SELF_AGENT');
+    if (ADMIN_ROLES.includes(target.user_type)) {
+      return fail('Un administrateur n\'a pas besoin d\'être délégué', 'AGENT_IS_ADMIN');
+    }
+    const existing = await dbc.organizer_scan_agents.findFirst({
+      where: { organizer_id: actor.id, user_id: target.id },
+    });
+    if (existing) {
+      if (existing.is_active) return ok({ success: true, already: true, user_id: target.id });
+      await dbc.organizer_scan_agents.update({ where: { id: existing.id }, data: { is_active: true, granted_by: actor.id } });
+      return ok({ success: true, reactivated: true, user_id: target.id });
+    }
+    await dbc.organizer_scan_agents.create({
+      data: { id: uuidv4(), organizer_id: actor.id, user_id: target.id, granted_by: actor.id, is_active: true },
+    });
+    return ok({ success: true, user_id: target.id, full_name: target.full_name });
+  },
+
+  async remove_scan_agent(args, actor) {
+    if (!actor?.id) return fail('Action réservée à un compte organisateur', 'NO_ORGANIZER');
+    const userId = args.p_user_id;
+    if (!userId) return fail('p_user_id requis', 'USER_MISSING');
+    const dbc = db();
+    // La paire (organisateur, agent) est celle de l'appelant : impossible de
+    // désactiver l'agent d'un autre organisateur.
+    const { count } = await dbc.organizer_scan_agents.updateMany({
+      where: { organizer_id: actor.id, user_id: userId },
+      data: { is_active: false },
+    });
+    return ok({ success: true, removed: count });
+  },
+
   // ---------- Tickets ----------
-  async reset_ticket(args) {
+  async reset_ticket(args, actor) {
     const { p_ticket_identifier } = args;
     if (!p_ticket_identifier) return fail('p_ticket_identifier requis');
     const dbc = db();
@@ -1471,6 +2077,16 @@ const HANDLERS = {
       },
     });
     if (!ticket) return ok({ success: false, message: 'Billet introuvable' });
+    // Double vérification : la politique a déjà refusé tout appelant autre que
+    // l'organisateur. On le rejoue ici parce que cette opération EFFACE une
+    // trace de passage ; si la garde de scan est un jour contournée, cette
+    // ligne tient encore.
+    if (actor?.id && actor.source !== 'internal' && ticket.event_id) {
+      const event = await dbc.events.findFirst({ where: { id: ticket.event_id }, select: { organizer_id: true } });
+      if (event?.organizer_id && event.organizer_id !== actor.id) {
+        return fail('Seul l\'organisateur peut réinitialiser un billet', 'forbidden');
+      }
+    }
     await dbc.tickets.update({
       where: { id: ticket.id },
       data: {
@@ -1487,7 +2103,7 @@ const HANDLERS = {
     return ok({ success: true, message: 'Billet réinitialisé' });
   },
 
-  async verify_ticket_direct(args) {
+  async verify_ticket_direct(args, actor) {
     const { p_ticket_identifier, p_verification_method, p_exit_mode } = args;
     if (!p_ticket_identifier) return fail('p_ticket_identifier requis');
     const dbc = db();
@@ -1524,9 +2140,15 @@ const HANDLERS = {
       return ok({ success: false, message: 'Pass multi-jours expiré', status_code: 'expired_date', status: 'expired_date', ticket });
     }
 
-    // ⛔ Billet date fixe périmé
-    if (!isMultiDay && ticket.ticket_date && now < new Date(ticket.ticket_date + 'T00:00:00')) {
-      return ok({ success: false, message: 'Billet pas encore valable', status_code: 'not_valid_today', status: 'not_valid_today', ticket });
+    // ⛔ Billet date fixe non encore valable
+    // Comparaison sur le jour, pas sur l'horodatage : `ticket_date` est une
+    // Date, et `ticket_date + 'T00:00:00'` produisait une date invalide, donc
+    // ce test ne rejetait jamais rien. Un billet daté de demain passait.
+    if (!isMultiDay && ticket.ticket_date) {
+      const ticketDay = new Date(ticket.ticket_date).toISOString().slice(0, 10);
+      if (today < ticketDay) {
+        return ok({ success: false, message: 'Billet pas encore valable', status_code: 'not_valid_today', status: 'not_valid_today', ticket });
+      }
     }
 
     // 📅 Mode entrée : validation de la date du jour
@@ -1582,19 +2204,37 @@ const HANDLERS = {
     }
 
     // ðŸ“ Journal des scans
-    await dbc.ticket_scans.create({
-      data: {
-        id: uuidv4(),
-        ticket_id: ticket.id,
-        event_id: ticket.event_id,
-        scanner_user_id: p_verification_method ? null : null,
-        scan_type: scanType,
-        scan_status: result.status_code,
-        verification_method: p_verification_method || 'manual',
-        scanned_at: now,
-        created_at: now,
-      },
-    }).catch((e) => console.error('⚠️ Journal scan non enregistré:', e.message));
+    // 📓 Journal des scans
+    // Cette écriture échouait silencieusement avant : elle visait `ticket_scans`
+    // avec les colonnes ticket_id / scanned_at / verification_method, qui
+    // n'existent pas dans cette table. Le .catch() masquait l'erreur, donc AUCUN
+    // scan n'était journalisé et l'agent n'était jamais identifiable.
+    // `ticket_verifications` est la table prévue pour cela (ticket_id, event_id,
+    // organizer_id, scanner_id, verification_method) : elle compte déjà 147
+    // lignes. Le journal porte enfin QUI a scanné.
+    const organizerRow = await dbc.events
+      .findFirst({ where: { id: ticket.event_id }, select: { organizer_id: true } })
+      .catch(() => null);
+    if (organizerRow?.organizer_id) {
+      await dbc.ticket_verifications.create({
+        data: {
+          id: uuidv4(),
+          event_id: ticket.event_id,
+          ticket_id: ticket.id,
+          organizer_id: organizerRow.organizer_id,
+          scanner_id: actor?.id ?? null,
+          verification_time: now,
+          verification_method: p_verification_method || 'manual',
+          verification_status: result.status_code,
+          action: scanType,
+          state: result.status_code,
+          attendee_name: ticket.attendee_name ?? ticket.customer_name ?? null,
+          ticket_number: ticket.ticket_number ?? null,
+        },
+      }).catch((e) => console.error('⚠️ Journal scan non enregistré:', e.message));
+    } else {
+      console.warn(`⚠️ Scan non journalisé : organisateur introuvable pour l'événement ${ticket.event_id}`);
+    }
 
     return ok({
       success: true,
@@ -1775,11 +2415,21 @@ const HANDLERS = {
   },
 
   // ---------- Divers ----------
-  async get_verification_stats(args) {
-    const { p_event_id, p_organizer_id } = args;
+  async get_verification_stats(args, actor) {
+    const { p_event_id } = args;
+    if (!p_event_id) return fail('p_event_id requis', 'EVENT_REQUIRED');
+    // Statistiques de scan d'un événement = données d'un organisateur : seul
+    // l'organisateur, ses agents de scan actifs et l'administration y ont
+    // accès (même règle que le scan lui-même).
+    if (!(await canReadEventStats(actor, p_event_id))) {
+      return fail("Vous n'êtes pas autorisé à consulter les statistiques de cet événement", 'FORBIDDEN');
+    }
     const ticketCount = await db().tickets.count({ where: { event_id: p_event_id } });
-    const scanned = await db().ticket_scans.count({ where: { event_id: p_event_id } });
-    return ok({ stats: { total_tickets: ticketCount, scanned: scanned, valid: scanned, invalid: 0 } });
+    // Compté sur ticket_verifications : c'est la table que le scan alimente
+    // réellement. ticket_scans restait vide (colonnes incompatibles), donc ce
+    // chiffre restait à 0 pour tous les organisateurs.
+    const scanned = await db().ticket_verifications.count({ where: { event_id: p_event_id } });
+    return ok({ stats: { total_tickets: ticketCount, scanned, valid: scanned, invalid: 0 } });
   },
 
   async calculate_creator_estimates(args) {
@@ -1903,14 +2553,25 @@ const NOT_IMPLEMENTED = {
   get_admin_salary_stats_full: 'salaires',
 };
 
-r.post('/', async (req, res) => {
+// RPC atteignables sans session. Les deux sont sur des pages publiques :
+//   - track_event_view        : compteur de vues d'un événement (EventDetailPage)
+//   - validate_promo_code_simple : validation d'un code promo avant achat
+// Elles ne doivent ni lire ni écrire de donnée personnelle. Tout le reste exige
+// un jeton utilisateur ou la clé interne des fonctions.
+const PUBLIC_RPCS = new Set(['track_event_view', 'validate_promo_code_simple']);
+
+r.post('/', requireActorUnless(PUBLIC_RPCS), async (req, res) => {
   try {
     const body = req.body || {};
     const name = body.name;
     const args = body.args || body.params || {};
     if (!name) return res.status(400).json(fail('Nom de RPC requis', 'RPC_NAME_MISSING'));
+    // Autorisation : appliquée avant le dispatch, sur l'identité vérifiée du
+    // jeton (req.actor), jamais sur un identifiant fourni par l'appelant.
+    const decision = await checkPolicy(name, args, req.actor);
+    if (!decision.ok) return res.status(decision.status).json(decision.body);
     if (HANDLERS[name]) {
-      const result = await HANDLERS[name](args);
+      const result = await HANDLERS[name](decision.args, req.actor);
       return res.json(result);
     }
     if (NOT_IMPLEMENTED[name]) {

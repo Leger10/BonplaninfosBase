@@ -8,7 +8,8 @@ import ReferralTab from '@/components/profile/ReferralTab';
 import CreatorDashboardTab from '@/components/profile/CreatorDashboardTab';
 import MyTicketsTab from '@/components/profile/MyTicketsTab';
 import WithdrawalTab from '@/components/profile/WithdrawalTab';
-import { Ticket, Calendar, History, Users, Wallet, Sparkles } from 'lucide-react';
+import ScanAgentsManager from '@/components/profile/ScanAgentsManager';
+import { Ticket, Calendar, History, Users, Wallet, Sparkles, UserCog } from 'lucide-react';
 
 const ProfilePageContent = ({ 
   userProfile, 
@@ -30,7 +31,7 @@ const ProfilePageContent = ({
   return (
     <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
       <div className="w-full overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
-        <TabsList className="inline-flex w-auto min-w-full md:w-full md:grid md:grid-cols-6 mb-4 h-auto p-1 bg-muted/50 rounded-xl gap-1">
+        <TabsList className="inline-flex w-auto min-w-full md:w-full md:grid md:grid-cols-7 mb-4 h-auto p-1 bg-muted/50 rounded-xl gap-1">
           <TabsTrigger value="events" className="flex-1 min-w-[100px] data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg py-2 md:py-3">
             <Calendar className="w-4 h-4 mr-2" />
             <span>{t('profileTabs.events')}</span>
@@ -62,6 +63,13 @@ const ProfilePageContent = ({
             <TabsTrigger value="withdrawals" className="flex-1 min-w-[100px] data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg py-2 md:py-3">
               <Wallet className="w-4 h-4 mr-2" />
               <span>{t('profileTabs.withdrawals')}</span>
+            </TabsTrigger>
+          )}
+
+          {isOrganizer && (
+            <TabsTrigger value="scanners" className="flex-1 min-w-[100px] data-[state=active]:bg-background data-[state=active]:shadow-sm rounded-lg py-2 md:py-3">
+              <UserCog className="w-4 h-4 mr-2 text-amber-500" />
+              <span>{t('profileTabs.scanners')}</span>
             </TabsTrigger>
           )}
         </TabsList>
@@ -96,6 +104,12 @@ const ProfilePageContent = ({
       {isOrganizer && (
         <TabsContent value="withdrawals" className="animate-in fade-in slide-in-from-bottom-4 duration-500 mt-0">
           <WithdrawalTab userProfile={userProfile} />
+        </TabsContent>
+      )}
+
+      {isOrganizer && (
+        <TabsContent value="scanners" className="animate-in fade-in slide-in-from-bottom-4 duration-500 mt-0">
+          <ScanAgentsManager userProfile={userProfile} />
         </TabsContent>
       )}
     </Tabs>

@@ -224,42 +224,28 @@ export class CoinService {
     return balances.total;
   }
 
-  static async debitCoins(userId, amount, description, metadata = {}) {
+  static async debitCoins(userId, amount, description, metadata = {}, referenceType = null) {
     const balances = await this.getWalletBalances(userId);
     if (balances.total < amount) {
       throw new Error("Solde insuffisant");
     }
 
-    const freeUsed = Math.min(balances.free_coin_balance, amount);
-    const paidUsed = amount - freeUsed;
-
-    const { error: updateError } = await retrySupabaseRequest(() => supabase.rpc('debit_user_coins', {
+    // Le débit passe par spend_user_coins : c'est le serveur qui vérifie le
+    // solde, l'écrit et journalise. Le navigateur ne touche plus jamais au
+    // solde ni au journal — l'ancien repli manuel (profiles.coin_balance et
+    // coin_transactions écrits depuis le client) a été supprimé : il rendait
+    // falsifiable la dépense et masquait les refus du serveur.
+    const { data, error } = await retrySupabaseRequest(() => supabase.rpc('spend_user_coins', {
       p_user_id: userId,
       p_amount: amount,
       p_reason: description,
-      p_debitor_id: userId
+      p_reference_type: referenceType,
+      p_reference_id: typeof metadata === 'string' ? metadata : metadata?.reference_id || null,
     }));
 
-    if (updateError) {
-      console.warn("RPC debit_user_coins failed, using manual update", updateError);
-      const { error: manualError } = await retrySupabaseRequest(() => supabase
-        .from('profiles')
-        .update({
-          free_coin_balance: balances.free_coin_balance - freeUsed,
-          coin_balance: balances.coin_balance - paidUsed
-        })
-        .eq('id', userId));
-      
-      if (manualError) throw manualError;
-      
-      await retrySupabaseRequest(() => supabase.from('coin_transactions').insert({
-        user_id: userId,
-        amount: -amount,
-        type: 'debit',
-        description: description,
-        metadata: { ...metadata, free_used: freeUsed, paid_used: paidUsed }
-      }));
-    }
+    if (error) throw new Error(error.message || 'Débit impossible');
+    if (!data?.success) throw new Error(data?.message || 'Débit refusé');
+
     return true;
   }
 

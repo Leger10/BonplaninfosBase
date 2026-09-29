@@ -138,7 +138,7 @@ const createUserAccount = async (fullName, phoneNumber, userEmail) => {
 };
 
 // ============================================================
-// SUBMIT — le client paie par USSD et confirme avec la réf. SMS
+// SUBMIT — le client paie par USSD et confirme avec la capture du dépôt
 // ============================================================
 const parseMeta = (raw) => {
     if (!raw) return null;
@@ -171,7 +171,13 @@ const findUssdEvidence = async (paymentId) => {
         const legacy = await supabase.from('transactions').select('id, metadata').not('metadata', 'is', null).limit(500);
         rows = (legacy.data || []).filter((r) => parseMeta(r.metadata)?.payment_id === paymentId);
     }
-    return rows.map((r) => parseMeta(r.metadata)).filter((m) => m?.ussd);
+    // On conserve l'id de la ligne pour pouvoir tracer la vérification du dépôt.
+    return rows
+        .map((r) => {
+            const meta = parseMeta(r.metadata);
+            return meta?.ussd ? { ...meta, _row_id: r.id } : null;
+        })
+        .filter(Boolean);
 };
 
 const creditEarningsOnce = async ({ transactionRef, organizerId, eventId, transactionType, coins, fcfa, ticketCount, description }) => {
@@ -205,7 +211,6 @@ const creditEarningsOnce = async ({ transactionRef, organizerId, eventId, transa
 const handleSubmit = async (body) => {
     const {
         type, // 'credits' | 'tickets'
-        smsReference,
         proofUrl, // data:image/... base64 (capture d'écran) OU URL publique
         proofDataUrl, // alias moderne envoyé par l'app
         amountFcfa,
@@ -237,10 +242,11 @@ const handleSubmit = async (body) => {
         return { statusCode: 400, body: { success: false, message: 'Type de paiement invalide' } };
     }
 
-    const cleanSmsRef = String(smsReference || '').trim();
+    // Validation par capture d'écran du dépôt uniquement : plus aucune référence
+    // SMS n'est demandée ni stockée.
     const proofInput = String(proofDataUrl || proofUrl || '').trim();
     if (!proofInput) {
-        return { statusCode: 400, body: { success: false, message: "Capture d'écran de la transaction requise pour confirmer le paiement" } };
+        return { statusCode: 400, body: { success: false, message: "Capture d'écran du dépôt requise pour confirmer le paiement" } };
     }
 
     const total = parseInt(amountFcfa, 10);
@@ -254,12 +260,45 @@ const handleSubmit = async (body) => {
     }
 
     const orderId = transactionId || `ussd_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+    // --- Idempotence du SUBMIT : un transaction_id déjà enregistré ne recrée
+    // rien. Couvre le double-clic / le rejeu après timeout réseau de la réponse :
+    // au lieu d'une 2e commande (doublons de payments, tickets, votes, gains),
+    // on renvoie la commande existante du même utilisateur.
+    if (transactionId) {
+        const { data: prior } = await supabase
+            .from('payments')
+            .select('id, user_id, status')
+            .eq('transaction_id', String(transactionId));
+        if (prior && prior.length > 0) {
+            const mine = userId ? prior.find((p) => p.user_id === userId) : prior[0];
+            if (!mine) {
+                return {
+                    statusCode: 409,
+                    body: { success: false, message: 'transaction_id deja utilise par un autre compte' }
+                };
+            }
+            console.log(`ℹ️ submit USSD rejoué (${transactionId}) : paiement ${mine.id} déjà sur état ${mine.status}.`);
+            return {
+                statusCode: 200,
+                body: {
+                    success: true,
+                    already_recorded: true,
+                    transaction_id: String(transactionId),
+                    payment_id: mine.id,
+                    status: mine.status,
+                    pending_validation: mine.status === 'pending',
+                    message: 'Ce paiement a deja ete enregistre : aucune capture ajoutee.'
+                }
+            };
+        }
+    }
+
     const proofUrlFinal = await uploadProof(proofInput, orderId);
     if (!proofUrlFinal) {
-        return { statusCode: 400, body: { success: false, message: "Impossible d'enregistrer la capture d'écran de la transaction" } };
+        return { statusCode: 400, body: { success: false, message: "Impossible d'enregistrer la capture d'écran du dépôt" } };
     }
     const ussdMeta = {
-        sms_reference: cleanSmsRef,
         proof_url: proofUrlFinal,
         merchant_ussd: buildUSSDCode(total),
         operator: 'mobile_money',
@@ -310,7 +349,7 @@ const handleSubmit = async (body) => {
             transactionType: 'credit_purchase',
             amountPi: coins,
             amountFcfa: total,
-            description: `Recharge USSD ${total} FCFA${cleanSmsRef ? ` (réf. ${cleanSmsRef})` : ' (capture d\'écran)'} - en attente de validation`,
+            description: `Recharge USSD ${total} FCFA (capture d'écran) - en attente de validation`,
             paymentId: paymentRow.id,
             ussdMeta,
             extra: { payment_type: 'credits' }
@@ -406,7 +445,7 @@ const handleSubmit = async (body) => {
             amount_fcfa: ((v.votePricePi || unitPricePi) * v.voteCount) * 10,
             status: 'pending',
             transaction_id: orderId,
-            sms_reference: cleanSmsRef,
+            sms_reference: null,
             proof_url: proofUrlFinal,
             organizer_id: organizerId || null,
             created_at: now(),
@@ -423,7 +462,7 @@ const handleSubmit = async (body) => {
         transactionType: 'vote_purchase',
         amountPi: -voteAmountPi,
         amountFcfa: -voteAmountFcfa,
-        description: `${totalVoteCount} voix via USSD${cleanSmsRef ? ` (réf. ${cleanSmsRef})` : ''} - en attente de validation`,
+        description: `${totalVoteCount} voix via USSD (capture d'écran) - en attente de validation`,
         paymentId: votePaymentId,
         ussdMeta,
         extra: {
@@ -577,7 +616,7 @@ const handleSubmit = async (body) => {
             transactionType: 'stand_rental',
             amountPi: standTotalCoins,
             amountFcfa: total,
-            description: `Location de ${standBookings.length} stand(s) via USSD${cleanSmsRef ? ` (ref. ${cleanSmsRef})` : ''} - en attente de validation`,
+            description: `Location de ${standBookings.length} stand(s) via USSD (capture d'écran) - en attente de validation`,
             paymentId: standPayment.id,
             ussdMeta,
             extra: {
@@ -679,7 +718,7 @@ const handleSubmit = async (body) => {
             transactionType: 'raffle_ticket_purchase',
             amountPi: raffleTotalCoins,
             amountFcfa: total,
-            description: `Achat de ${qty} ticket(s) de tombola via USSD${cleanSmsRef ? ` (ref. ${cleanSmsRef})` : ''} - en attente de validation`,
+            description: `Achat de ${qty} ticket(s) de tombola via USSD (capture d'écran) - en attente de validation`,
             paymentId: rafflePayment.id,
             ussdMeta,
             extra: {
@@ -758,7 +797,7 @@ const handleSubmit = async (body) => {
             transactionType: 'protected_access',
             amountPi: accessCoins,
             amountFcfa: total,
-            description: `Acces a l'evenement via USSD${cleanSmsRef ? ` (ref. ${cleanSmsRef})` : ''} - en attente de validation`,
+            description: `Acces a l'evenement via USSD (capture d'écran) - en attente de validation`,
             paymentId: accessPayment.id,
             ussdMeta,
             extra: {
@@ -951,7 +990,7 @@ const handleSubmit = async (body) => {
         transactionType: 'ticket_purchase',
         amountPi: serverTotalCoins,
         amountFcfa: serverTotalFcfa,
-        description: `Achat de ${ticketCount} billet(s) via USSD${cleanSmsRef ? ` (réf. ${cleanSmsRef})` : ''} - en attente de validation`,
+        description: `Achat de ${ticketCount} billet(s) via USSD (capture d'écran) - en attente de validation`,
         paymentId: paymentRow.id,
         ussdMeta,
         extra: {
@@ -1068,6 +1107,52 @@ const resolvePayment = async (body, targetStatus) => {
         };
     }
 
+    // Transition ATOMIQUE du statut : on passe de 'pending' à la cible avec un
+    // UPDATE conditionnel .eq('status','pending'). Si aucun administrateur n'a
+    // été élu, un second clic simultané reçoit 0 ligne => 409, AVANT toute
+    // livraison. Sans cela, deux validateurs concurrents passaient le contrôle
+    // "status==='pending'" (lecture puis action) et livraient deux fois
+    // (double crédit, double incrément de stock).
+    const statusTransitions = {
+        completed: {
+            status: 'completed',
+            credits_added: true,
+            validated_by: actorId || null,
+            validated_at: now(),
+            processed_at: now(),
+            rejected_by: null,
+            rejected_at: null,
+        },
+        cancelled: {
+            status: 'cancelled',
+            rejected_by: actorId || null,
+            rejected_at: now(),
+            processed_at: now(),
+            validated_by: null,
+            validated_at: null,
+        },
+    };
+    const transition = statusTransitions[targetStatus];
+    const { data: movedRows, error: moveErr } = await supabase
+        .from('payments')
+        .update(transition)
+        .eq('id', payment.id)
+        .eq('status', 'pending')
+        .select('id');
+    if (moveErr) {
+        return { statusCode: 500, body: { success: false, message: 'Erreur verrouillage du paiement: ' + moveErr.message } };
+    }
+    if (!movedRows || !movedRows.length) {
+        return {
+            statusCode: 409,
+            body: {
+                success: false,
+                message: `Ce paiement a ete traite par un autre clic (etat courant: ${payment.status}). Double traitement refuse.`,
+                current_status: payment.status
+            }
+        };
+    }
+
     let deliveryMeta = null;
     {
         const proofs = await findUssdEvidence(payment.id);
@@ -1077,9 +1162,35 @@ const resolvePayment = async (body, targetStatus) => {
                 statusCode: 400,
                 body: {
                     success: false,
-                    message: 'Preuve de dépôt USSD introuvable pour ce paiement : validation refusée. Vérifiez la référence SMS et la capture d’écran avant de valider.'
+                    message: "Capture d'écran du dépôt USSD introuvable pour ce paiement : validation refusée. Vérifiez la capture du dépôt avant de valider."
                 }
             };
+        }
+        if (targetStatus === 'completed' && !deliveryMeta?.ussd?.proof_url) {
+            return {
+                statusCode: 400,
+                body: {
+                    success: false,
+                    message: "Aucun fichier de capture d'écran n'est associé à ce dépôt : validation refusée."
+                }
+            };
+        }
+        // Traçabilité : l'admin a contrôlé la capture avant de valider.
+        if (targetStatus === 'completed' && deliveryMeta?._row_id) {
+            const { _row_id, ...metaFields } = deliveryMeta;
+            const { error: proofTraceError } = await supabase.from('transactions')
+                .update({
+                    metadata: {
+                        ...metaFields,
+                        ussd: { ...(metaFields.ussd || {}), deposit_verified: true },
+                        deposit_verified_at: now(),
+                        deposit_verified_by: actorId || null,
+                    }
+                })
+                .eq('id', _row_id);
+            if (proofTraceError) {
+                console.warn('⚠️ Traçabilité de vérification du dépôt non écrite:', proofTraceError.message);
+            }
         }
     }
 
@@ -1149,13 +1260,10 @@ const resolvePayment = async (body, targetStatus) => {
         }
     }
 
-    const updates = { status: targetStatus, processed_at: now() };
+    // La transition de statut du paiement a déjà été posée de façon atomique
+    // au début du traitement (voir statusTransitions). Ici on ne fait que
+    // retracer la validation sur la ligne de preuve.
     if (targetStatus === 'completed') {
-        updates.credits_added = true;
-        updates.validated_by = actorId || null;
-        updates.validated_at = now();
-        updates.rejected_by = null;
-        updates.rejected_at = null;
         try {
             await supabase.from('transactions')
                 .update({ status: 'completed', completed_at: now() })
@@ -1163,11 +1271,6 @@ const resolvePayment = async (body, targetStatus) => {
         } catch (e) {
             console.warn('⚠️ Mise à jour de la preuve USSD ignorée:', e.message);
         }
-    } else {
-        updates.rejected_by = actorId || null;
-        updates.rejected_at = now();
-        updates.validated_by = null;
-        updates.validated_at = null;
     }
 
     // Votes USSD validés : appliquer réellement l'incrément des voix
@@ -1309,6 +1412,10 @@ const resolvePayment = async (body, targetStatus) => {
 
     if (targetStatus === 'completed' && payment.pack_id === 'ticket_payment') {
         const orderId = payment.transaction_id;
+        const ticketEventId = (deliveryMeta && deliveryMeta.event_id) || '';
+        // Une validation ne doit JAMAIS être marquée "completed" si la livraison,
+        // le stock ou la commission organisateur ont échoué : on renvoie une erreur
+        // pour que l'admin puisse rejouer la validation (avant : échec silencieux).
         try {
             const { error: ticketsDeliveryError } = await supabase
                 .from('tickets')
@@ -1329,46 +1436,87 @@ const resolvePayment = async (body, targetStatus) => {
             (delivered || []).forEach((t) => {
                 if (t.ticket_type_id) soldByType[t.ticket_type_id] = (soldByType[t.ticket_type_id] || 0) + 1;
             });
-            for (const [typeId, count] of Object.entries(soldByType)) {
-                const { data: typeRow } = await supabase
-                    .from('ticket_types')
-                    .select('quantity_sold, tickets_sold')
-                    .eq('id', typeId)
-                    .maybeSingle();
-                await supabase
-                    .from('ticket_types')
-                    .update({
-                        quantity_sold: Number(typeRow?.quantity_sold || 0) + count,
-                        tickets_sold: Number(typeRow?.tickets_sold || 0) + count
-                    })
-                    .eq('id', typeId);
+            // Compteur de stock partagé avec le parcours "pièces" (RPC adjust_ticket_stock)
+            // : met à jour ticket_types ET ticketing_events.tickets_sold dans une seule
+            // transaction. Le p_evidence_row_id rend l'opération idempotente : un rejeu
+            // de la validation retrouve le marqueur et n'incrémente pas deux fois.
+            const stockLines = Object.entries(soldByType).map(([typeId, qty]) => ({ type_id: typeId, qty }));
+            if (stockLines.length) {
+                if (!ticketEventId) {
+                    throw new Error('Evenement du billet introuvable : stock non mis a jour');
+                }
+                const internalKey = process.env.INTERNAL_RPC_KEY || '';
+                if (!internalKey) {
+                    throw new Error('INTERNAL_RPC_KEY absent du serveur : ajustement du stock impossible');
+                }
+                const { data: stockRes, error: stockErr } = await supabase.rpc('adjust_ticket_stock', {
+                    p_event_id: ticketEventId,
+                    p_lines: stockLines,
+                    p_delta: 1,
+                    p_evidence_row_id: (deliveryMeta && deliveryMeta._row_id) || null,
+                    p_internal_key: internalKey,
+                });
+                if (stockErr) throw new Error(stockErr.message);
+                if (!stockRes || !stockRes.success) {
+                    throw new Error((stockRes && stockRes.message) || 'Stock non mis a jour');
+                }
+                if (stockRes.already_applied) {
+                    console.log('ℹ️ Stock déjà ajusté pour ce dépôt (rejeu de validation) : incrément ignoré.');
+                }
             }
-        } catch (e) {
-            console.error('⚠️ Livraison des billets USSD échouée:', e.message);
-        }
 
-        try {
-            const { data: evRow } = await supabase
+            const { data: evRow, error: evErr } = await supabase
                 .from('events')
                 .select('organizer_id')
-                .eq('id', (deliveryMeta && deliveryMeta.event_id) || '')
+                .eq('id', ticketEventId)
                 .maybeSingle();
-            if (evRow && evRow.organizer_id) {
-                await creditEarningsOnce({
-                    transactionRef: orderId,
-                    organizerId: evRow.organizer_id,
-                    eventId: (deliveryMeta && deliveryMeta.event_id) || null,
-                    transactionType: 'ticket_sale',
-                    coins: Number(payment.coins_amount || 0),
-                    fcfa: Number(payment.amount_fcfa || 0),
-                    ticketCount: (deliveryMeta && deliveryMeta.cart)
-                        ? Object.values(deliveryMeta.cart).reduce((s, q) => s + (Number(q) || 0), 0)
-                        : null,
-                    description: `Vente de tickets via USSD - ${orderId}`,
-                });
+            if (evErr) throw new Error(evErr.message);
+            if (!evRow || !evRow.organizer_id) {
+                throw new Error('Organisateur de l\'evenement introuvable : commission non creditee');
+            }
+            const credited = await creditEarningsOnce({
+                transactionRef: orderId,
+                organizerId: evRow.organizer_id,
+                eventId: ticketEventId || null,
+                transactionType: 'ticket_sale',
+                coins: Number(payment.coins_amount || 0),
+                fcfa: Number(payment.amount_fcfa || 0),
+                ticketCount: (deliveryMeta && deliveryMeta.cart)
+                    ? Object.values(deliveryMeta.cart).reduce((s, q) => s + (Number(q) || 0), 0)
+                    : null,
+                description: `Vente de ${(deliveryMeta && deliveryMeta.cart) ? Object.values(deliveryMeta.cart).reduce((s, q) => s + (Number(q) || 0), 0) : 0} billet(s) via USSD`,
+            });
+            if (!credited) {
+                throw new Error('Commission organisateur non creditee');
             }
         } catch (e) {
-            console.error('⚠️ Gains organisateur USSD non crédités:', e.message);
+            console.error('❌ Validation billet USSD incomplete:', e.message);
+            // Livraison en échec : on reouvre le paiement en attente pour qu'un
+            // admin puisse rejouer la validation (la transition du statut ayant
+            // été posée atomiquement en amont).
+            try {
+                await supabase.from('payments')
+                    .update({
+                        status: 'pending',
+                        credits_added: false,
+                        validated_by: null,
+                        validated_at: null,
+                        processed_at: null,
+                        rejected_by: null,
+                        rejected_at: null,
+                    })
+                    .eq('id', payment.id)
+                    .eq('status', 'completed');
+            } catch (revErr) {
+                console.warn('⚠️ Retour du paiement en attente impossible:', revErr.message);
+            }
+            return {
+                statusCode: 500,
+                body: {
+                    success: false,
+                    message: `Validation impossible : ${e.message}. Le paiement reste en attente, reessayez.`
+                }
+            };
         }
     }
 
@@ -1511,11 +1659,6 @@ const resolvePayment = async (body, targetStatus) => {
                 console.error('⚠️ Ouverture de l\'accès protégé USSD échouée:', e.message);
             }
         }
-    }
-
-    const { error: updateError } = await supabase.from('payments').update(updates).eq('id', payment.id);
-    if (updateError) {
-        return { statusCode: 500, body: { success: false, message: 'Erreur mise à jour: ' + updateError.message } };
     }
 
     return {

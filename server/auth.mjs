@@ -259,6 +259,9 @@ r.post('/admin/list-users', async (req, res) => {
   }
 });
 
+// Crée un compte avec un rôle choisi. Le garde est posé dans server/index.mjs
+// (requireAdmin) : sans lui, n'importe quel visiteur s'octroyait un super_admin
+// par POST. Il est déclaré ici pour documenter l'exigence.
 r.post('/admin/create-user', async (req, res) => {
   try {
     const body = req.body || {};
@@ -314,3 +317,4 @@ r.post('/admin/create-user', async (req, res) => {
 });
 
 export const authRouter = r;
+export { decodeToken, findProfile };

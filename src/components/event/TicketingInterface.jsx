@@ -288,38 +288,33 @@ const TicketingInterface = ({
 
       console.log(`✅ ${allTicketsData.length} tickets chargés au total`);
 
-      // 3️⃣ Calculer la disponibilité par type
+      // 3️⃣ Disponibilité par type.
+      // Le compteur `quantity_sold` / `tickets_sold` de ticket_types est la source
+      // de vérité : c'est lui qui est décrémenté à chaque achat. On le compare
+      // au nombre de lignes réellement vendues pour rester cohérent avec les
+      // purchases plus anciennes qui n'avaient pas mis le compteur à jour.
       const availability = {};
       (typesData || []).forEach((tt) => {
-        const availableCount = allTicketsData.filter(
-          (t) =>
-            t.ticket_type_id === tt.id &&
-            t.user_id === null &&
-            t.status === "active",
-        ).length;
-
-        const soldCount = allTicketsData.filter(
+        const soldRows = allTicketsData.filter(
           (t) => t.ticket_type_id === tt.id && t.user_id !== null,
         ).length;
 
-        const totalCount = allTicketsData.filter(
-          (t) => t.ticket_type_id === tt.id,
-        ).length;
-
-        const soldCounter = Number(tt.quantity_sold ?? tt.tickets_sold ?? 0);
-        const capacityLeft = Math.max(
-          0,
-          Number(tt.quantity_available ?? 0) - soldCounter,
+        const counter = Math.max(
+          Number(tt.quantity_sold || 0),
+          Number(tt.tickets_sold || 0),
         );
+        const sold = Math.max(counter, soldRows);
+        const capacity = Number(tt.quantity_available || 0);
+        const total = Math.max(capacity, allTicketsData.filter((t) => t.ticket_type_id === tt.id).length);
 
         availability[tt.id] = {
-          available: Math.min(availableCount, capacityLeft),
-          sold: soldCount,
-          total: totalCount,
+          available: Math.max(0, capacity - sold),
+          sold,
+          total,
         };
 
         console.log(
-          `📊 ${tt.name}: disponible=${availableCount}, vendu=${soldCount}, total=${totalCount}`,
+          `📊 ${tt.name}: disponible=${availability[tt.id].available}, vendu=${sold}, total=${total}`,
         );
       });
 
@@ -387,8 +382,11 @@ const TicketingInterface = ({
       }
 
       const type = effectiveTicketTypes?.find((t) => t.id === typeId);
-      const soldCounter = Number(type?.quantity_sold ?? type?.tickets_sold ?? 0);
-      return Math.max(0, Number(type?.quantity_available ?? 0) - soldCounter);
+      const soldCounter = Math.max(
+        Number(type?.quantity_sold || 0),
+        Number(type?.tickets_sold || 0),
+      );
+      return Math.max(0, Number(type?.quantity_available || 0) - soldCounter);
     },
     [ticketAvailability, effectiveTicketTypes, ticketsLoaded],
   );
@@ -832,7 +830,7 @@ const TicketingInterface = ({
         JSON.stringify(paymentData),
       );
 
-      // Ouvrir le paiement USSD (code + QR + référence SMS)
+      // Ouvrir le paiement USSD (code + QR + capture du dépôt)
       setUssdSuccess(false);
       setUssdTicketData({ ...paymentData, userId, orderId, amountWithFees });
       setUssdAmount(amountWithFees);
@@ -851,7 +849,7 @@ const TicketingInterface = ({
     }
   };
 
-  const confirmTicketUSSD = async (smsReference, proofDataUrl) => {
+  const confirmTicketUSSD = async (proofDataUrl) => {
     const ticketData = ussdTicketData;
     if (!ticketData) {
       throw new Error("Données de paiement manquantes.");
@@ -867,7 +865,6 @@ const TicketingInterface = ({
         body: JSON.stringify({
           action: "submit",
           type: "tickets",
-          smsReference,
           proofDataUrl: proofDataUrl || null,
           amountFcfa: ticketData.amountWithFees,
           phone: ticketData.phone,

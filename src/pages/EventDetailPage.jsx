@@ -716,7 +716,7 @@ const VerificationStatsDialog = ({ isOpen, onClose, eventId, organizerId }) => {
           
           const { data: ticketTypes, error: ticketTypesError } = await supabase
             .from('ticket_types')
-            .select('id, name, quantity_available')
+            .select('id, name, quantity_available, quantity_sold, tickets_sold')
             .eq('event_id', eventIdStr);
           
           if (ticketTypesError) {
@@ -821,18 +821,32 @@ const VerificationStatsDialog = ({ isOpen, onClose, eventId, organizerId }) => {
           // 🔥 STATISTIQUES GLOBALES
           // ============================================================
           
-          const totalTicketsCreated = allTicketsData?.length || 0;
+          // Le compteur `quantity_sold` de ticket_types est la source de vérité du
+          // stock (décrémenté à chaque achat). Compter les lignes `tickets` sans
+          // user_id ne fonctionne pas : les billets sont pré-générés à la création
+          // de l'événement et ne sont jamais consommés à l'achat, donc ce total
+          // restait bloqué à la capacité d'origine.
+          const typeCapacity = (ticketTypes || []).reduce(
+            (sum, tt) => sum + Number(tt.quantity_available || 0), 0);
+          const typeSoldCounter = (ticketTypes || []).reduce(
+            (sum, tt) => sum + Math.max(Number(tt.quantity_sold || 0), Number(tt.tickets_sold || 0)), 0);
           
-          // Tickets avec user_id (vendus)
+          // Capacité totale = somme des `quantity_available` des types de billet,
+          // qui est la source de vérité du stock. Les lignes `tickets` sont
+          // pré-générées (et débordent souvent la capacité : une ligne par
+          // billet + les billets réellement vendus), on ne les compte donc pas.
+          const totalTicketsCreated = typeCapacity || allTicketsData?.length || 0;
+          
+          // Tickets vendus : le compteur `quantity_sold` fait foi (les lignes
+          // `tickets` pré-générées ne sont pas consommées à l'achat).
           const ticketsWithUser = allTicketsData?.filter(t => t.user_id !== null && t.user_id !== '') || [];
-          const totalSold = ticketsWithUser.length;
+          const totalSold = Math.max(ticketsWithUser.length, typeSoldCounter);
           
-          // Tickets sans user_id (non vendus)
-          const ticketsWithoutUser = allTicketsData?.filter(t => t.user_id === null || t.user_id === '') || [];
-          const ticketsNotSold = ticketsWithoutUser.length;
+          // Billets non vendus = capacité - vendus (et non lignes sans user_id).
+          const ticketsNotSold = Math.max(0, typeCapacity - totalSold);
           
-          // Tickets disponibles
-          const availableTickets = ticketsWithoutUser.filter(t => t.status === 'active').length;
+          // Billets encore disponibles à la vente
+          const availableTickets = Math.max(0, typeCapacity - typeSoldCounter);
           
           // Tickets MoneyFusion
           const moneyTickets = ticketsWithUser.filter(t => t.payment_method === 'moneyfusion_ticket').length;

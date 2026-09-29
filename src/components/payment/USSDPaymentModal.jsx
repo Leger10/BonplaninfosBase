@@ -81,15 +81,14 @@ const USSDPaymentModal = ({
   onClose,
   amountFcfa,
   title = "Paiement Mobile Money",
-  subtitle = "Payez par USSD puis confirmez avec la référence reçue par SMS.",
+  subtitle = "Payez par USSD puis confirmez avec la capture d'écran du dépôt.",
   submitLabel = "Valider mon paiement",
   requirePhone = false,
   initialPhone = "",
-  onConfirm, // async (smsReference, proofDataUrl, phone) => { ... }
+  onConfirm, // async (proofDataUrl, phone) => { ... }
 }) => {
   const { toast } = useToast();
   const [step, setStep] = useState(0); // 0 = instructions, 1 = confirmation, 2 = succès
-  const [smsReference, setSmsReference] = useState("");
   const [phone, setPhone] = useState(initialPhone || "");
   const [copied, setCopied] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -102,7 +101,6 @@ const USSDPaymentModal = ({
 
   const reset = () => {
     setStep(0);
-    setSmsReference("");
     setPhone(initialPhone || "");
     setCopied(false);
     setSubmitting(false);
@@ -223,7 +221,6 @@ const USSDPaymentModal = ({
   };
 
   const handleConfirm = async () => {
-    const ref = smsReference.trim();
     if (requirePhone) {
       const clean = phone.replace(/\D/g, "");
       if (clean.length < 8 || clean.length > 12) {
@@ -239,14 +236,14 @@ const USSDPaymentModal = ({
     if (!proofDataUrl) {
       toast({
         title: "Capture d'écran requise",
-        description: "Téléversez la capture d'écran de votre transaction pour confirmer le paiement (obligatoire).",
+        description: "Téléversez la capture d'écran de votre dépôt pour confirmer le paiement (obligatoire).",
         variant: "destructive",
       });
       return;
     }
     setSubmitting(true);
     try {
-      const result = await onConfirm?.(ref, proofDataUrl, phone.trim());
+      const result = await onConfirm?.(proofDataUrl, phone.trim());
       if (result === false) {
         setSubmitting(false);
         return;
@@ -364,29 +361,13 @@ const USSDPaymentModal = ({
             </div>
           )}
 
-          {/* ── ÉTAPE 1 : Confirmation via référence SMS + capture d'écran ── */}
+          {/* ── ÉTAPE 1 : Confirmation par capture d'écran du dépôt ── */}
           {step === 1 && (
             <div className="space-y-4">
               <div className="p-3 bg-blue-600/10 border border-blue-500/30 rounded-lg">
                 <p className="text-xs text-blue-300">
-                  Confirmez votre paiement en téléversant la <strong>capture d'écran de la transaction</strong>{" "}
-                  (obligatoire). Vous pouvez aussi saisir la <strong>référence du SMS</strong> reçu (facultatif).
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
-                  Référence du SMS (numéro de transaction) <span className="text-gray-500">· facultatif</span>
-                </label>
-                <Input
-                  type="text"
-                  placeholder="Ex: 84920371"
-                  value={smsReference}
-                  onChange={(e) => setSmsReference(e.target.value)}
-                  className="bg-gray-800 border-gray-700 text-white text-lg font-mono"
-                />
-                <p className="text-xs text-gray-500 mt-2">
-                  Le numéro figure dans le SMS de confirmation de votre opérateur.
+                  Confirmez votre paiement en téléversant la <strong>capture d'écran de votre dépôt</strong>{" "}
+                  (obligatoire). Un administrateur vérifie la capture et valide vos billets.
                 </p>
               </div>
 
@@ -409,11 +390,11 @@ const USSDPaymentModal = ({
                 </div>
               )}
 
-              {/* Capture d'écran de la transaction (OBLIGATOIRE) */}
+              {/* Capture d'écran du dépôt (OBLIGATOIRE) */}
               <div className="p-3 bg-violet-600/10 border border-violet-500/30 rounded-lg">
                 <p className="text-xs text-violet-300 mb-2">
-                  📸 <strong className="text-violet-200">Capture d'écran (obligatoire)</strong> — prenez la capture de
-                  votre transaction (transfert validé) puis téléversez-la pour confirmer le paiement.
+                  📸 <strong className="text-violet-200">Capture d'écran du dépôt (obligatoire)</strong> —prenez la capture de
+                  votre dépôt (transfert validé) puis téléversez-la pour confirmer le paiement.
                 </p>
                 {proofFile ? (
                   <div className="relative">
@@ -453,7 +434,7 @@ const USSDPaymentModal = ({
                 )}
                 {proofDataUrl && (
                   <p className="text-[10px] text-green-400 mt-1 flex items-center gap-1">
-                    <Check className="w-3 h-3" /> Capture sélectionnée — sera envoyée à la confirmation.
+                    <Check className="w-3 h-3" /> Capture du dépôt sélectionnée — sera envoyée à la confirmation.
                   </p>
                 )}
               </div>
@@ -499,8 +480,8 @@ const USSDPaymentModal = ({
                   prise en compte.
                 </p>
                 <p className="text-xs text-gray-500 mt-3 bg-gray-800/60 rounded-lg p-3">
-                  🔍 Votre paiement est <strong className="text-yellow-400">en attente de validation</strong> par
-                  l'équipe (généralement quelques minutes). Votre billet / vos crédits sont déjà actifs.
+                  🔍 Votre paiement est <strong className="text-yellow-400">en attente de validation</strong>. Un
+                  administrateur vérifie la capture d'écran de votre dépôt, puis vos billets / crédits sont activés.
                 </p>
               </div>
               <Button

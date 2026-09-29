@@ -1608,11 +1608,12 @@
   "_comment_profileTabs": "📌 Onglets du profil (ProfilePageContent)",
   "profileTabs": {
     "events": "Événements",
-    "creator": "Retraits",
+    "creator": "Créateur",
     "tickets": "Billets",
     "transactions": "Historique",
     "referral": "Parrainage",
-    "withdrawals": "Créateur"
+    "scanners": "Équipe de scan",
+    "withdrawals": "Retraits"
   },
 
   "_comment_transferHistory": "📜 Historique des transferts (TransferHistory)",
