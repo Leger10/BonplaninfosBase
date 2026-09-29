@@ -215,6 +215,45 @@ try {
   const adminSum = await rpc('admin_list_scan_agents', {}, D.token);
   check('  active_count reflète l\'état', adminSum.json?.data?.active_count, adminSum.json?.data?.agents.filter((x) => x.is_active).length);
 
+  // ---------- 13. identité résolue même pour déjà entré / déjà sorti ----------
+  // Un billet acheté en ligne n'a pas always attendee_name/phone : l'identité
+  // est le profil lié (tickets.user_id). Le scan « déjà à l'intérieur » /
+  // « déjà sorti » doit afficher le nom complet et le contact, pas « Inconnu ».
+  await prisma.profiles.update({ where: { id: B.id }, data: { full_name: 'Agent Scan NomComplet', phone: '+22500001111' } });
+  const idOwner = uuidv4();
+  ticketIds.push(idOwner);
+  await prisma.tickets.create({
+    data: {
+      id: idOwner,
+      event_id: evA.id,
+      user_id: B.id,
+      status: 'active',
+      ticket_number: `TMP-SCAN-OWN-${idOwner.slice(0, 8).toUpperCase()}`,
+      ticket_code_short: idOwner.slice(0, 8).toUpperCase(),
+      qr_code: `qr-own-${idOwner}`,
+      ticket_date: new Date(`${today}T00:00:00.000Z`),
+      quantity: 1,
+      total_amount_pi: 1000,
+      purchase_price_pi: 1000,
+      payment_method: 'coins',
+    },
+  });
+  const ownTicket = `TMP-SCAN-OWN-${idOwner.slice(0, 8).toUpperCase()}`;
+  const firstIn = await verify(A.token, ownTicket);
+  check('entrée (checkin) -> nom complet résolu', firstIn.json?.data?.attendee_name, 'Agent Scan NomComplet');
+  check('  contact résolu', firstIn.json?.data?.phone, '+22500001111');
+  const inside = await verify(A.token, ownTicket);
+  check('déjà à l\'intérieur -> 200', inside.status, 200);
+  check('  nom complet affiché', inside.json?.data?.attendee_name, 'Agent Scan NomComplet');
+  check('  contact affiché', inside.json?.data?.phone, '+22500001111');
+  const exit1 = await verify(A.token, ownTicket, true);
+  check('sortie enregistrée -> 200', exit1.status, 200);
+  const exit2 = await verify(A.token, ownTicket, true);
+  check('déjà sorti -> 200', exit2.status, 200);
+  check('  code', exit2.json?.data?.status_code, 'already_exited');
+  check('  nom complet affiché', exit2.json?.data?.attendee_name, 'Agent Scan NomComplet');
+  check('  contact affiché', exit2.json?.data?.phone, '+22500001111');
+
   console.log(fails === 0 ? '\nTOUT EST VERT' : `\n${fails} ECHEC(S)`);
 } catch (e) {
   console.log('ERREUR:', String(e?.message || e).trim().slice(0, 300));
