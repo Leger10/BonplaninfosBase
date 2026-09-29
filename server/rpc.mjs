@@ -947,21 +947,12 @@ const HANDLERS = {
       };
     }
     const totalCoins = Math.max(1, baseTotalFcfa - promoReduction);
-    // Débit explicite auteur (p_final_amount non fiable côté client) : on utilise totalCoins.
-
-    // 3. Vérif solde coins du profil + débit
-    const balance = profile.coin_balance ?? 0;
-    if (balance < totalCoins) return fail(`Solde insuffisant (disponible: ${balance}, requis: ${totalCoins})`, 'INSUFFICIENT_COINS');
-
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    const genCode = () => Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
-
-    const now = new Date();
     const orderId = p_transaction_reference || `TKT-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
-    const createdTickets = [];
 
     // Garde-fou anti-double achat : un rejeu du même orderId ne doit pas
-    // recréer de billets ni re-débiter le portefeuille.
+    // recréer de billets ni re-débiter le portefeuille. Vérifié AVANT le
+    // contrôle de solde pour qu'un double-tap ou une retentative avec un solde
+    // déjà débité renvoie DUPLICATE_ORDER (et non « solde insuffisant »).
     if (p_transaction_reference) {
       const already = await dbc.tickets.findFirst({
         where: { transaction_reference: orderId, event_id: p_event_id },
@@ -971,6 +962,16 @@ const HANDLERS = {
         return fail('Cette commande a déjà été traitée (billets existants pour cette référence).', 'DUPLICATE_ORDER');
       }
     }
+
+    // 3. Vérif solde coins du profil + débit
+    const balance = profile.coin_balance ?? 0;
+    if (balance < totalCoins) return fail(`Solde insuffisant (disponible: ${balance}, requis: ${totalCoins})`, 'INSUFFICIENT_COINS');
+
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const genCode = () => Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+
+    const now = new Date();
+    const createdTickets = [];
 
     for (const { tt, qty, coins } of items) {
       for (let i = 0; i < qty; i++) {
@@ -2740,9 +2741,10 @@ const HANDLERS = {
         },
       });
       if (commissionCoins > 0) {
+        const ownerProfile = await tx.profiles.findUnique({ where: { id: coupon.user_id }, select: { coin_balance: true } });
         await tx.profiles.update({
           where: { id: coupon.user_id },
-          data: { coin_balance: { increment: commissionCoins }, updated_at: now },
+          data: { coin_balance: (ownerProfile?.coin_balance || 0) + commissionCoins, updated_at: now },
         });
         await tx.transactions.create({
           data: {
@@ -2786,7 +2788,7 @@ const HANDLERS = {
     await dbc.$transaction(async (tx) => {
       await tx.profiles.update({
         where: { id: p_user_id },
-        data: { coin_balance: { increment: coins }, updated_at: now },
+        data: { coin_balance: (profile.coin_balance || 0) + coins, updated_at: now },
       });
       await tx.transactions.create({
         data: {
