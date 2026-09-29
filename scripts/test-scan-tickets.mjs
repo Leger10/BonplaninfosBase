@@ -63,6 +63,7 @@ try {
   const B = await mk('user');   // agent terrain
   const C = await mk('user');   // tiers sans lien
   const S = await mk('secretary');
+  const D = await mk('super_admin'); // admin : regard global
 
   const mkEvent = (owner) => prisma.events.create({
     data: {
@@ -200,6 +201,19 @@ try {
   check('cle interne ne gere pas les agents', internalAgents.json?.error?.code, 'NO_ORGANIZER');
   const secretaryScan = await verify(S.token, tA.ticket_number);
   check('un secretaire n\'est pas.scanneur de cet evenement -> 403', secretaryScan.status, 403);
+
+  // ---------- 12. vue consolidée réservée à l'administration ----------
+  check('admin_list_scan_agents refusé à un non-admin -> 403', (await rpc('admin_list_scan_agents', {}, B.token)).status, 403);
+  const adminView = await rpc('admin_list_scan_agents', {}, D.token);
+  check('super_admin liste les délégations -> 200', adminView.status, 200);
+  const mine = (adminView.json?.data?.agents || []).filter((x) => x.organizer_id === A.id && x.user_id === B.id);
+  check('  délégation A→B visible', mine.length, 1);
+  check('  agent présent avec profil', mine[0]?.agent?.email, B.email);
+  check('  organisateur présent avec profil', mine[0]?.organizer?.email, A.email);
+  check('  gracieur présent avec profil', mine[0]?.granted_by_profile?.email, A.email);
+  check('  délégation marquée inactive (retirée)', mine[0]?.is_active, false);
+  const adminSum = await rpc('admin_list_scan_agents', {}, D.token);
+  check('  active_count reflète l\'état', adminSum.json?.data?.active_count, adminSum.json?.data?.agents.filter((x) => x.is_active).length);
 
   console.log(fails === 0 ? '\nTOUT EST VERT' : `\n${fails} ECHEC(S)`);
 } catch (e) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { toast } from '@/components/ui/use-toast';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Search, MoreVertical, Trash2, Edit, ToggleLeft, ToggleRight, Download, Loader2, Eye, Filter, Ticket, Vote, Gift, Store, Shield, FileText, AlertTriangle } from 'lucide-react';
+import { Search, MoreVertical, Trash2, Edit, ToggleLeft, ToggleRight, Download, Loader2, Eye, Filter, Ticket, Vote, Gift, Store, Shield, FileText, AlertTriangle, Users } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,7 +42,24 @@ const EventsManagement = ({ events, userProfile, onRefresh }) => {
   const [selectedEventId, setSelectedEventId] = useState(null);
   const [isDeleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [scanAgents, setScanAgents] = useState([]);
   const navigate = useNavigate();
+
+  // Toutes les délégations de scan, pour afficher l'équipe par organisateur.
+  useEffect(() => {
+    supabase.rpc('admin_list_scan_agents', {}).then(({ data, error }) => {
+      if (!error) setScanAgents(data?.agents || []);
+    });
+  }, []);
+
+  const agentsByOrganizer = useMemo(() => {
+    const map = {};
+    scanAgents.forEach((a) => {
+      if (!map[a.organizer_id]) map[a.organizer_id] = [];
+      map[a.organizer_id].push(a);
+    });
+    return map;
+  }, [scanAgents]);
 
   useEffect(() => {
     let result = events;
@@ -257,14 +274,15 @@ const EventsManagement = ({ events, userProfile, onRefresh }) => {
                   <th className="p-4 font-medium hidden md:table-cell">Type</th>
                   <th className="p-4 font-medium hidden sm:table-cell">Organisateur</th>
                   <th className="p-4 font-medium hidden lg:table-cell">Date</th>
-                  <th className="p-4 font-medium">Statut</th>
+                  <th className="p-4 font-medium hidden sm:table-cell">Statut</th>
+                  <th className="p-4 font-medium hidden md:table-cell">Équipe de scan</th>
                   <th className="p-4 font-medium text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
                 {filteredEvents.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="p-8 text-center text-muted-foreground">
+                    <td colSpan="7" className="p-8 text-center text-muted-foreground">
                       Aucun événement trouvé pour ces critères.
                     </td>
                   </tr>
@@ -292,6 +310,28 @@ const EventsManagement = ({ events, userProfile, onRefresh }) => {
                         <Badge variant={getStatusBadgeVariant(event.status)} className={event.status === 'active' ? 'bg-green-500/15 text-green-600' : ''}>
                           {event.status === 'active' ? 'Actif' : event.status === 'inactive' ? 'Inactif' : event.status}
                         </Badge>
+                      </td>
+                      <td className="p-4 hidden md:table-cell">
+                        {(() => {
+                          const agents = agentsByOrganizer[event.organizer_id || event.organizer?.id] || [];
+                          if (agents.length === 0) return <span className="text-xs text-muted-foreground">Aucun</span>;
+                          return (
+                            <div className="flex flex-col gap-1">
+                              {agents.slice(0, 2).map((a) => (
+                                <span key={a.user_id} className="flex items-center gap-1.5 text-xs">
+                                  <Users className="h-3 w-3 text-muted-foreground shrink-0" />
+                                  <span className={`truncate max-w-[140px] ${a.is_active ? '' : 'line-through text-muted-foreground'}`}>
+                                    {a.agent?.full_name || a.agent?.email || 'Compte supprimé'}
+                                  </span>
+                                  {a.is_active && <span className="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />}
+                                </span>
+                              ))}
+                              {agents.length > 2 && (
+                                <span className="text-[10px] text-muted-foreground">+{agents.length - 2} autres</span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="p-4 text-right">
                         <DropdownMenu>

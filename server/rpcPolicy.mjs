@@ -57,6 +57,7 @@ export const RPC_POLICY = {
   reset_all_zones: { roles: ADMIN },
   reset_transactional_data: { roles: ADMIN },
   get_audit_log_stats: { roles: ADMIN },
+  admin_list_scan_agents: { roles: ADMIN },
   get_super_admin_dashboard_stats: { roles: ADMIN },
   get_global_analytics: { roles: ADMIN },
   send_announcement_to_users: { roles: ADMIN },

@@ -64,6 +64,7 @@ const WithdrawalManagementDashboard = () => {
   const [eventStats, setEventStats] = useState({});
   const [ticketPurchases, setTicketPurchases] = useState([]);
   const [loadingPurchases, setLoadingPurchases] = useState(false);
+  const [scanAgents, setScanAgents] = useState([]);
   
   const [selectedEventId, setSelectedEventId] = useState(null);
 
@@ -359,6 +360,28 @@ const WithdrawalManagementDashboard = () => {
   useEffect(() => {
     if (userProfile) fetchData();
   }, [userProfile]);
+
+  // Toutes les délégations de scan, pour afficher l'équipe par événement et
+  // marquer les clients qui sont agents de scan.
+  useEffect(() => {
+    supabase.rpc('admin_list_scan_agents', {}).then(({ data, error }) => {
+      if (!error) setScanAgents(data?.agents || []);
+    });
+  }, []);
+
+  const agentsByOrganizer = useMemo(() => {
+    const map = {};
+    scanAgents.forEach((a) => {
+      if (!map[a.organizer_id]) map[a.organizer_id] = [];
+      map[a.organizer_id].push(a);
+    });
+    return map;
+  }, [scanAgents]);
+
+  const scanAgentUserIds = useMemo(
+    () => new Set(scanAgents.filter((a) => a.is_active).map((a) => a.user_id)),
+    [scanAgents]
+  );
 
   const processedEvents = useMemo(() => {
     return events.map((event) => {
@@ -931,6 +954,31 @@ const priceInFcfa = purchase.total_amount_fcfa ||
                                 <span className="line-clamp-1">{event.organizerName}</span>
                               </div>
                               <div className="mt-1 flex flex-wrap gap-1">
+                                {(() => {
+                                  const ag = agentsByOrganizer[event.organizer_id] || [];
+                                  if (!ag.length) return null;
+                                  return (
+                                    <>
+                                      {ag.slice(0, 2).map((a) => (
+                                        <span
+                                          key={a.user_id}
+                                          className={`text-[10px] px-1.5 py-0.5 rounded border ${
+                                            a.is_active
+                                              ? "bg-emerald-500/10 text-emerald-300 border-emerald-600/30"
+                                              : "bg-gray-700/50 text-gray-400 border-gray-600/50 line-through"
+                                          }`}
+                                        >
+                                          {a.agent?.full_name || a.agent?.email || "Compte supprimé"}
+                                        </span>
+                                      ))}
+                                      {ag.length > 2 && (
+                                        <span className="text-[10px] text-gray-400 px-1">+{ag.length - 2}</span>
+                                      )}
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                              <div className="mt-1 flex flex-wrap gap-1">
                                 {event.metrics.isOngoing && (
                                   <Badge className="bg-blue-600 text-white border-0 text-[10px] px-2 py-0.5 animate-pulse">
                                     🔴 EN COURS
@@ -1288,6 +1336,11 @@ const priceInFcfa = purchase.total_amount_fcfa ||
                                 {client.paymentMethod === 'moneyfusion_ticket' && (
                                   <Badge className="bg-blue-600/50 text-blue-300 text-[8px] px-1 py-0">
                                     MF
+                                  </Badge>
+                                )}
+                                {client.user_id && scanAgentUserIds.has(client.user_id) && (
+                                  <Badge className="bg-emerald-600/40 text-emerald-200 border border-emerald-500/40 text-[8px] px-1 py-0">
+                                    Agent de scan
                                   </Badge>
                                 )}
                               </div>

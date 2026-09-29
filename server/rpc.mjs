@@ -2063,6 +2063,36 @@ const HANDLERS = {
     return ok({ success: true, removed: count });
   },
 
+  // Vue consolidée pour l'administration : toutes les délégations de scan,
+  // avec le profil de l'organisateur, de l'agent et de celui qui a accordé.
+  async admin_list_scan_agents(args, actor) {
+    if (actor?.source === 'user' && !ADMIN_ROLES.includes(actor.user_type)) {
+      return fail("Action réservée à l'administration", 'FORBIDDEN');
+    }
+    const dbc = db();
+    const rows = await dbc.organizer_scan_agents.findMany({ orderBy: { created_at: 'desc' } });
+    if (!rows.length) return ok({ agents: [], active_count: 0, total_count: 0 });
+    const ids = [...new Set(rows.flatMap((r) => [r.organizer_id, r.user_id, r.granted_by]))];
+    const profiles = await dbc.profiles.findMany({ where: { id: { in: ids } }, select: { id: true, full_name: true, email: true, phone: true } });
+    const byId = new Map(profiles.map((p) => [p.id, p]));
+    return ok({
+      agents: rows.map((r) => ({
+        id: r.id,
+        organizer_id: r.organizer_id,
+        user_id: r.user_id,
+        granted_by: r.granted_by,
+        is_active: !!r.is_active,
+        created_at: r.created_at,
+        last_scanned_at: r.last_scanned_at,
+        organizer: byId.get(r.organizer_id) || null,
+        agent: byId.get(r.user_id) || null,
+        granted_by_profile: byId.get(r.granted_by) || null,
+      })),
+      active_count: rows.filter((r) => r.is_active).length,
+      total_count: rows.length,
+    });
+  },
+
   // ---------- Tickets ----------
   async reset_ticket(args, actor) {
     const { p_ticket_identifier } = args;
