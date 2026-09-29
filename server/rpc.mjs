@@ -2692,15 +2692,156 @@ const HANDLERS = {
       })),
     });
   },
+
+  // Parrainage par code coupon (2% sur un achat déjà validé). Enregistre
+  // l'usage, met à jour les compteurs du coupon et crédite la commission au
+  // propriétaire (en pièces : 10 FCFA = 1 pièce). Idempotent par transaction.
+  async credit_coupon_earnings(args) {
+    const { p_coupon_code, p_buyer_user_id, p_amount_fcfa, p_transaction_id } = args || {};
+    if (!p_coupon_code) return fail('Code coupon requis', 'COUPON_CODE_MISSING');
+    if (!p_buyer_user_id) return fail('Acheteur requis', 'BUYER_MISSING');
+    const dbc = db();
+    const coupon = await dbc.coupons.findUnique({ where: { code: String(p_coupon_code) } });
+    if (!coupon) return fail('Coupon introuvable', 'COUPON_NOT_FOUND');
+    if (coupon.active === false) return fail('Coupon désactivé', 'COUPON_INACTIVE');
+    if (coupon.user_id === p_buyer_user_id) return fail('Un utilisateur ne peut pas utiliser son propre coupon', 'COUPON_SELF_USE');
+    if (p_transaction_id) {
+      const already = await dbc.coupon_usages.findFirst({
+        where: { coupon_code: String(p_coupon_code), transaction_id: String(p_transaction_id) },
+        select: { id: true },
+      });
+      if (already) return ok({ success: true, message: 'Commission déjà enregistrée', already_recorded: true });
+    }
+    const amountFcfa = Math.max(0, Number(p_amount_fcfa) || 0);
+    const commission = Math.floor(amountFcfa * 0.02);
+    const commissionCoins = Math.floor(commission / 10);
+    const now = new Date();
+    await dbc.$transaction(async (tx) => {
+      await tx.coupon_usages.create({
+        data: {
+          id: uuidv4(),
+          coupon_code: String(p_coupon_code),
+          user_id: p_buyer_user_id,
+          transaction_id: p_transaction_id ? String(p_transaction_id) : null,
+          amount: amountFcfa,
+          commission,
+          created_at: now,
+        },
+      });
+      await tx.coupons.update({
+        where: { code: String(p_coupon_code) },
+        data: {
+          usage_count: { increment: 1 },
+          total_amount: { increment: amountFcfa },
+          commission_earned: { increment: commission },
+          last_used_at: now,
+        },
+      });
+      if (commissionCoins > 0) {
+        await tx.profiles.update({
+          where: { id: coupon.user_id },
+          data: { coin_balance: { increment: commissionCoins }, updated_at: now },
+        });
+        await tx.transactions.create({
+          data: {
+            user_id: coupon.user_id,
+            transaction_type: 'coupon_commission',
+            amount_pi: commissionCoins,
+            amount_fcfa: commission,
+            description: `Commission de parrainage coupon ${p_coupon_code} (2%)`,
+            status: 'completed',
+            transaction_reference: p_transaction_id ? String(p_transaction_id) : null,
+            created_at: now,
+            completed_at: now,
+            payment_method: 'system',
+          },
+        });
+      }
+    });
+    return ok({ success: true, message: 'Coupon enregistré', commission, commission_coins: commissionCoins, coupon_owner_id: coupon.user_id });
+  },
+
+  // Crédite une commission à un influenceur, après paiement validé. Opération
+  // de porte-monnaie : réservée à l'administration (rôle ADMIN dans
+  // rpcPolicy.mjs), jamais à un navigateur lambda. Idempotente par paiement.
+  async add_commission_to_user(args) {
+    const { p_user_id, p_amount_fcfa, p_payment_id, p_commission_coins } = args || {};
+    if (!p_user_id) return fail('p_user_id requis', 'USER_MISSING');
+    const dbc = db();
+    const profile = await dbc.profiles.findUnique({ where: { id: p_user_id } });
+    if (!profile) return fail('Utilisateur introuvable', 'USER_NOT_FOUND');
+    const coins = Math.max(0, Number(p_commission_coins) || 0);
+    const fcfa = Math.max(0, Number(p_amount_fcfa) || 0);
+    if (coins <= 0 && fcfa <= 0) return fail('Montant de commission invalide', 'INVALID_AMOUNT');
+    if (p_payment_id) {
+      const existing = await dbc.transactions.findFirst({
+        where: { user_id: p_user_id, transaction_type: 'commission_credit', transaction_reference: String(p_payment_id) },
+        select: { id: true },
+      });
+      if (existing) return ok({ success: true, message: 'Commission déjà créditée', already_credited: true });
+    }
+    const now = new Date();
+    await dbc.$transaction(async (tx) => {
+      await tx.profiles.update({
+        where: { id: p_user_id },
+        data: { coin_balance: { increment: coins }, updated_at: now },
+      });
+      await tx.transactions.create({
+        data: {
+          user_id: p_user_id,
+          transaction_type: 'commission_credit',
+          amount_pi: coins,
+          amount_fcfa: fcfa,
+          description: `Commission de parrainage (${fcfa} FCFA)`,
+          status: 'completed',
+          transaction_reference: p_payment_id ? String(p_payment_id) : null,
+          created_at: now,
+          completed_at: now,
+          payment_method: 'system',
+        },
+      });
+    });
+    return ok({ success: true, coin_balance: (profile.coin_balance || 0) + coins, commission_coins: coins });
+  },
+
+  // Journal d'usage d'un code promo (ligne promo_code_usages, idempotente par
+  // transaction). La remise, la limite d'usage et la commission influenceur
+  // sont déjà gérées côté serveur dans purchase_tickets_v2 : ce RPC ne fait
+  // qu'enregistrer l'usage pour les statistiques (getCodeStats).
+  async process_promo_usage(args) {
+    const { p_code_id, p_user_id, p_discount, p_commission, p_purchase, p_transaction_id } = args || {};
+    if (!p_code_id || !p_user_id) return fail('code promo et utilisateur requis', 'PROMO_ARGS_MISSING');
+    const dbc = db();
+    const promo = await dbc.promo_codes.findUnique({ where: { id: p_code_id } });
+    if (!promo) return fail('Code promo introuvable', 'PROMO_NOT_FOUND');
+    if (promo.is_active === false) return fail('Code promo désactivé', 'PROMO_INACTIVE');
+    if (p_transaction_id) {
+      const already = await dbc.promo_code_usages.findFirst({
+        where: { promo_code_id: p_code_id, transaction_id: String(p_transaction_id) },
+        select: { id: true },
+      });
+      if (already) return ok({ success: true, message: 'Usage déjà enregistré', already_recorded: true });
+    }
+    const usage = await dbc.promo_code_usages.create({
+      data: {
+        id: uuidv4(),
+        promo_code_id: p_code_id,
+        user_id: p_user_id,
+        discount_amount: Math.max(0, Number(p_discount) || 0),
+        commission_amount: Math.max(0, Number(p_commission) || 0),
+        purchase_amount: Math.max(0, Number(p_purchase) || 0),
+        transaction_id: p_transaction_id ? String(p_transaction_id) : null,
+        used_at: new Date(),
+      },
+    });
+    return ok({ success: true, message: 'Usage enregistré', usage_id: usage.id });
+  },
 };
 
 // RPC qui ne peuvent pas être portés fidèlement sans son schéma : réponse
 // explicite plutôt que faux.
 const NOT_IMPLEMENTED = {
   process_moneyfusion_success: 'paiements',
-  credit_coupon_earnings: 'coupons',
-  add_commission_to_user: 'commissions',
-  process_promo_usage: 'promos',
   submit_partner_verification: 'partenaires',
   get_admin_salary_stats_full: 'salaires',
 };

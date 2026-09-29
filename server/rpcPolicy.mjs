@@ -91,6 +91,12 @@ export const RPC_POLICY = {
   get_secretary_salary_stats: { roles: ADMIN },
   get_today_performance: { roles: ADMIN },
   get_zones_stats: { roles: ADMIN },
+  // Coupons & influenceur : l'acheteur enregistre l'usage de SON coupon
+  // (la commission va au propriétaire du code), le crédit de commission est
+  // purement administratif, et le journal promo ne concerne que l'acheteur.
+  credit_coupon_earnings: { selfArg: 'p_buyer_user_id' },
+  add_commission_to_user: { roles: ADMIN },
+  process_promo_usage: { selfArg: 'p_user_id' },
 };
 
 const isAdminRole = (actor) => ADMIN.includes(actor.user_type);
