@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "vite --host --port 3000",
+    "dev:windows": "set CI=1 && vite --host --port 3000",
     "dev:functions": "node scripts/dev-functions-server.mjs",
     "dev:netlify": "netlify dev",
     "dev:npx": "npx netlify-cli dev",
@@ -109,6 +110,6 @@
     "vite-plugin-imagemin": "^0.6.1"
   },
   "engines": {
-    "node": ">=18 <=20"
+    "node": ">=18"
   }
 }
