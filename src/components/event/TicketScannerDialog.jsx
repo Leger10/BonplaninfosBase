@@ -700,12 +700,10 @@ const exportScansToPDF = () => {
                   {getStatusTitle(scanResult.status_code)}
                 </h3>
                 <p className="text-sm text-center mt-1">{getDisplayMessage(scanResult)}</p>
-                {scanResult.attendee && <p className="mt-2 font-semibold text-center">{scanResult.attendee}</p>}
                 {getTicketInfoDisplay(scanResult)}
                 <div className="text-xs text-gray-400 text-center mt-2">
                   Statut: {getStatusDisplay(scanResult.status_code, scanResult.status)}
                   {scanResult.entry_count > 0 && <span className="ml-2 text-purple-400">(#{scanResult.entry_count})</span>}
-                  {scanResult.phone && <span className="ml-2 text-blue-400">📱 {scanResult.phone}</span>}
                   {scanResult.is_multi_day && <span className="ml-2 text-purple-400">📅 Multi-jours</span>}
                   {scanResult.ticket_date && !scanResult.is_multi_day && <span className="ml-2 text-blue-400">📅 {new Date(scanResult.ticket_date).toLocaleDateString('fr-FR')}</span>}
                 </div>

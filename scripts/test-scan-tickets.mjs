@@ -242,10 +242,14 @@ try {
   const firstIn = await verify(A.token, ownTicket);
   check('entrée (checkin) -> nom complet résolu', firstIn.json?.data?.attendee_name, 'Agent Scan NomComplet');
   check('  contact résolu', firstIn.json?.data?.phone, '+22500001111');
+  check('  message accentué intact', firstIn.json?.data?.message, 'Entrée validée');
+  check('  entrées après checkin', firstIn.json?.data?.entry_count, 1);
   const inside = await verify(A.token, ownTicket);
   check('déjà à l\'intérieur -> 200', inside.status, 200);
   check('  nom complet affiché', inside.json?.data?.attendee_name, 'Agent Scan NomComplet');
   check('  contact affiché', inside.json?.data?.phone, '+22500001111');
+  check('  message accentué intact', inside.json?.data?.message, "Déjà à l'intérieur");
+  check('  entrées affichées', inside.json?.data?.entry_count, 1);
   const exit1 = await verify(A.token, ownTicket, true);
   check('sortie enregistrée -> 200', exit1.status, 200);
   const exit2 = await verify(A.token, ownTicket, true);
@@ -253,6 +257,7 @@ try {
   check('  code', exit2.json?.data?.status_code, 'already_exited');
   check('  nom complet affiché', exit2.json?.data?.attendee_name, 'Agent Scan NomComplet');
   check('  contact affiché', exit2.json?.data?.phone, '+22500001111');
+  check('  message accentué intact', exit2.json?.data?.message, 'Déjà sorti');
 
   console.log(fails === 0 ? '\nTOUT EST VERT' : `\n${fails} ECHEC(S)`);
 } catch (e) {

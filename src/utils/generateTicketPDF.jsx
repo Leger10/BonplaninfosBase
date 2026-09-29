@@ -190,8 +190,11 @@ const formatPrice = (amount) => {
   // Vérifier si c'est un nombre valide
   if (isNaN(numAmount) || numAmount <= 0) return "0";
   
-  // Formater avec l'espace comme séparateur de milliers
-  return numAmount.toLocaleString('fr-FR');
+  // Formater sans séparateur de milliers : la police standard PDF (helvetica)
+  // ne contient pas l'espace fine insécable (U+202F) insérée par
+  // toLocaleString('fr-FR'), qui s'affiche alors comme un glyphe anormal
+  // (ex : "1 /000 FCFA" au lieu de "1000 FCFA").
+  return String(Number(numAmount));
 };
 
 export const generateTicketPDF = async (event, tickets, user, { returnBlob = false } = {}) => {

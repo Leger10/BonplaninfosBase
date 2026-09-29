@@ -784,21 +784,11 @@ const VerifyTicketPage = () => {
                                         </p>
                                     </div>
 
-                                    {verificationResult.attendee_name && verificationResult.attendee_name !== 'Inconnu' && (
+                                    {verificationResult.ticket_type && (
                                         <div className="bg-gray-800/50 rounded-lg p-3">
-                                            <p className="text-sm font-medium text-white">
-                                                {verificationResult.attendee_name}
+                                            <p className="text-xs text-gray-400">
+                                                🎟️ {verificationResult.ticket_type}
                                             </p>
-                                            {verificationResult.phone && (
-                                                <p className="text-xs text-blue-400 mt-0.5">
-                                                    📱 {verificationResult.phone}
-                                                </p>
-                                            )}
-                                            {verificationResult.ticket_type && (
-                                                <p className="text-xs text-gray-400">
-                                                    {verificationResult.ticket_type}
-                                                </p>
-                                            )}
                                         </div>
                                     )}
 
