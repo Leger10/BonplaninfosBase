@@ -49,6 +49,13 @@ export const OWNER_SCOPES = {
   user_contract_acceptances: { column: 'user_id' },
   tickets: { column: 'user_id' },
   payments: { column: 'user_id' },
+  // Les codes promo appartiennent à l'influenceur qui les a générés
+  // (PromoCodeGenerator.jsx crée/active/désactive ses propres codes).
+  promo_codes: { column: 'influencer_id' },
+  // Les coupons de parrainage appartiennent à leur propriétaire
+  // (CouponService.createCoupon / /coupons). Lecture publique : un acheteur
+  // doit pouvoir valider un code par son nom (CoinPacksPage).
+  coupons: { column: 'user_id' },
   event_community_verifications: { column: 'user_id' },
   content_reports: { column: 'reporter_id' },
   pin_reset_requests: { column: 'user_id' },
@@ -131,14 +138,18 @@ export const READ_ADMIN_ONLY = new Set([
   'admin_salaries', // salaires
   'admin_logs', // journaux d'administration
   'admin_users_summary',
-  'admin_withdrawal_config',
   'admin_withdrawal_requests',
   'secretary_actions',
   'platform_earnings',
   'platform_wallet',
   'monthly_creator_pools',
-  'app_settings',
   'audit_logs',
+  // app_settings et admin_withdrawal_config ne sont PAS ici : ce sont des
+  // réglages publics de la plateforme (taux coin/FCFA, e-mails de contact,
+  // maintenance_mode, dates de retrait). DataContext.jsx les lit sur chaque
+  // page, WithdrawalTab/WithdrawalModal lit les dates de retrait : les exclure
+  // de la lecture cassait le site pour tout utilisateur non admin (403 au
+  // rendu). LEUR ÉCRITURE reste admin-only (absentes de OWNER_SCOPES).
 ]);
 
 export const READ_OWNER_SCOPES = {
@@ -294,8 +305,14 @@ export async function checkWritePolicy(q, actor) {
   }
 
   const hit = bodyColumns(q).filter((c) => PROTECTED_COLUMNS.has(c));
-  if (hit.length) {
-    return denied(`Colonne protégée : ${hit.join(', ')}`, 403, 'column_forbidden');
+  // Exception : is_active d'un code promo. La colonne reste protégée partout
+  // ailleurs (is_active d'un compte = statut du compte), mais l'influenceur
+  // doit pouvoir activer/désactiver SES codes (PromoCodeGenerator.jsx).
+  const scopedHit = table === 'promo_codes'
+    ? hit.filter((c) => c !== 'is_active')
+    : hit;
+  if (scopedHit.length) {
+    return denied(`Colonne protégée : ${scopedHit.join(', ')}`, 403, 'column_forbidden');
   }
 
   if (scope.event) {

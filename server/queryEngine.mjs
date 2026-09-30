@@ -241,20 +241,32 @@ async function embedRows(rows, embeds) {
   });
 }
 
+// Certaines tables (ex: coupons) n'ont pas de colonne "id" : leur clé naturelle
+// sert de PK (coupons.code). Les opérations génériques doivent alors s'y ramener.
+const pkColumnOf = (table, modelCols) => {
+  if (modelCols.includes('id')) return 'id';
+  if (modelCols.includes('code')) return 'code';
+  return null;
+};
+
 async function insertRows(q, modelCols, modelTypes) {
   const db = getDb();
+  const pk = pkColumnOf(q.table, modelCols);
   const body = Array.isArray(q.body) ? q.body : [q.body];
   const created = [];
   for (const item of body) {
     const data = pick(item, modelCols, modelTypes);
-    if (!data.id) data.id = uuidv4();
+    if (pk === 'id' && !data.id) data.id = uuidv4();
     const row = await db[q.table].create({ data });
     created.push(row);
   }
   if (q.select) {
-    const ids = created.map((r) => r.id);
-    const q2 = { ...q, select: q.select, filters: [{ column: 'id', op: 'in', value: ids }], single: q.single, maybeSingle: q.maybeSingle };
-    return selectRows(q2, modelCols);
+    if (pk) {
+      const keys = created.map((r) => r[pk]);
+      const q2 = { ...q, select: q.select, filters: [{ column: pk, op: 'in', value: keys }], single: q.single, maybeSingle: q.maybeSingle };
+      return selectRows(q2, modelCols);
+    }
+    return ok(created);
   }
   return ok(created);
 }
@@ -279,14 +291,14 @@ function destructiveFilterError(q, modelCols) {
 
 async function updateRows(q, modelCols, modelTypes) {
   const db = getDb();
+  const pk = pkColumnOf(q.table, modelCols);
   const where = buildPrismaWhere(q.filters, [], modelCols);
-  const before = await db[q.table].findMany({ where, select: { id: true } });
   const data = pick(q.body, modelCols, modelTypes);
-  if (before.length) {
-    await db[q.table].updateMany({ where: { id: { in: before.map((r) => r.id) } }, data });
-  }
+  const before = await db[q.table].findMany({ where, select: { [pk]: true } });
+  const keys = before.map((r) => r[pk]);
+  if (keys.length) await db[q.table].updateMany({ where, data });
   if (q.select) {
-    const q2 = { ...q, filters: [{ column: 'id', op: 'in', value: before.map((r) => r.id) }] };
+    const q2 = { ...q, filters: [{ column: pk, op: 'in', value: keys }] };
     return selectRows(q2, modelCols);
   }
   return ok([]);
@@ -294,8 +306,9 @@ async function updateRows(q, modelCols, modelTypes) {
 
 async function deleteRows(q, modelCols) {
   const db = getDb();
+  const pk = pkColumnOf(q.table, modelCols);
   const where = buildPrismaWhere(q.filters, [], modelCols);
-  if (q.orders && q.orders.length && q.limit) {
+  if (q.orders && q.orders.length && q.limit && pk === 'id') {
     // Supabase permet .delete().order(...).limit(n) : on ne supprime que les n
     // premiers triés (utilisé par free-vote pour l'annulation du dernier vote).
     const orderBy = q.orders.map((o) => ({ [o.column]: o.dir }));
@@ -311,6 +324,7 @@ async function deleteRows(q, modelCols) {
 
 async function upsertRows(q, modelCols, modelTypes) {
   const db = getDb();
+  const pk = pkColumnOf(q.table, modelCols);
   const body = Array.isArray(q.body) ? q.body : [q.body];
   const conflicts = (q.conflictColumns || ['id']).map((s) => s.trim());
   const created = [];
@@ -318,22 +332,24 @@ async function upsertRows(q, modelCols, modelTypes) {
     const fields = pick(item, modelCols, modelTypes);
     const where = {};
     let found = null;
-    if (conflicts.length === 1 && conflicts[0] === 'id') {
+    if (pk === 'id' && conflicts.length === 1 && conflicts[0] === 'id') {
       found = fields.id ? await db[q.table].findUnique({ where: { id: fields.id } }) : null;
     } else {
       for (const c of conflicts) where[c] = fields[c];
       found = await db[q.table].findFirst({ where });
     }
     if (found) {
-      const updated = await db[q.table].update({ where: { id: found.id }, data: fields });
-      created.push(updated);
+      if (pk) {
+        const updated = await db[q.table].update({ where: { [pk]: found[pk] }, data: fields });
+        created.push(updated);
+      }
     } else {
       const row = await db[q.table].create({ data: fields });
       created.push(row);
     }
   }
-  if (q.select) {
-    const q2 = { ...q, filters: [{ column: 'id', op: 'in', value: created.map((r) => r.id) }], single: q.single, maybeSingle: q.maybeSingle };
+  if (q.select && pk) {
+    const q2 = { ...q, filters: [{ column: pk, op: 'in', value: created.map((r) => r[pk]) }], single: q.single, maybeSingle: q.maybeSingle };
     return selectRows(q2, modelCols);
   }
   return ok(created);

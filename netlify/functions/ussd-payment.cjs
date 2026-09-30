@@ -208,6 +208,93 @@ const creditEarningsOnce = async ({ transactionRef, organizerId, eventId, transa
     return data ? data.earning_id : null;
 };
 
+// Commission du code promo à l'influenceur, en pièces ET en FCFA.
+// Miroir de creditPromoCommissionOnce (server/rpc.mjs) utilisé par le parcours
+// "pièces" : les deux parcours créditent donc la commission de la même façon.
+// Idempotente par (transaction_reference, promo_commission) : un rejeu de la
+// validation (double-clic admin / secrétaire) ne crédite pas deux fois.
+const creditPromoCommissionOnce = async ({ transactionRef, promoCodeId, eventId, baseCoins }) => {
+    if (!promoCodeId || !transactionRef) return { credited: false, reason: 'missing_args' };
+    const base = Math.max(0, Math.floor(Number(baseCoins) || 0));
+
+    const { data: promo } = await supabase
+        .from('promo_codes')
+        .select('id, code, influencer_id, is_active')
+        .eq('id', promoCodeId)
+        .maybeSingle();
+    if (!promo || !promo.influencer_id) return { credited: false, reason: 'promo_not_found' };
+
+    const { data: cfg } = await supabase
+        .from('event_promo_config')
+        .select('commission_rate, enabled')
+        .eq('event_id', eventId)
+        .maybeSingle();
+    const rate = Number(cfg && cfg.commission_rate) || 0;
+    if (rate <= 0) return { credited: false, reason: 'zero_commission' };
+
+    const coins = Math.floor((base * rate) / 100);
+    if (coins <= 0) return { credited: false, reason: 'zero_commission' };
+
+    const { data: existing } = await supabase
+        .from('organizer_earnings')
+        .select('id')
+        .eq('transaction_id', transactionRef)
+        .eq('transaction_type', 'promo_commission')
+        .maybeSingle();
+    if (existing) return { credited: false, reason: 'already_credited', coins };
+
+    const { data, error } = await supabase.rpc('credit_organizer_earnings', {
+        p_organizer_id: promo.influencer_id,
+        p_event_id: eventId || null,
+        p_transaction_id: transactionRef,
+        p_transaction_type: 'promo_commission',
+        p_earnings_coins: coins,
+        p_earnings_fcfa: coins * 10,
+        p_ticket_count: null,
+        p_description: `Commission code promo ${promo.code} (${rate}%)`,
+        p_created_at: now(),
+        p_apply_platform_fee: false,
+        p_earning_type: 'promo_commission',
+    });
+    if (error) {
+        console.error('⚠️ Commission influenceur USSD échouée:', error.message);
+        // `fatal` = panne technique : l'appelant doit interrompre la validation
+        // (et rouvrir le paiement) plutôt que de livrer sans commission.
+        return { credited: false, fatal: true, reason: error.message };
+    }
+    return { credited: true, coins, fcfa: coins * 10, rate, earning_id: data && data.earning_id };
+};
+
+// Journalise l'usage dans promo_code_usages (source des stats « Mes gains
+// premium »). Idempotent par (promo_code_id, transaction_id).
+const recordPromoUsageOnce = async ({ promoCodeId, userId, discountCoins, commissionCoins, purchaseCoins, transactionRef }) => {
+    if (!promoCodeId || !userId) return false;
+    const { data: existing } = await supabase
+        .from('promo_code_usages')
+        .select('id')
+        .eq('promo_code_id', promoCodeId)
+        .eq('transaction_id', String(transactionRef))
+        .maybeSingle();
+    if (existing) return false;
+    const { error } = await supabase.from('promo_code_usages').insert({
+        id: uuidv4(),
+        promo_code_id: promoCodeId,
+        user_id: userId,
+        discount_amount: Math.max(0, Math.floor(Number(discountCoins) || 0)),
+        commission_amount: Math.max(0, Math.floor(Number(commissionCoins) || 0)),
+        purchase_amount: Math.max(0, Math.floor(Number(purchaseCoins) || 0)),
+        transaction_id: String(transactionRef),
+        used_at: now(),
+    });
+    if (error) {
+        // On lève : le journal est la source des statistiques « Mes gains
+        // premium ». Mieux vaut rouvrir le paiement qu'un billet livré sans
+        // usage enregistré.
+        throw new Error(`journal d'usage promo non enregistré : ${error.message}`);
+    }
+    return true;
+};
+
 const handleSubmit = async (body) => {
     const {
         type, // 'credits' | 'tickets'
@@ -866,14 +953,70 @@ const handleSubmit = async (body) => {
         return { statusCode: 400, body: { success: false, message: 'Aucun billet valide dans le panier' } };
     }
 
-    const serverTotalFcfa = resolvedLines.reduce((sum, line) => sum + line.unitFcfa * line.qty, 0);
-    const serverTotalCoins = resolvedLines.reduce((sum, line) => sum + line.unitCoins * line.qty, 0);
+    const baseTotalFcfa = resolvedLines.reduce((sum, line) => sum + line.unitFcfa * line.qty, 0);
+    const baseTotalCoins = resolvedLines.reduce((sum, line) => sum + line.unitCoins * line.qty, 0);
+
+    // Code promo : validé et appliqué CÔTÉ SERVEUR (le client n'est jamais
+    // cru sur la remise). On retient promoMeta pour créditer la commission
+    // influenceur et journaliser l'usage à la validation du dépôt.
+    let promoReductionCoins = 0;
+    let promoMeta = null;
+    if (promoCodeId) {
+        const { data: promo } = await supabase
+            .from('promo_codes')
+            .select('id, code, event_id, influencer_id, is_active, expires_at, usage_limit, usage_count')
+            .eq('id', promoCodeId)
+            .maybeSingle();
+        if (!promo || promo.is_active === false || (promo.event_id && promo.event_id !== eventId)) {
+            return { statusCode: 400, body: { success: false, message: 'Code promo invalide pour cet evenement.' } };
+        }
+        if (promo.expires_at && new Date(promo.expires_at) < new Date()) {
+            return { statusCode: 400, body: { success: false, message: 'Ce code promo a expire.' } };
+        }
+        const { data: promoCfg } = await supabase
+            .from('event_promo_config')
+            .select('enabled, discount_type, discount_value, commission_rate, usage_limit, valid_from, valid_to')
+            .eq('event_id', eventId)
+            .maybeSingle();
+        if (!promoCfg || promoCfg.enabled === false) {
+            return { statusCode: 400, body: { success: false, message: 'Les codes promo sont desactives pour cet evenement.' } };
+        }
+        const used = Number(promo.usage_count || 0);
+        const limits = [promo.usage_limit, promoCfg.usage_limit].filter((l) => l != null).map(Number);
+        if (limits.some((l) => used >= l)) {
+            return { statusCode: 400, body: { success: false, message: 'Ce code promo a atteint sa limite.' } };
+        }
+        const stamp = new Date();
+        if ((promoCfg.valid_from && stamp < new Date(promoCfg.valid_from)) || (promoCfg.valid_to && stamp > new Date(promoCfg.valid_to))) {
+            return { statusCode: 400, body: { success: false, message: 'Ce code promo nest plus applicable.' } };
+        }
+        const dType = promoCfg.discount_type || 'percentage';
+        const dVal = Number(promoCfg.discount_value || 0);
+        promoReductionCoins = dType === 'fixed'
+            ? Math.min(dVal, baseTotalCoins)
+            : Math.round((baseTotalCoins * dVal) / 100);
+        promoReductionCoins = Math.max(0, Math.min(promoReductionCoins, baseTotalCoins));
+        promoMeta = {
+            id: promo.id,
+            code: promo.code,
+            influencer_id: promo.influencer_id || null,
+            commission_rate: Number(promoCfg.commission_rate || 0),
+            discount_coins: promoReductionCoins,
+            base_coins: baseTotalCoins,
+        };
+    }
+
+    // Le montant attendu est le NET (base - remise) : c'est ce que le front
+    // affiche après application du code. On continue d'exiger au moins ce
+    // montant (le surplus eventuel covering les frais USSD est tolere).
+    const serverTotalCoins = Math.max(1, baseTotalCoins - promoReductionCoins);
+    const serverTotalFcfa = serverTotalCoins * 10;
     if (originalAmount < serverTotalFcfa) {
         return {
             statusCode: 400,
             body: {
                 success: false,
-                message: `Montant insuffisant pour le panier (attendu ${serverTotalFcfa} FCFA, reçu ${originalAmount} FCFA). Aucune réservation n'a été faite.`
+                message: `Montant insuffisant pour le panier (attendu ${serverTotalFcfa} FCFA, recu ${originalAmount} FCFA). Aucune reservation na ete faite.`
             }
         };
     }
@@ -990,7 +1133,7 @@ const handleSubmit = async (body) => {
         transactionType: 'ticket_purchase',
         amountPi: serverTotalCoins,
         amountFcfa: serverTotalFcfa,
-        description: `Achat de ${ticketCount} billet(s) via USSD (capture d'écran) - en attente de validation`,
+        description: `Achat de ${ticketCount} billet(s) via USSD (capture d'ecran)${promoMeta ? ` avec code promo ${promoMeta.code}` : ''} - en attente de validation`,
         paymentId: paymentRow.id,
         ussdMeta,
         extra: {
@@ -998,6 +1141,9 @@ const handleSubmit = async (body) => {
             event_id: eventId,
             cart: cartData,
             promo_code_id: promoCodeId || null,
+            promo_code: promoMeta ? promoMeta.code : null,
+            promo_base_coins: promoMeta ? promoMeta.base_coins : baseTotalCoins,
+            promo_discount_coins: promoMeta ? promoMeta.discount_coins : 0,
             commission_amount: commissionAmount || 0
         }
     });
@@ -1408,6 +1554,28 @@ const resolvePayment = async (body, targetStatus) => {
                 console.error('⚠️ Crédit des pièces USSD échoué:', e.message);
             }
         }
+
+        // Commission du coupon de parrainage (2 %) au propriétaire du coupon.
+        // Idempotente par payment.id (credit_coupon_earnings vérifie un usage
+        // existant par coupon_code + transaction_id) : un rejeu ne crédite pas
+        // deux fois. La self-utilisation est refusée par le RPC.
+        if (payment.coupon_code) {
+            try {
+                const { data: couponCredit, error: couponErr } = await supabase.rpc('credit_coupon_earnings', {
+                    p_coupon_code: payment.coupon_code,
+                    p_buyer_user_id: payment.user_id,
+                    p_amount_fcfa: payment.amount_fcfa || coins * 10,
+                    p_transaction_id: payment.id,
+                });
+                if (couponErr) {
+                    console.error(`⚠️ Commission coupon USSD non créditée pour ${payment.coupon_code}:`, couponErr.message);
+                } else if (couponCredit && couponCredit.success) {
+                    console.log(`ℹ️ Coupon ${payment.coupon_code} : ${couponCredit.message} (commission ${couponCredit.commission_coins || 0} pièces)`);
+                }
+            } catch (e3) {
+                console.error(`⚠️ Commission coupon USSD échouée pour ${payment.coupon_code}:`, (e3 && e3.message) || e3);
+            }
+        }
     }
 
     if (targetStatus === 'completed' && payment.pack_id === 'ticket_payment') {
@@ -1474,6 +1642,15 @@ const resolvePayment = async (body, targetStatus) => {
             if (!evRow || !evRow.organizer_id) {
                 throw new Error('Organisateur de l\'evenement introuvable : commission non creditee');
             }
+            const ussdTicketCount = (deliveryMeta && deliveryMeta.cart)
+                ? Object.values(deliveryMeta.cart).reduce((s, q) => s + (Number(q) || 0), 0)
+                : 0;
+            // La remise promo est portée par l'organisateur : on l'explicite
+            // dans sa description (prix plein / remise / net encaissé) pour
+            // qu'il voie d'où vient la différence dans son relevé de gains.
+            const ussdPromoLine = Number((deliveryMeta && deliveryMeta.promo_discount_coins) || 0) > 0
+                ? ` | prix plein ${Number(deliveryMeta.promo_base_coins || 0)} pieces - remise code ${deliveryMeta.promo_code || ''} ${Number(deliveryMeta.promo_discount_coins || 0)} pieces = ${Number(payment.coins_amount || 0)} pieces encaissees`
+                : '';
             const credited = await creditEarningsOnce({
                 transactionRef: orderId,
                 organizerId: evRow.organizer_id,
@@ -1481,13 +1658,73 @@ const resolvePayment = async (body, targetStatus) => {
                 transactionType: 'ticket_sale',
                 coins: Number(payment.coins_amount || 0),
                 fcfa: Number(payment.amount_fcfa || 0),
-                ticketCount: (deliveryMeta && deliveryMeta.cart)
-                    ? Object.values(deliveryMeta.cart).reduce((s, q) => s + (Number(q) || 0), 0)
-                    : null,
-                description: `Vente de ${(deliveryMeta && deliveryMeta.cart) ? Object.values(deliveryMeta.cart).reduce((s, q) => s + (Number(q) || 0), 0) : 0} billet(s) via USSD`,
+                ticketCount: ussdTicketCount || null,
+                description: `Vente de ${ussdTicketCount} billet(s) via USSD${ussdPromoLine}`,
             });
             if (!credited) {
                 throw new Error('Commission organisateur non creditee');
+            }
+
+            // Commission du code promo à l'influenceur + journal d'usage.
+            // Placé après le crédit organisateur : s'il échoue, le try/catch
+            // externe rouvre le paiement pour qu'un admin rejoue la validation,
+            // plutôt que de livrer un billet sans commission. Les deux écritures
+            // sont idempotentes, donc un rejeu ne double-crédite rien.
+            if (payment.coupon_code) {
+                // La commission se calcule sur le prix de BASE (avant
+                // remise), comme sur le parcours "pièces". Le net encaissé
+                // (payment.coins_amount) ne sert qu'à l'organisateur.
+                const promoBaseCoins = Number(
+                    (deliveryMeta && deliveryMeta.promo_base_coins != null)
+                        ? deliveryMeta.promo_base_coins
+                        : (payment.coins_amount || 0)
+                );
+                const promoDiscountCoins = Number(
+                    (deliveryMeta && deliveryMeta.promo_discount_coins) || 0
+                );
+                const promoResult = await creditPromoCommissionOnce({
+                    transactionRef: orderId,
+                    promoCodeId: payment.coupon_code,
+                    eventId: ticketEventId || null,
+                    baseCoins: promoBaseCoins,
+                });
+                if (promoResult.credited) {
+                        console.log(`✅ Commission influenceur USSD créditée: +${promoResult.coins} pièces (${promoResult.rate}%)`);
+                    }
+                    // Panne technique uniquement : on interrompt pour que le
+                    // try/catch externe rouvre le paiement et qu'un admin
+                    // puisse rejouer. Une commission à 0 (événement sans
+                    // commission configurée) reste un cas métier valide.
+                    if (promoResult.fatal) {
+                        throw new Error(`commission promo non créditée : ${promoResult.reason}`);
+                    }
+                    // Journal d'usage -> stats « Mes gains premium ». Sur un
+                    // rejeu, `coins` vient de la commission déjà créditée :
+                    // le montant journalisé reste donc exact.
+                    const usageInserted = await recordPromoUsageOnce({
+                        promoCodeId: payment.coupon_code,
+                        userId: payment.user_id,
+                        discountCoins: promoDiscountCoins,
+                        commissionCoins: promoResult.coins || 0,
+                        purchaseCoins: Number(payment.coins_amount || 0),
+                        transactionRef: orderId,
+                    });
+                    // Compteur d'usage du code promo : incrémenté uniquement à
+                    // la première écriture du journal, pour qu'un rejeu de la
+                    // validation (double-clic admin) ne le gonfle pas.
+                    if (usageInserted) {
+                        const { data: promoRow } = await supabase
+                            .from('promo_codes')
+                            .select('usage_count')
+                            .eq('id', payment.coupon_code)
+                            .maybeSingle();
+                        if (promoRow) {
+                            await supabase
+                                .from('promo_codes')
+                                .update({ usage_count: Number(promoRow.usage_count || 0) + 1, updated_at: now() })
+                                .eq('id', payment.coupon_code);
+                    }
+                }
             }
         } catch (e) {
             console.error('❌ Validation billet USSD incomplete:', e.message);

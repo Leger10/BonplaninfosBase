@@ -170,6 +170,35 @@ async function creditPromoCommissionOnce({ transactionRef, influencerId, eventId
   return { credited: true, coins, fcfa: coins * 10, rate: rateNum, earning_id: res.earning_id };
 }
 
+// Journalise un usage de code promo dans promo_code_usages : c'est la source
+// de vérité des statistiques lues par « Mes gains premium » (commissions) et
+// par get_promo_code_stats. Idempotent par (promo_code_id, transaction_id) :
+// un rejeu du même achat ne duplique pas la ligne.
+async function recordPromoUsageOnce({ promoCodeId, userId, discountCoins, commissionCoins, purchaseCoins, transactionRef }) {
+  if (!promoCodeId || !userId) return { recorded: false, reason: 'missing_args' };
+  const dbc = db();
+  if (transactionRef) {
+    const existing = await dbc.promo_code_usages.findFirst({
+      where: { promo_code_id: promoCodeId, transaction_id: String(transactionRef) },
+      select: { id: true },
+    });
+    if (existing) return { recorded: false, reason: 'already_recorded', usage_id: existing.id };
+  }
+  const usage = await dbc.promo_code_usages.create({
+    data: {
+      id: uuidv4(),
+      promo_code_id: promoCodeId,
+      user_id: userId,
+      discount_amount: Math.max(0, Math.floor(Number(discountCoins) || 0)),
+      commission_amount: Math.max(0, Math.floor(Number(commissionCoins) || 0)),
+      purchase_amount: Math.max(0, Math.floor(Number(purchaseCoins) || 0)),
+      transaction_id: transactionRef ? String(transactionRef) : null,
+      used_at: new Date(),
+    },
+  });
+  return { recorded: true, usage_id: usage.id };
+}
+
 // Ajustement atomique du stock vendu, utilisé par le parcours "pièces"
 // (purchase_tickets_v2) et par la validation USSD (ussd-payment.cjs) afin
 // qu'il n'existe qu'un seul compteur par type de billet.
@@ -1149,13 +1178,37 @@ const HANDLERS = {
 
     // Compteur d'usage du code promo ( alimenté uniquement après achat réussi ).
     if (promoMeta) {
+      // Journal d'usage : sans cette ligne, « Mes gains premium » affiche 0 FCFA
+      // alors que la commission a bien été créditée ci-dessus (elle est lue
+      // dans promo_code_usages, pas dans organizer_earnings). On écrit le
+      // journal AVANT le compteur pour que les deux ne puissent pas diverger,
+      // et on prend `coins` même si la commission était déjà créditée afin que
+      // le montant journalisé reste exact.
+      let usageRecorded = false;
       try {
-        await dbc.promo_codes.update({
-          where: { id: promoMeta.promo_code_id },
-          data: { usage_count: { increment: 1 }, updated_at: now },
+        const usageResult = await recordPromoUsageOnce({
+          promoCodeId: promoMeta.promo_code_id,
+          userId: p_user_id,
+          discountCoins: promoReduction,
+          commissionCoins: (promoCommission && promoCommission.coins) || 0,
+          purchaseCoins: totalCoins,
+          transactionRef: orderId,
         });
+        usageRecorded = !!(usageResult && usageResult.recorded);
       } catch (e) {
-        console.error('�s�️ usage_count du code promo non incrémenté:', e.message);
+        console.error('⚠️ Journal d\'usage du code promo non enregistré:', e.message);
+      }
+      // Incrémenté uniquement si le journal a été écrit : un compteur en
+      // avance ferait diverger la limite d'usage et les statistiques.
+      if (usageRecorded) {
+        try {
+          await dbc.promo_codes.update({
+            where: { id: promoMeta.promo_code_id },
+            data: { usage_count: { increment: 1 }, updated_at: now },
+          });
+        } catch (e) {
+          console.error('⚠️ usage_count du code promo non incrémenté:', e.message);
+        }
       }
     }
 
@@ -2878,19 +2931,15 @@ const HANDLERS = {
       });
       if (already) return ok({ success: true, message: 'Usage déjà enregistré', already_recorded: true });
     }
-    const usage = await dbc.promo_code_usages.create({
-      data: {
-        id: uuidv4(),
-        promo_code_id: p_code_id,
-        user_id: p_user_id,
-        discount_amount: Math.max(0, Number(p_discount) || 0),
-        commission_amount: Math.max(0, Number(p_commission) || 0),
-        purchase_amount: Math.max(0, Number(p_purchase) || 0),
-        transaction_id: p_transaction_id ? String(p_transaction_id) : null,
-        used_at: new Date(),
-      },
+    const res = await recordPromoUsageOnce({
+      promoCodeId: p_code_id,
+      userId: p_user_id,
+      discountCoins: p_discount,
+      commissionCoins: p_commission,
+      purchaseCoins: p_purchase,
+      transactionRef: p_transaction_id,
     });
-    return ok({ success: true, message: 'Usage enregistré', usage_id: usage.id });
+    return ok({ success: true, message: 'Usage enregistré', usage_id: res.usage_id });
   },
 };
 

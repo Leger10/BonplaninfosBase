@@ -77,9 +77,19 @@ try {
   check('filtre neq : aucun compte du test modifie', touched.some((p) => p.bio === 'pirate'), false);
   void ne;
 
-  // ---------- table non declaree ----------
+// ---------- table non declaree ----------
   const app = await q('app_settings', { table: 'app_settings', method: 'update', filters: [{ column: 'id', op: 'eq', value: 'x' }], body: { coin_to_fcfa_rate: 1 } }, A.token);
   check('ecriture dans app_settings -> 403', app.status, 403);
+
+  // ---------- reglages publics : lecture OUI, ecriture NON ----------
+  // DataContext.jsx lit app_settings sur chaque page, WithdrawalTab lit
+  // admin_withdrawal_config : ces lectures sont publiques par conception.
+  const appRead = await q('app_settings', { table: 'app_settings', method: 'select', limit: 1, filters: [] }, A.token);
+  check('lecture app_settings (public) -> 200', appRead.status, 200);
+  const cfgRead = await q('admin_withdrawal_config', { table: 'admin_withdrawal_config', method: 'select', limit: 1, filters: [] }, A.token);
+  check('lecture admin_withdrawal_config (public) -> 200', cfgRead.status, 200);
+  const cfgWrite = await q('admin_withdrawal_config', { table: 'admin_withdrawal_config', method: 'insert', body: { withdrawal_dates: [1] }, filters: [] }, A.token);
+  check('ecriture admin_withdrawal_config -> 403', cfgWrite.status, 403);
 
   // ---------- insertion forcee sur une table personnelle ----------
   const notif = await q('notifications', { table: 'notifications', method: 'insert', body: { user_id: B.id, title: 'faux', message: 'faux', type: 'system' } }, A.token);
