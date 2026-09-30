@@ -104,9 +104,16 @@ try {
   check('coupon : commission_earned 108', Number((await prisma.coupons.findUnique({ where: { code: couponCode } })).commission_earned), 108);
   check('coupon : +10 pieces organisateur', (await prisma.profiles.findUnique({ where: { id: orgId } })).coin_balance, 10);
 
-  check('promo : journal process_promo_usage', (await rpc('process_promo_usage', { p_code_id: promoCodeId, p_user_id: buyerId, p_discount: 60, p_commission: 30, p_purchase: 600, p_transaction_id: orderRef }, tBuyer)).json?.data?.success, true);
+  const promoRes = await rpc('process_promo_usage', { p_code_id: promoCodeId, p_user_id: buyerId, p_discount: 60, p_commission: 30, p_purchase: 600, p_transaction_id: orderRef }, tBuyer);
+  check('promo : journal process_promo_usage', promoRes.json?.data?.success, true);
+  // L'achat a deja journalise l'usage avec les montants REELS (base 600,
+  // remise 60, net encaisse 540). process_promo_usage sur la meme reference
+  // est idempotent : il ne duplique pas et n'ecrase pas ces montants.
+  check('promo : rejeu sur la meme ref -> idempotent', promoRes.json?.data?.already_recorded, true);
+  check('promo : une seule ligne d\'usage', await prisma.promo_code_usages.count({ where: { promo_code_id: promoCodeId } }), 1);
   const puu = await prisma.promo_code_usages.findFirst({ where: { promo_code_id: promoCodeId, transaction_id: orderRef } });
-  check('promo : montants 60|30|600', `${Number(puu?.discount_amount)}|${Number(puu?.commission_amount)}|${Number(puu?.purchase_amount)}`, '60|30|600');
+  check('promo : montants 60|30|540', `${Number(puu?.discount_amount)}|${Number(puu?.commission_amount)}|${Number(puu?.purchase_amount)}`, '60|30|540');
+  check('promo : usage_count toujours 1', (await prisma.promo_codes.findUnique({ where: { id: promoCodeId } })).usage_count, 1);
 
   // ================= 5. MES BILLETS + SCAN =================
   const qr = tickets[0].qr_code;

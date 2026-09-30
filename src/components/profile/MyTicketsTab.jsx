@@ -101,28 +101,19 @@ const MyTicketsTab = ({ isGuestView = false }) => {
     }
   }, []);
 
-  // 🔥 CHARGER LES TICKETS INVITÉS DEPUIS localStorage
-  const loadGuestTickets = () => {
+  // 🔥 LIRE LES BILLETS INVITÉS DU STOCKAGE LOCAL (sans toucher l'état)
+  // Utilisé pour fusionner : le stockage local n'est la source de vérité que
+  // pour un visiteur sans compte.
+  const readGuestTickets = () => {
     try {
-      const guestTickets = JSON.parse(
+      const raw = JSON.parse(
         localStorage.getItem(GUEST_TICKETS_KEY) || "[]",
       );
-      if (guestTickets.length > 0) {
-        // Vérifier si les tickets ont toutes les informations nécessaires
-        const validTickets = guestTickets.filter(
-          (ticket) => ticket.event_id && ticket.qr_code && ticket.event_title,
-        );
-
-        if (validTickets.length > 0) {
-          setTickets(validTickets.map((t) => ({ ...t, isGuest: true })));
-          setIsGuest(true);
-          return true;
-        }
-      }
-      return false;
+      if (!Array.isArray(raw)) return [];
+      return raw.filter((t) => t && t.event_id && t.qr_code && t.event_title);
     } catch (e) {
-      console.error("Erreur lors de la vérification des tickets invités:", e);
-      return false;
+      console.error("Erreur lors de la lecture des tickets invités:", e);
+      return [];
     }
   };
 
@@ -473,25 +464,19 @@ const MyTicketsTab = ({ isGuestView = false }) => {
     setLoading(true);
     setError(null);
 
-    // 1. Vérifier les tickets invités
-    const hasGuestTickets = loadGuestTickets();
-    if (hasGuestTickets) {
-      // Enrichir avec les détails de l'événement si nécessaire
-      try {
-        const enrichedTickets = await Promise.all(
-          tickets.map((t) => enrichGuestTicketWithEventDetails(t)),
-        );
-        setTickets(enrichedTickets);
-      } catch (e) {
-        console.error("Erreur enrichissement tickets:", e);
-      }
-      setLoading(false);
-      return;
-    }
+    const guestTickets = readGuestTickets();
 
-    // 2. Si utilisateur connecté, charger ses tickets
-    if (!user) {
-      setTickets([]);
+    // Visiteur sans compte : le stockage local EST la source (rien en base).
+    if (isGuestView || !user) {
+      if (guestTickets.length > 0) {
+        const enriched = await Promise.all(
+          guestTickets.map((t) => enrichGuestTicketWithEventDetails(t)),
+        );
+        setTickets(enriched.map((t) => ({ ...t, isGuest: true })));
+        setIsGuest(true);
+      } else {
+        setTickets([]);
+      }
       setLoading(false);
       return;
     }
@@ -510,10 +495,35 @@ const MyTicketsTab = ({ isGuestView = false }) => {
         throw error;
       }
 
-      console.log("✅ Tickets fetched:", data?.length || 0);
-      setTickets(data || []);
+      const dbTickets = data || [];
+      console.log("✅ Tickets fetched:", dbTickets.length);
+
+      // La base fait foi pour un utilisateur connecté. On y ajoute les billets
+      // invités du navigateur qui n'y figurent pas encore (achat sans compte,
+      // puis connexion) : sinon ils disparaissaient de l'écran.
+      const dbIds = new Set(dbTickets.map((t) => t.id));
+      const dbRefs = new Set(
+        dbTickets.map((t) => t.transaction_reference || t.order_id).filter(Boolean),
+      );
+      const localOnly = guestTickets.filter(
+        (t) =>
+          !dbIds.has(t.id) &&
+          !dbRefs.has(t.transaction_reference) &&
+          !dbRefs.has(t.order_id),
+      );
+      const enrichedLocal = await Promise.all(
+        localOnly.map((t) => enrichGuestTicketWithEventDetails(t)),
+      );
+
+      const merged = [...dbTickets, ...enrichedLocal.map((t) => ({ ...t, isGuest: true }))].sort(
+        (a, b) =>
+          new Date(b.purchased_at || 0).getTime() -
+          new Date(a.purchased_at || 0).getTime(),
+      );
+
+      setTickets(merged);
       setIsGuest(false);
-      refreshUssdStatuses(data || []);
+      refreshUssdStatuses(merged);
     } catch (error) {
       console.error("Error fetching tickets:", error);
       setError(
