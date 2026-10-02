@@ -2471,6 +2471,11 @@ model stand_types {
   created_at          DateTime? @default(now()) @db.DateTime(0)
   rental_type         String?   @default("stand") @db.Text
   capacity            Int?
+  /// Affiche de couverture propre au type de stand (affichee sur la page
+  /// evenement et sur les cartes d'offre). Ajoutee avec un nom different de
+  /// `image_url` volontairement, car `image_url` existe deja sur stand_events
+  /// avec une autre signification (plan du stand).
+  cover_image         String?   @db.Text
 
 }
 

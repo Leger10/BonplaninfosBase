@@ -423,14 +423,88 @@ const HANDLERS = {
     return ok(total);
   },
 
-  async increment_vote_count(args) {
-    const { candidate_id_to_inc, inc_amount } = args;
-    const amount = Number(inc_amount) || 1;
-    const candidate = await db().candidates.findUnique({ where: { id: candidate_id_to_inc } });
+  // Correction manuelle du total de voix d'un candidat.
+  //
+  // Remplace l'ancien `increment_vote_count`, qui pouvait etre appelle seul pour
+  // fabriquer des voix gratuites (aucun debit, aucune trace). Reserve au
+  // super_admin : une competition payante ne doit pas pouvoir etre reorientee
+  // par l'administrateur de zone ni par le secretaire.
+  //
+  // Ce que ce RPC touche : l'agregat `candidates.vote_count` uniquement. Il ne
+  // touche NI `user_votes` (l'historique des votants reste exact), NI `payments`,
+  // NI `transactions`, NI le solde de personne : c'est une correction de
+  // CLASSEMENT, pas un remboursement. Pour rembourser des pièces c'est
+  // `reverse_credit`, sur un log de credit existant. Chaque correction est
+  // journalisee dans admin_logs (READ_ADMIN_ONLY), jamais cote public.
+  async correct_candidate_votes(args, actor) {
+    const { p_candidate_id, p_delta, p_reason } = args;
+    const candidateId = p_candidate_id;
+    if (!candidateId) return fail('p_candidate_id requis', 'BAD_REQUEST');
+
+    const delta = Number(p_delta);
+    if (!Number.isInteger(delta) || delta === 0) {
+      return fail('p_delta doit etre un entier different de zero', 'BAD_REQUEST');
+    }
+
+    const dbc = db();
+    const candidate = await dbc.candidates.findUnique({ where: { id: candidateId } });
     if (!candidate) return fail('Candidat introuvable', 'NOT_FOUND');
-    const newCount = (candidate.vote_count || 0) + amount;
-    await db().candidates.update({ where: { id: candidate_id_to_inc }, data: { vote_count: newCount } });
-    return ok({ success: true, new_count: newCount });
+
+    const current = Number(candidate.vote_count) || 0;
+    const target = current + delta;
+    if (target < 0) {
+      return fail(
+        `Correction impossible : ${candidate.name} n'a que ${current} voix`,
+        'NEGATIVE_COUNT',
+      );
+    }
+
+    // Compare-and-swap : deux corrections simultanees ne peuvent pas s'additionner
+    // sur une lecture perimee du total.
+    const applied = await dbc.candidates.updateMany({
+      where: { id: candidateId, vote_count: candidate.vote_count },
+      data: { vote_count: target },
+    });
+    if (applied.count !== 1) {
+      return fail('Total de voix modifie entre-temps, reessayez', 'CONCURRENT_WRITE');
+    }
+
+    const reason = String(p_reason || '').trim();
+    await dbc.admin_logs.create({
+      data: {
+        actor_id: actor?.id || '',
+        action_type: 'candidate_votes_corrected',
+        target_id: candidateId,
+        target_name: candidate.name,
+        details: JSON.stringify({
+          event_id: candidate.event_id,
+          delta,
+          before: current,
+          after: target,
+          reason: reason || null,
+        }),
+      },
+    });
+
+    return ok({
+      success: true,
+      candidate_id: candidateId,
+      delta,
+      before: current,
+      new_count: target,
+    });
+  },
+
+  // Conserve pour compat : meme comportement, borne au super_admin.
+  async increment_vote_count(args, actor) {
+    return this.correct_candidate_votes(
+      {
+        p_candidate_id: args.candidate_id_to_inc,
+        p_delta: Number(args.inc_amount) || 1,
+        p_reason: args.reason || 'Compat increment_vote_count',
+      },
+      actor,
+    );
   },
 
   // ---------- Favoris / likes / vues ----------
@@ -1552,11 +1626,11 @@ const HANDLERS = {
     });
     if (prior) {
       const replayIdem = lines.reduce((s, l) => s + l.voteCount, 0);
-      return {
+      return ok({
         success: true, already_recorded: true, transaction_id: orderId,
         total_coins: Number(prior.coins_amount || 0),
         vote_count: replayIdem,
-      };
+      });
     }
 
     try {
@@ -1569,7 +1643,7 @@ const HANDLERS = {
         });
         if (alreadyInTx) {
           const replayTx = lines.reduce((s, l) => s + l.voteCount, 0);
-          return { success: true, already_recorded: true, transaction_id: orderId, total_coins: Number(alreadyInTx.coins_amount || 0), vote_count: replayTx };
+          return ok({ success: true, already_recorded: true, transaction_id: orderId, total_coins: Number(alreadyInTx.coins_amount || 0), vote_count: replayTx });
         }
 
         const profile = await tx.profiles.findUnique({ where: { id: userId } });
@@ -1724,7 +1798,7 @@ const HANDLERS = {
           });
         }
 
-        return { success: true, transaction_id: orderId, total_coins: totalCoins, vote_count: requested, price_per_vote: price };
+        return ok({ success: true, transaction_id: orderId, total_coins: totalCoins, vote_count: requested, price_per_vote: price });
       });
     } catch (e) {
       // Verifie si une transaction concurrente de meme cle a deja commite :
@@ -1736,10 +1810,10 @@ const HANDLERS = {
       });
       if (committed) {
         const replayC = lines.reduce((s, l) => s + l.voteCount, 0);
-        return {
+        return ok({
           success: true, already_recorded: true, transaction_id: orderId,
           total_coins: Number(committed.coins_amount || 0), vote_count: replayC,
-        };
+        });
       }
       console.error('[cast_contest_votes]', e?.message);
       return fail(e?.message || 'Vote non enregistre', 'VOTE_FAILED');
@@ -2018,16 +2092,11 @@ const HANDLERS = {
     return ok({ analytics: { total_events: events, total_users: users, total_transactions: transactions, total_votes: votes }, total_events: events, total_users: users });
   },
 
-  async get_super_admin_dashboard_stats() {
-    const dbc = db();
-    const [events, users, totalRevenue, votes] = await Promise.all([
-      dbc.events.count(),
-      dbc.profiles.count(),
-      dbc.transactions.aggregate({ _sum: { amount_pi: true } }),
-      dbc.votes.count(),
-    ]);
-    return ok({ dashboard: { total_events: events, total_users: users, total_revenue: Number(totalRevenue._sum.amount_pi || 0), total_votes: votes }, stats: { total_events: events, total_users: users } });
-  },
+  // NOTE : `get_super_admin_dashboard_stats` est definie plus bas dans cet
+  // objet (celle qui compte vraiment). Une premiere version figurait ici et
+  // additionnait amount_pi de toutes les transactions, en pieces, sans filtre
+  // de statut. Elle etait neutralisee par la definition suivante du meme objet,
+  // mais laissonait deux sources de verite contradictoires.
 
   async get_audit_log_stats(args) {
     const { period_days } = args;
@@ -2610,27 +2679,74 @@ const HANDLERS = {
     });
   },
 
+  // ---------- Tableau de bord super admin ----------
+  // CA (ventes) = argent REELLEMENT encaisse sur les packs, lu dans `payments`.
+  //
+  // Avant, ce total venait de `SUM(transactions.amount_fcfa)` sur toutes les
+  // lignes `completed`, sans distinction de `transaction_type`. Ce n'est pas
+  // un chiffre d'affaires : le solde melangeait des ventes et des mouvements
+  // internes, et sortait negatif (-447 270 FCFA) parce que les annulations de
+  // credits de l'administration (-2 525 321 FCFA, `credit_reversal`, 33 lignes)
+  // etait compensees au hasard par les transferts de gains (+505 846 FCFA).
+  //
+  // `payments` est la seule source fiable de l'encaissement : elle porte le
+  // montant reellement paye, le moyen de paiement et le statut du gateway.
+  // `transactions` n'a pas de lien avec elle : les 53 paiements USSD valides
+  // n'ont AUCUNE transaction correspondante.
+  //
+  // Regles appliquees :
+  //   - payment_method 'coins' exclu : c'est une depense de pieces deja
+  //    creees, pas une entree d'argent.
+  //   - status 'completed' / 'success' seulement : un 'pending' n'est pas de
+  //     l'argent recu, un 'cancelled' ne l'a jamais ete.
+  //   - le taux de repli vient de app_settings, plus de la valeur codee en dur.
   async get_super_admin_dashboard_stats() {
     const dbc = db();
     const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const [totalUsers, newUsers, activeEvents, totalTransactions, pendingWithdrawals, sales] = await Promise.all([
+    const [totalUsers, newUsers, activeEvents, totalTransactions, pendingWithdrawals, sales, rateRow] = await Promise.all([
       dbc.profiles.count({ where: { deleted_at: null } }),
       dbc.profiles.count({ where: { created_at: { gte: since30 } } }),
       dbc.events.count({ where: { is_active: true, status: 'active' } }),
       dbc.transactions.count({ where: { status: 'completed' } }),
       dbc.withdrawal_requests.count({ where: { status: 'pending' } }),
-      dbc.transactions.aggregate({
-        where: { status: 'completed' },
-        _sum: { amount_fcfa: true, amount_pi: true },
+      dbc.payments.aggregate({
+        where: {
+          status: { in: ['completed', 'success'] },
+          payment_method: { not: 'coins' },
+        },
+        _sum: { amount_fcfa: true, coins_amount: true },
+        _count: true,
       }),
+      dbc.app_settings.findFirst({ select: { coin_to_fcfa_rate: true } }),
     ]);
+    const rate = Number(rateRow?.coin_to_fcfa_rate) || 10;
+    const salesFcfa = Number(sales._sum.amount_fcfa || 0);
     return ok({
       total_users: totalUsers,
       new_users: newUsers,
       active_events: activeEvents,
       total_transactions: totalTransactions,
       pending_withdrawals: pendingWithdrawals,
-      total_sales_fcfa: Number(sales._sum.amount_fcfa || Number(sales._sum.amount_pi || 0) * 10),
+      // amount_fcfa est la valeur reellement payee. Le repli sur le taux ne sert
+      // que si la colonne est absente, pas pour "corriger" un montant nul.
+      total_sales_fcfa: salesFcfa || Number(sales._sum.coins_amount || 0) * rate,
+      total_sales_coins: Number(sales._sum.coins_amount || 0),
+      total_sales_count: sales._count,
+      // Detail par canal, pour que le total soit explicable a l'ecran.
+      sales_by_method: await dbc.payments.groupBy({
+        by: ['payment_method'],
+        where: {
+          status: { in: ['completed', 'success'] },
+          payment_method: { not: 'coins' },
+        },
+        _sum: { amount_fcfa: true, coins_amount: true },
+        _count: true,
+      }).then((rows) => rows.map((r) => ({
+        payment_method: r.payment_method,
+        count: r._count,
+        total_fcfa: Number(r._sum.amount_fcfa || 0),
+        total_coins: Number(r._sum.coins_amount || 0),
+      }))),
     });
   },
 

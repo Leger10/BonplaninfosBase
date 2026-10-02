@@ -69,20 +69,20 @@ try {
 
   // --- vote valide : gratuit puis pièces ---
   const r1 = await vote(tokenV, { p_event_id: evA.id, p_votes: [{ candidate_id: c1.id, vote_count: 3 }], p_idempotency_key: 'k1' });
-  check('vote valide -> succes', r1.json?.success, true);
+  check('vote valide -> succes', r1.json?.data?.success, true);
   check('  pieces debitees 100/10 -> 80/0 (3x10, gratuit d abord)', await bal(voterId), '80/0');
   check('  vote ecrit', await votesFor(voterId, c1.id), 3);
   check('  compteur candidat 0 -> 3', await vCount(c1.id), 3);
 
   // --- idempotence : rejouer la meme cle = aucun nouveau debit ---
   const r1b = await vote(tokenV, { p_event_id: evA.id, p_votes: [{ candidate_id: c1.id, vote_count: 3 }], p_idempotency_key: 'k1' });
-  check('rejeu meme cle -> deja enregistre', r1b.json?.already_recorded, true);
+  check('rejeu meme cle -> deja enregistre', r1b.json?.data?.already_recorded, true);
   check('  solde intact apres rejeu', await bal(voterId), '80/0');
   check('  vote non double', await votesFor(voterId, c1.id), 3);
 
   // --- vote sur plusieurs candidats dans une meme transaction ---
   const r2 = await vote(tokenV, { p_event_id: evA.id, p_votes: [{ candidate_id: c1.id, vote_count: 1 }, { candidate_id: c2.id, vote_count: 1 }], p_idempotency_key: 'k2' });
-  check('vote multi-candidats -> succes', r2.json?.success, true);
+  check('vote multi-candidats -> succes', r2.json?.data?.success, true);
   check('  solde 80/0 -> 60/0', await bal(voterId), '60/0');
   check('  c1 = 4, c2 = 1', `${await votesFor(voterId, c1.id)}/${await votesFor(voterId, c2.id)}`, '4/1');
 
@@ -99,7 +99,7 @@ try {
 
   // --- vote payant sans id_personne : depe du compte du jeton ---
   const r3 = await vote(tokenV, { p_event_id: evA.id, p_votes: [{ candidate_id: c2.id, vote_count: 1 }], p_idempotency_key: 'k3' });
-  check('vote sans p_user_id -> depe du compte du jeton', r3.json?.success, true);
+  check('vote sans p_user_id -> depe du compte du jeton', r3.json?.data?.success, true);
   check('  solde 60/0 -> 50/0', await bal(voterId), '50/0');
 
   // --- concurrence : solde 60 piecer, deux votes simultanes de 50 ---
@@ -108,7 +108,7 @@ try {
     vote(tokenV, { p_event_id: evA.id, p_votes: [{ candidate_id: c1.id, vote_count: 5 }], p_idempotency_key: 'kc-a' }),
     vote(tokenV, { p_event_id: evA.id, p_votes: [{ candidate_id: c2.id, vote_count: 5 }], p_idempotency_key: 'kc-b' }),
   ]);
-  const busuc = [cc1, cc2].filter((r) => r.json?.success).length;
+  const busuc = [cc1, cc2].filter((r) => r.json?.data?.success).length;
   check('deux votes simultanes de 50 sur solde 60 -> 1 seul', busuc, 1);
   const bnow = await prisma.profiles.findUnique({ where: { id: voterId }, select: { coin_balance: true } });
   check('  solde final 60 - 50', bnow.coin_balance, 10);

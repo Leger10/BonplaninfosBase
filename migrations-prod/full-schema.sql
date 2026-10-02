@@ -2591,6 +2591,7 @@ CREATE TABLE `stand_types` (
     `created_at` DATETIME(0) NULL DEFAULT CURRENT_TIMESTAMP(0),
     `rental_type` TEXT NULL DEFAULT 'stand',
     `capacity` INTEGER NULL,
+    `cover_image` TEXT NULL,
 
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

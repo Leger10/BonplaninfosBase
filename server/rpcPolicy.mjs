@@ -64,7 +64,13 @@ export const RPC_POLICY = {
   delete_location: { roles: ADMIN },
   // Vote « nu » sans débit : laissé à l'administration uniquement (corrections
   // manuelles). Tout vote payant utilisateur passe par cast_contest_votes.
-  increment_vote_count: { roles: ADMIN },
+  // Correction du CLASSEMENT d'un concours payant : SUPER uniquement. Les voix
+  // payees mettent de l'argent réel en jeu (l'organisateur est crédité sous
+  // séquestre), donc ni l'admin de zone ni le secrétaire ne doivent pouvoir
+  // réorienter le résultat d'une compétition. Chaque passage est journalisé
+  // dans admin_logs.
+  correct_candidate_votes: { roles: SUPER },
+  increment_vote_count: { roles: SUPER },
 
   // ---------- Limité à son propre compte ----------
   purchase_tickets_v2: { selfArg: 'p_user_id' },

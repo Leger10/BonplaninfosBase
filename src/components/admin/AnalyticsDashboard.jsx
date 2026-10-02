@@ -102,6 +102,7 @@ const AnalyticsDashboard = () => {
     newUsers: 0,
     activeEvents: 0,
     totalSalesFcfa: 0,
+    totalSalesCount: 0,
   });
 
   const [recentTransactions, setRecentTransactions] = useState([]);
@@ -385,6 +386,7 @@ const fetchContractAcceptances = async () => {
             newUsers: rpcData?.new_users || 0,
             activeEvents: rpcData?.active_events || 0,
             totalSalesFcfa: rpcData?.total_sales_fcfa || 0,
+            totalSalesCount: rpcData?.total_sales_count || 0,
           });
 
           setRecentTransactions(transactionsData || []);
@@ -555,7 +557,7 @@ const fetchContractAcceptances = async () => {
         <SecondaryStatCard
           title="Chiffre d'Affaires (Ventes)"
           value={formatCurrency(stats.totalSalesFcfa)}
-          subtext="Total achats de packs et licences"
+          subtext={`${stats.totalSalesCount || 0} encaissements packs (USSD + mobile money), retraits et dépenses exclus`}
           icon={TrendingUp}
           colorClass="text-emerald-600"
         />
@@ -819,7 +821,7 @@ const fetchContractAcceptances = async () => {
                     title="Total généré"
                     value={formatCurrency(
                       couponsData.reduce(
-                        (sum, c) => sum + (c.total_amount || 0),
+                        (sum, c) => sum + (Number(c.total_amount) || 0),
                         0,
                       ),
                     )}
@@ -831,7 +833,7 @@ const fetchContractAcceptances = async () => {
                     title="Commission totale versée"
                     value={formatCurrency(
                       couponsData.reduce(
-                        (sum, c) => sum + (c.commission_earned || 0),
+                        (sum, c) => sum + (Number(c.commission_earned) || 0),
                         0,
                       ),
                     )}
@@ -939,10 +941,10 @@ const fetchContractAcceptances = async () => {
                                 {coupon.usage_count}
                               </td>
                               <td className="py-2 text-right whitespace-nowrap">
-                                {coupon.total_amount.toLocaleString()} FCFA
+                                {formatCurrency(Number(coupon.total_amount) || 0)}
                               </td>
                               <td className="py-2 text-right text-green-400 whitespace-nowrap">
-                                {coupon.commission_earned.toLocaleString()} FCFA
+                                {formatCurrency(Number(coupon.commission_earned) || 0)}
                               </td>
                               <td className="py-2 whitespace-nowrap">
                                 {coupon.last_used_at

@@ -349,7 +349,13 @@ const AdminDashboard = () => {
     }
   }, [isAdmin, user?.id, userProfile?.country, userProfile?.city]);
 
-  useEffect(() => { if (isSuperAdmin) { setActiveTab("analytics"); } else if (isAdmin) { } else if (isSecretaryBySuperAdmin) { setActiveTab("credits"); } }, [isSuperAdmin, isAdmin, isSecretaryBySuperAdmin]);
+  // L'onglet par défaut doit exister dans la liste du rôle, sinon la page
+  // s'affiche vide : un admin n'a pas d'onglet "analytics".
+  useEffect(() => {
+    if (isSuperAdmin) setActiveTab("analytics");
+    else if (isAdmin) setActiveTab("salary");
+    else if (isSecretaryBySuperAdmin) setActiveTab("credits");
+  }, [isSuperAdmin, isAdmin, isSecretaryBySuperAdmin]);
  // Fonction de récupération des données (fetchData) CORRIGÉE pour utiliser partnerZone
   const fetchData = useCallback(async () => {
     if (!userProfile || !user) return;

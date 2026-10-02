@@ -236,10 +236,13 @@ export class CouponService {
       // 6. Mettre à jour les statistiques du coupon
       const { error: updateCouponError } = await supabase
         .from('coupons')
-        .update({
-          usage_count: (coupon.usage_count || 0) + 1,
-          total_amount: (coupon.total_amount || 0) + payment.amount_fcfa,
-          commission_earned: (coupon.commission_earned || 0) + commissionAmount,
+        // Colonnes DECIMAL : on convertit avant d'additionner. Sinon
+      // `(coupon.total_amount || 0) + payment.amount_fcfa` concatene deux
+      // chaines et ECRIT une valeur aberrante en base.
+      .update({
+          usage_count: (Number(coupon.usage_count) || 0) + 1,
+          total_amount: (Number(coupon.total_amount) || 0) + Number(payment.amount_fcfa || 0),
+          commission_earned: (Number(coupon.commission_earned) || 0) + commissionAmount,
           last_used_at: new Date().toISOString()
         })
         .eq('id', coupon.id);
@@ -448,9 +451,18 @@ export class CouponService {
       
       if (error) throw error;
       
-      const totalCommission = data?.reduce((sum, c) => sum + (c.commission_earned || 0), 0) || 0;
-      const totalUsage = data?.reduce((sum, c) => sum + (c.usage_count || 0), 0) || 0;
-      const totalAmount = data?.reduce((sum, c) => sum + (c.total_amount || 0), 0) || 0;
+      // `coupons.total_amount` et `commission_earned` sont des colonnes DECIMAL :
+      // l'API les renvoie sous forme de CHAINE ("1000"). Sans Number(), le
+      // premier `0 + "0"` transforme l'accumulateur en chaine et le reduce
+      // concatene au lieu d'additionner ("00100001000..."). D'ou des cartes
+      // "Total généré" affichant des dizaines de chiffres.
+      const toNum = (v) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : 0;
+      };
+      const totalCommission = (data || []).reduce((sum, c) => sum + toNum(c.commission_earned), 0);
+      const totalUsage = (data || []).reduce((sum, c) => sum + toNum(c.usage_count), 0);
+      const totalAmount = (data || []).reduce((sum, c) => sum + toNum(c.total_amount), 0);
       
       return {
         totalCommission,

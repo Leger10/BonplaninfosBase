@@ -87,6 +87,7 @@ import BookmarkButton from "@/components/common/BookmarkButton";
 import { extractStoragePath, fetchWithRetry } from "@/lib/utils";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import CommunityVerification from "@/components/event/CommunityVerification";
+import CandidatesManager from "@/components/event/CandidatesManager";
 import TicketScannerDialog from "@/components/event/TicketScannerDialog";
 import { PromoCodeGenerator } from "../components/influencer/PromoCodeGenerator.jsx";
 import { v4 as uuidv4 } from "uuid";
@@ -95,10 +96,16 @@ import { processImage, validateImage } from "@/utils/imageConverter";
 // ============================================================
 // MODAL D'ÉDITION COMPLET DE L'ÉVÉNEMENT
 // ============================================================
-const EditEventModal = ({ isOpen, onClose, event, onEventUpdated }) => {
+const EditEventModal = ({ isOpen, onClose, event, onEventUpdated, userProfile }) => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState([]);
+
+  // Même règle que la carte de gestion : le propriétaire et l'administration
+  // ajoutent ou retirent des candidats, le secrétaire s'en tient aux photos.
+  const canEditCandidates =
+    !!(user && event && event.organizer_id === user.id) ||
+    !!(userProfile && ["super_admin", "admin"].includes(userProfile.user_type));
 
   // Form State
   const [title, setTitle] = useState("");
@@ -399,6 +406,18 @@ const EditEventModal = ({ isOpen, onClose, event, onEventUpdated }) => {
               />
             </div>
           </div>
+
+          {/* Candidats : uniquement pour un concours. Les ajouts et retraits
+              partent immédiatement (ils ne dépendent pas du bouton
+              « Enregistrer » ci-dessous) : un candidat supprimé ne doit pas
+              repartir si l'organisateur ferme la modale sans valider. */}
+          {event?.event_type === "voting" && (
+            <CandidatesManager
+              eventId={event.id}
+              organizerId={event.organizer_id}
+              canEdit={canEditCandidates}
+            />
+          )}
 
           {/* Actions */}
           <div className="flex justify-end gap-3 pt-4 border-t border-gray-800">
@@ -1418,9 +1437,8 @@ const EventDetailPage = () => {
   const [promoConfigLoading, setPromoConfigLoading] = useState(false);
   const [phoneVoteLimit, setPhoneVoteLimit] = useState(0);
   const [savingPhoneVoteLimit, setSavingPhoneVoteLimit] = useState(false);
-  const [candidates, setCandidates] = useState([]);
-  const [candidatesLoading, setCandidatesLoading] = useState(false);
-  const [uploadingCandidateId, setUploadingCandidateId] = useState(null);
+  // Gestion des candidats APRES creation du concours (organisateur).
+  // `null` = panneau fermé ; sinon candidat en cours d'edition (ou 'new').
 
   const userId = user?.id;
   const isMountedRef = useRef(true);
@@ -1659,8 +1677,11 @@ const EventDetailPage = () => {
             .eq("event_id", event.id)
             .eq("transaction_type", "stand_rental");
 
+          // organizer_earnings.amount_pi est un DECIMAL : l'API le renvoie en
+          // chaine. Sans Number(), le reduce concatene au lieu d'additionner
+          // et le brut affiche "050000000000000000000000000".
           const gross =
-            earnings?.reduce((acc, curr) => acc + (curr.amount_pi || 0), 0) ||
+            earnings?.reduce((acc, curr) => acc + (Number(curr.amount_pi) || 0), 0) ||
             0;
           const net =
             earnings?.reduce(
@@ -1773,113 +1794,6 @@ const EventDetailPage = () => {
     }
   };
 
-  // 💥 Chargement des candidats (pour la gestion des photos, visible aux
-  // organisateurs + admin/super_admin/secretary)
-  useEffect(() => {
-    if (!canManageEvent || event?.event_type !== "voting" || !event?.id) return;
-    let mounted = true;
-    const loadCandidates = async () => {
-      setCandidatesLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from("candidates")
-          .select("*")
-          .eq("event_id", event.id)
-          .order("created_at", { ascending: true });
-        if (error) throw error;
-        if (mounted) setCandidates(data || []);
-      } catch (e) {
-        console.warn("Erreur chargement candidats:", e);
-        if (mounted) setCandidates([]);
-      } finally {
-        if (mounted) setCandidatesLoading(false);
-      }
-    };
-    loadCandidates();
-    return () => {
-      mounted = false;
-    };
-  }, [canManageEvent, event?.event_type, event?.id]);
-
-  const handleFileSelectForCandidate = (candidateId) => {
-    const input = document.getElementById(
-      `candidate-photo-input-${candidateId}`,
-    );
-    if (input) input.click();
-  };
-
-  const handleCandidateFileChange = async (candidateId, file) => {
-    if (!file || !event?.id) return;
-    if (!file.type.startsWith("image/")) {
-      toast({
-        title: "❌ Fichier invalide",
-        description: "Veuillez sélectionner une image.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setUploadingCandidateId(candidateId);
-    try {
-      const validation = validateImage(file);
-      if (!validation.isValid) {
-        toast({
-          title: "❌ Image invalide",
-          description: validation.message,
-          variant: "destructive",
-        });
-        return;
-      }
-      const processedFile = await processImage(file, {
-        maxSizeMB: 1,
-        maxWidthOrHeight: 800,
-        fileType: "image/jpeg",
-      });
-      const fileExt = "jpg";
-      const fileName = `${Date.now()}-${uuidv4()}.${fileExt}`;
-      const filePath = `voting/${event.organizer_id}/candidates/${fileName}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("media")
-        .upload(filePath, processedFile, {
-          cacheControl: "3600",
-          upsert: true,
-          contentType: "image/jpeg",
-        });
-      if (uploadError) throw uploadError;
-
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("media").getPublicUrl(filePath);
-
-      const { error: updateError } = await supabase
-        .from("candidates")
-        .update({ photo_url: publicUrl, updated_at: new Date().toISOString() })
-        .eq("id", candidateId);
-      if (updateError) throw updateError;
-
-      if (isMountedRef.current) {
-        setCandidates((prev) =>
-          prev.map((c) =>
-            c.id === candidateId ? { ...c, photo_url: publicUrl } : c,
-          ),
-        );
-      }
-      toast({
-        title: "✅ Photo mise à jour",
-        description: "La photo du candidat a été remplacée avec succès.",
-        className: "bg-green-600 text-white",
-      });
-    } catch (e) {
-      console.error("Erreur upload photo candidat:", e);
-      toast({
-        title: "❌ Erreur",
-        description: e.message || "Impossible de mettre à jour la photo.",
-        variant: "destructive",
-      });
-    } finally {
-      if (isMountedRef.current) setUploadingCandidateId(null);
-    }
-  };
 
   const handleDeleteEvent = async () => {
     if (!event) return;
@@ -2033,25 +1947,25 @@ const EventDetailPage = () => {
       />
 
       <style>{`
-        @keyframes slide {
-          0% { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
+        /* Effet "premium" sur la couverture : lente derive horizontale
+           aller-retour (Ken Burns). Le zoom reste faible (1 -> 1.06) pour que
+           le texte de l'affiche demeure lisible, contrairement au rognage
+           total d'un carrousel gauche-droite. Pause au survol pour lire. */
+        @keyframes cover-drift {
+          0%   { transform: scale(1) translateX(0); }
+          50%  { transform: scale(1.06) translateX(-1.5%); }
+          100% { transform: scale(1) translateX(0); }
         }
-        .sliding-image-container {
-          animation: slide 30s linear infinite;
-          width: 200%;
-          height: 100%;
-          display: flex;
-          position: absolute;
-          top: 0;
-          left: 0;
-          background-color: #111;
-          align-items: center;
+        .event-cover-drift {
+          animation: cover-drift 24s ease-in-out infinite;
+          will-change: transform;
         }
-        .sliding-image-container img {
-          width: 50%;
-          height: 100%;
-          object-fit: cover;
+        .event-cover-drift:hover {
+          animation-play-state: paused;
+        }
+        /* Accessibilite : pas d'animation si l'utilisateur l'a refusee. */
+        @media (prefers-reduced-motion: reduce) {
+          .event-cover-drift { animation: none; }
         }
       `}</style>
 
@@ -2082,23 +1996,22 @@ const EventDetailPage = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
-            {/* IMAGE DE COUVERTURE */}
+            {/* IMAGE DE COUVERTURE
+                L'affiche doit etre entierement lisible SANS defiler. On ne fixe
+                donc plus une hauteur : `object-contain` + `h-auto` laissent la
+                hauteur suivre le ratio de l'image, et `max-h-[85vh]` evite
+                qu'une affiche tres verticale pousse le contenu hors de l'ecran.
+                L'ancien `background-size: auto 100%` + hauteur fixe rognait les
+                affiches portrait : on n'en voyait qu'une bande zoomee. */}
             <div className="relative rounded-xl overflow-hidden shadow-2xl bg-black">
-              <div className="w-full h-[350px] sm:h-[400px] md:h-[500px] lg:h-[550px] xl:h-[600px] relative overflow-hidden">
-                <div
-                  className="absolute inset-0 h-full animate-slow-pan"
-                  style={{
-                    backgroundImage: `url(${optimizedImageUrl})`,
-                    backgroundSize: 'auto 100%',
-                    backgroundPosition: 'left center',
-                    backgroundRepeat: 'no-repeat',
-                    width: 'auto',
-                    minWidth: '100%',
-                    maxWidth: '200%'
-                  }}
+              <div className="w-full flex justify-center bg-black/40">
+                <img
+                  src={optimizedImageUrl}
+                  alt={`Affiche de l'événement : ${event.title}`}
+                  className="event-cover-drift w-full h-auto max-h-[85vh] object-contain"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/20 to-transparent pointer-events-none" />
               </div>
+              <div className="absolute bottom-0 inset-x-0 h-24 bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
               <div className="absolute top-4 left-4 z-20">
                 <Badge className="bg-black/60 backdrop-blur-sm text-white border-white/20 text-sm px-3 py-1.5">
                   {event.category?.name || event.event_type}
@@ -2529,91 +2442,11 @@ const EventDetailPage = () => {
                   )}
 
                   {event.event_type === "voting" && (
-                    <div className="flex flex-col gap-3 bg-black/20 p-3 rounded-lg border border-white/10">
-                      <div>
-                        <p className="font-medium text-white">
-                          📸 Photos des candidats
-                        </p>
-                        <p className="text-[10px] text-gray-400 mt-1">
-                          Remplacez la photo d&apos;un candidat du concours.
-                          L&apos;image est automatiquement compressée.
-                        </p>
-                      </div>
-                      {candidatesLoading ? (
-                        <div className="flex items-center justify-center text-gray-400 py-2">
-                          <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                          Chargement...
-                        </div>
-                      ) : candidates.length === 0 ? (
-                        <p className="text-[11px] text-gray-400">
-                          Aucun candidat pour ce concours.
-                        </p>
-                      ) : (
-                        <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-1">
-                          {candidates.map((cand) => (
-                            <div
-                              key={cand.id}
-                              className="flex items-center gap-3 bg-white/5 p-2 rounded-lg border border-white/10"
-                            >
-                              <img
-                                src={
-                                  cand.photo_url ||
-                                  "/api/placeholder/64/64"
-                                }
-                                alt={cand.name}
-                                className="w-12 h-12 rounded-lg object-cover shrink-0"
-                                onError={(e) => {
-                                  e.target.onerror = null;
-                                  e.target.src = "/api/placeholder/64/64";
-                                }}
-                              />
-                              <div className="flex flex-col min-w-0 flex-1">
-                                <span className="text-white text-sm font-medium truncate">
-                                  {cand.name}
-                                </span>
-                                {cand.category && (
-                                  <span className="text-[10px] text-gray-400">
-                                    {cand.category}
-                                  </span>
-                                )}
-                              </div>
-                              <input
-                                id={`candidate-photo-input-${cand.id}`}
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                disabled={uploadingCandidateId === cand.id}
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) {
-                                    handleCandidateFileChange(cand.id, file);
-                                  }
-                                  e.target.value = "";
-                                }}
-                              />
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="border-purple-600/50 text-purple-400 hover:bg-purple-900/30 whitespace-nowrap"
-                                onClick={() =>
-                                  handleFileSelectForCandidate(cand.id)
-                                }
-                                disabled={uploadingCandidateId === cand.id}
-                              >
-                                {uploadingCandidateId === cand.id ? (
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                ) : (
-                                  <ImageIcon className="w-3.5 h-3.5" />
-                                )}
-                                {uploadingCandidateId === cand.id
-                                  ? "Upload..."
-                                  : "Photo"}
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    <CandidatesManager
+                      eventId={event.id}
+                      organizerId={event.organizer_id}
+                      canEdit={canManageEvent}
+                    />
                   )}
                 </CardContent>
               </Card>
@@ -2774,11 +2607,12 @@ const EventDetailPage = () => {
 
       {/* MODAL D'ÉDITION COMPLET */}
       <EditEventModal
-        isOpen={showEditModal}
-        onClose={() => setShowEditModal(false)}
-        event={event}
-        onEventUpdated={handleEventUpdated}
-      />
+           isOpen={showEditModal}
+           onClose={() => setShowEditModal(false)}
+           event={event}
+           onEventUpdated={handleEventUpdated}
+           userProfile={userProfile}
+         />
 
       <ChangeCoverImageDialog
         isOpen={showChangeImageDialog}

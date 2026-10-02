@@ -111,7 +111,45 @@ const PROTECTED_COLUMNS = new Set([
   'mandatory_videos_completed',
   'referral_count',
   'affiliate_code',
+  // Score public d'un candidat dans une compétition payante. Seule exception :
+  // la valeur est imposée à 0 à l'insertion (FORCED_ON_INSERT), et elle n'est
+  // jamais modifiable ensuite. Voir le commentaire de FORCED_ON_INSERT.
+  'vote_count',
 ]);
+
+// Colonnes dont la protection dépend de la table.
+//
+// `is_active` ne veut pas dire la même chose partout : sur `profiles` c'est le
+// statut du compte, que seul un admin peut rendre (un appelant ne se
+// réactive pas lui-même). Sur les tables de contenu dont il est propriétaire,
+// c'est « ma ligne est publiée » : son événement, ses types de billet, ses
+// stands, ses codes promo.
+//
+// Traiter la colonne comme protégée PARTOUT rendait toute création
+// d'événement impossible : les quatre pages Create* envoient `is_active: true`
+// et le serveur répondait 403 « Colonne protégée : is_active ». C'est aussi
+// la seule colonne de la liste ci-dessus qui existe sur une table autorisée
+// autre que `profiles` — les autres (coin_balance, available_earnings,
+// is_verified…) ne sont portées que par des tables absentes d'OWNER_SCOPES,
+// déjà refusées en amont. Aucune modération ne s'appuie sur
+// `events.is_active` : c'est `status` qui porte la suspension/rejet, et
+// l'appelant ne peut de toute façon toucher qu'un événement qui lui appartient.
+const PROTECTED_ON_TABLES = {
+  is_active: new Set(['profiles']),
+};
+
+// Colonnes forcées à l'INSERTION, quel qu'en soit la valeur envoyée.
+//
+// `candidates.vote_count` est le score d'un candidat dans une compétition
+// payante : l'organisateur encaisse les pièces et le résultat est public. Le
+// laisser écrire directement rendrait le vote payant décoratif — il fixerait
+// lui-même le gagnant. La colonne reste donc interdite en UPDATE, et à
+// l'INSERTION elle est imposée à 0 : le score ne bouge que par
+// `cast_contest_votes` (un votant paie) ou par `correct_candidate_votes`
+// (super_admin, journalisé).
+const FORCED_ON_INSERT = {
+  candidates: { vote_count: 0 },
+};
 
 // Tables que l'appelant ne peut pas écrire du tout, mais qui ont une colonne
 // « propriétaire » : le cas est traité pour ne pas se fier au nom de la table.
@@ -229,6 +267,12 @@ function targetIdOf(q) {
   return body?.id ?? null;
 }
 
+// Valeurs imposées à l'insertion (voir FORCED_ON_INSERT). Appliquées APRÈS le
+// corps de l'appelant, donc une valeur envoyée par le client est écrasée.
+function forcedOnInsert(table) {
+  return FORCED_ON_INSERT[table] || {};
+}
+
 // Vérifie que les événements visés appartiennent à l'appelant. Utilisé pour
 // les tables dont la propriété passe par l'événement et non par une colonne
 // de la ligne.
@@ -304,15 +348,19 @@ export async function checkWritePolicy(q, actor) {
     return denied(`Écriture interdite sur ${table}`, 403, 'write_forbidden');
   }
 
-  const hit = bodyColumns(q).filter((c) => PROTECTED_COLUMNS.has(c));
-  // Exception : is_active d'un code promo. La colonne reste protégée partout
-  // ailleurs (is_active d'un compte = statut du compte), mais l'influenceur
-  // doit pouvoir activer/désactiver SES codes (PromoCodeGenerator.jsx).
-  const scopedHit = table === 'promo_codes'
-    ? hit.filter((c) => c !== 'is_active')
-    : hit;
-  if (scopedHit.length) {
-    return denied(`Colonne protégée : ${scopedHit.join(', ')}`, 403, 'column_forbidden');
+  const isInsert = method === 'insert' || method === 'upsert';
+  // Colonnes que la politique va de toute façon écraser : inutile de les
+  // refuser, la valeur envoyée par l'appelant ne survivra pas à l'écriture.
+  const overridden = isInsert ? forcedOnInsert(table) : {};
+  const hit = bodyColumns(q).filter((c) => {
+    if (!PROTECTED_COLUMNS.has(c)) return false;
+    if (c in overridden) return false;
+    const onlyOn = PROTECTED_ON_TABLES[c];
+    // Aucune restriction par table : protégée partout.
+    return !onlyOn || onlyOn.has(table);
+  });
+  if (hit.length) {
+    return denied(`Colonne protégée : ${hit.join(', ')}`, 403, 'column_forbidden');
   }
 
   if (scope.event) {
@@ -321,13 +369,26 @@ export async function checkWritePolicy(q, actor) {
     // fragile avec neq, nin, gt, like… — on borne la requête elle-même aux
     // événements de l'appelant. Le moteur ne peut alors plus atteindre une
     // ligne étrangère, quel que soit le filtre fourni par le client.
-    if (method === 'insert' || method === 'upsert') {
-      const body = Array.isArray(q.body) ? q.body[0] : q.body;
-      const eventId = body?.[scope.event];
-      if (!(await eventsOwnedBy([eventId], actor.id))) {
-        return denied(`Vous n'êtes pas l'organisateur de l'événement ${eventId || ''}`.trim());
+    if (isInsert) {
+      // Un insert peut être un LOT (tableau de lignes) : il faut alors valider
+      // l'évènement de CHAQUE ligne. Conserver `body[0]` seulement — comme
+      // auparavant — supprimait silencieusement toutes les lignes suivantes :
+      // à la création d'un événement de stands, les 4 offres (stand,
+      // hébergement, camping, glamping) étaient réduites à la première
+      // ("Stand Standard"). Le tableau doit donc traverser la politique.
+      const isBatch = Array.isArray(q.body);
+      const rows = isBatch ? q.body : [q.body];
+      const eventIds = rows.map((r) => r?.[scope.event]).filter(Boolean);
+      if (!eventIds.length || !(await eventsOwnedBy(eventIds, actor.id))) {
+        return denied(`Vous n'êtes pas l'organisateur de l'événement ${eventIds[0] || ''}`.trim());
       }
-      return { ok: true, query: { ...q, body: { ...body, [scope.event]: eventId } } };
+      // On n'override que le champ de portée, ligne par ligne : `event_id`
+      // reste celui fourni par le client, qui vient d'être validé.
+      const patched = rows.map((r) => ({ ...r, ...overridden }));
+      return {
+        ok: true,
+        query: { ...q, body: isBatch ? patched : patched[0] },
+      };
     }
 
     const owned = await ownedEventIds(actor.id);
@@ -346,8 +407,8 @@ export async function checkWritePolicy(q, actor) {
   // dérive pas non plus vers la ligne de l'appelant.
   if (method === 'insert' || method === 'upsert') {
     const body = Array.isArray(q.body) ? q.body[0] : q.body;
-    const forced = ownerBodyValue(scope, actor.id);
-    if (!forced) return denied(`Portée non gérée pour ${table}`);
+    const forced = { ...ownerBodyValue(scope, actor.id), ...forcedOnInsert(table) };
+    if (!Object.keys(forced).length) return denied(`Portée non gérée pour ${table}`);
     // Un corps de tableau reste un tableau.
     const nextBody = Array.isArray(q.body)
       ? [{ ...body, ...forced }]

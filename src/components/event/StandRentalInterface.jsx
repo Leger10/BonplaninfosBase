@@ -80,7 +80,17 @@ import {
   User,
   Calendar,
   Trophy,
+  Pencil,
+  Save,
 } from "lucide-react";
+import ImageUpload from "@/components/ImageUpload";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
 import { useNavigate } from "react-router-dom";
 import USSDPaymentModal, { openBonplaninfosRelance } from "@/components/payment/USSDPaymentModal";
@@ -279,6 +289,7 @@ const StandRentalInterface = ({ event, isUnlocked, onRefresh, isClosed }) => {
   const navigate = useNavigate();
 
   const [standTypes, setStandTypes] = useState([]);
+  const [standEventId, setStandEventId] = useState(null);
   const [myRentals, setMyRentals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [cartStands, setCartStands] = useState([]);
@@ -630,9 +641,11 @@ const exportToExcel = () => {
       if (standEventError) throw standEventError;
       if (!standEvent) {
         setStandTypes([]);
+        setStandEventId(null);
         setLoading(false);
         return;
       }
+      setStandEventId(standEvent.id);
 
       const { data: types, error: typesError } = await supabase
         .from("stand_types")
@@ -1724,6 +1737,17 @@ const exportToExcel = () => {
               </div>
             </div>
 
+            {/* GESTION DES OFFRES — ajout / modification / suppression.
+                Indispensable pour les événements créés avant le correctif
+                d'insertion en lot : seules leurs offres avaient été
+                enregistrées. */}
+            <StandTypesEditor
+              event={event}
+              standEventId={standEventId}
+              initialTypes={standTypes}
+              onSaved={fetchStandData}
+            />
+
             <div className="mt-10">
               <h4 className="text-white font-semibold mb-4 flex items-center gap-2">
                 Détail par type
@@ -2151,15 +2175,39 @@ const exportToExcel = () => {
                       <Card
                         className={`bg-gray-900 border-t-4 border-${color}-600 border-x-gray-800 border-b-gray-800 h-full hover:shadow-xl transition-all overflow-hidden`}
                       >
-                        <div className="relative h-32 bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center border-b border-gray-800">
-                          <div className="flex flex-col items-center gap-1">
-                            <div className={`w-16 h-16 rounded-2xl bg-${color}-900/30 border-2 border-${color}-500/50 flex items-center justify-center`}>
-                              <Icon className={`w-8 h-8 text-${color}-400`} />
+                        <div className="relative h-40 bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center border-b border-gray-800 overflow-hidden">
+                          {/* Affiche du type de stand. `object-contain` pour
+                              que l'affiche reste lisible en entier (les
+                              affiches de stands sont souvent portrait) ; on
+                              garde l'icône en repli quand aucune image
+                              n'a été fournie à la création. */}
+                          {type.cover_image ? (
+                            <img
+                              src={type.cover_image}
+                              alt={type.name}
+                              className="w-full h-full object-contain bg-gray-950"
+                              loading="lazy"
+                              onError={(e) => {
+                                e.target.style.display = "none";
+                              }}
+                            />
+                          ) : (
+                            <div className="flex flex-col items-center gap-1">
+                              <div className={`w-16 h-16 rounded-2xl bg-${color}-900/30 border-2 border-${color}-500/50 flex items-center justify-center`}>
+                                <Icon className={`w-8 h-8 text-${color}-400`} />
+                              </div>
+                              <Badge className={`bg-${color}-900/80 text-${color}-200 text-[10px]`}>
+                                {rentalTypeInfo.label}
+                              </Badge>
                             </div>
-                            <Badge className={`bg-${color}-900/80 text-${color}-200 text-[10px]`}>
+                          )}
+                          {type.cover_image && (
+                            <Badge
+                              className={`absolute bottom-2 left-2 bg-${color}-900/90 text-${color}-100 text-[10px]`}
+                            >
                               {rentalTypeInfo.label}
                             </Badge>
-                          </div>
+                          )}
                           <Badge
                             variant={
                               isClosed
@@ -2591,5 +2639,473 @@ const PhoneSvg = (props) => (
     <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
   </svg>
 );
+
+/**
+ * Gestion des offres de stand par l'organisateur.
+ *
+ * Permet d'ajouter, modifier et supprimer des types de stands (nom, type,
+ * dimensions, quantité, prix, affiche de couverture) après la création de
+ * l'événement. Indispensable pour les événements dont les offres avaient été
+ * tronquées à la création (seule la première était enregistrée).
+ */
+const StandTypesEditor = ({ event, standEventId, initialTypes, onSaved }) => {
+  const [editingId, setEditingId] = useState(null);
+  const [drafts, setDrafts] = useState({});
+  const [savingId, setSavingId] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [newDraft, setNewDraft] = useState(null);
+
+  // `quantity_rented` vient de la lecture agrégée (statistics), pas de la
+  // colonne : on ne le propose pas en édition pour ne jamais l'écraser.
+  const rentedOf = (type) => Number(type.quantity_rented) || 0;
+
+  const startEdit = (type) => {
+    setEditingId(type.id);
+    setDrafts((d) => ({
+      ...d,
+      [type.id]: {
+        name: type.name || "",
+        rental_type: type.rental_type || "stand",
+        size: type.size || "",
+        description: type.description || "",
+        base_price: String(type.base_price ?? 0),
+        capacity: String(type.capacity ?? 2),
+        quantity_available: String(type.quantity_available ?? 0),
+        cover_image: type.cover_image || "",
+      },
+    }));
+  };
+
+  const saveEdit = async (type) => {
+    const d = drafts[type.id];
+    if (!d) return;
+    if (!d.name.trim()) {
+      toast({
+        title: "Nom requis",
+        description: "Le nom de l'offre ne peut pas être vide.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const quantity = Math.max(0, parseInt(d.quantity_available, 10) || 0);
+    // On ne descend pas sous ce qui est déjà loué.
+    const rented = rentedOf(type);
+    if (quantity < rented) {
+      toast({
+        title: "Quantité incohérente",
+        description: `${rented} stand(s) sont déjà loués : la quantité ne peut pas être inférieure.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSavingId(type.id);
+    const { error } = await supabase
+      .from("stand_types")
+      .update({
+        name: d.name.trim(),
+        rental_type: d.rental_type,
+        size: d.size.trim(),
+        description: d.description.trim(),
+        base_price: parseFloat(d.base_price) || 0,
+        capacity: parseInt(d.capacity, 10) || 2,
+        quantity_available: quantity,
+        cover_image: d.cover_image || null,
+      })
+      .eq("id", type.id);
+    setSavingId(null);
+
+    if (error) {
+      toast({
+        title: "Enregistrement impossible",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+    setEditingId(null);
+    toast({ title: "Offre mise à jour", description: d.name });
+    onSaved?.();
+  };
+
+  const removeType = async (type) => {
+    const rented = rentedOf(type);
+    if (rented > 0) {
+      toast({
+        title: "Suppression impossible",
+        description: `${rented} stand(s) de cette offre sont déjà loués. Désactivez-la au lieu de la supprimer.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    const confirmed = window.confirm(
+      `Supprimer définitivement l'offre « ${type.name} » ?\nCette action est définitive.`,
+    );
+    if (!confirmed) return;
+
+    const { error } = await supabase.from("stand_types").delete().eq("id", type.id);
+    if (error) {
+      toast({
+        title: "Suppression impossible",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+    toast({ title: "Offre supprimée", description: type.name });
+    onSaved?.();
+  };
+
+  const addType = async () => {
+    if (!newDraft) return;
+    if (!newDraft.name.trim()) {
+      toast({
+        title: "Nom requis",
+        description: "Donnez un nom à la nouvelle offre.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setAdding(true);
+    const { error } = await supabase.from("stand_types").insert({
+      stand_event_id: standEventId,
+      event_id: event.id,
+      name: newDraft.name.trim(),
+      rental_type: newDraft.rental_type || "stand",
+      size: newDraft.size.trim(),
+      description: newDraft.description.trim(),
+      base_price: parseFloat(newDraft.base_price) || 0,
+      base_currency: "XOF",
+      calculated_price_pi: 0,
+      capacity: parseInt(newDraft.capacity, 10) || 2,
+      quantity_available: Math.max(1, parseInt(newDraft.quantity_available, 10) || 1),
+      quantity_rented: 0,
+      is_active: true,
+      cover_image: newDraft.cover_image || null,
+    });
+    setAdding(false);
+
+    if (error) {
+      toast({
+        title: "Création impossible",
+        description: error.message,
+        variant: "destructive",
+      });
+      return;
+    }
+    setNewDraft(null);
+    toast({ title: "Offre ajoutée" });
+    onSaved?.();
+  };
+
+  if (!standEventId) return null;
+
+  const rentalOptions = Object.values(RENTAL_TYPES);
+
+  const fieldLabel = { className: "text-xs text-gray-400 mb-1 block" };
+
+  return (
+    <div className="mt-10 rounded-xl border border-gray-800 bg-gray-900/40 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+          <h4 className="text-white font-semibold">Gérer les offres de stand</h4>
+          <p className="text-xs text-gray-400 mt-1">
+            Ajoutez les types manquants, ajustez les prix et les affiches.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          onClick={() =>
+            setNewDraft({
+              name: "",
+              rental_type: "stand",
+              size: "",
+              description: "",
+              base_price: "0",
+              capacity: "2",
+              quantity_available: "1",
+              cover_image: "",
+            })
+          }
+          disabled={Boolean(newDraft)}
+          className="bg-gradient-to-r from-blue-600 to-cyan-600"
+        >
+          <PlusCircle className="w-4 h-4 mr-2" />
+          Ajouter une offre
+        </Button>
+      </div>
+
+      {/* Nouvelle offre */}
+      {newDraft && (
+        <div className="border border-blue-800 bg-blue-950/20 rounded-lg p-4 mb-4 space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <Label className={fieldLabel.className}>Nom *</Label>
+              <Input
+                value={newDraft.name}
+                onChange={(e) =>
+                  setNewDraft({ ...newDraft, name: e.target.value })
+                }
+                placeholder="Ex: Case à dormir Premium"
+                className="bg-gray-800 border-gray-700 text-white"
+              />
+            </div>
+            <div>
+              <Label className={fieldLabel.className}>Type</Label>
+              <Select
+                value={newDraft.rental_type}
+                onValueChange={(v) => setNewDraft({ ...newDraft, rental_type: v })}
+              >
+                <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-gray-900 border-gray-700 text-white">
+                  {rentalOptions.map((r) => (
+                    <SelectItem key={r.id} value={r.id}>
+                      {r.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <Label className={fieldLabel.className}>Prix (F CFA)</Label>
+              <Input
+                type="number"
+                min="0"
+                value={newDraft.base_price}
+                onChange={(e) => setNewDraft({ ...newDraft, base_price: e.target.value })}
+                className="bg-gray-800 border-gray-700 text-white"
+              />
+            </div>
+            <div>
+              <Label className={fieldLabel.className}>Quantité</Label>
+              <Input
+                type="number"
+                min="1"
+                value={newDraft.quantity_available}
+                onChange={(e) =>
+                  setNewDraft({ ...newDraft, quantity_available: e.target.value })
+                }
+                className="bg-gray-800 border-gray-700 text-white"
+              />
+            </div>
+            <div>
+              <Label className={fieldLabel.className}>Dimensions</Label>
+              <Input
+                value={newDraft.size}
+                onChange={(e) => setNewDraft({ ...newDraft, size: e.target.value })}
+                placeholder="Ex: 3x3m"
+                className="bg-gray-800 border-gray-700 text-white"
+              />
+            </div>
+            <div>
+              <Label className={fieldLabel.className}>Capacité</Label>
+              <Input
+                type="number"
+                min="1"
+                value={newDraft.capacity}
+                onChange={(e) => setNewDraft({ ...newDraft, capacity: e.target.value })}
+                className="bg-gray-800 border-gray-700 text-white"
+              />
+            </div>
+          </div>
+          <div>
+            <Label className={fieldLabel.className}>Affiche de couverture</Label>
+            <ImageUpload
+              onImageUploaded={(url) => setNewDraft((d) => ({ ...d, cover_image: url }))}
+              existingImage={newDraft.cover_image}
+              folder="stand-covers"
+              aspectRatio="4/3"
+            />
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="ghost" onClick={() => setNewDraft(null)}>
+              Annuler
+            </Button>
+            <Button onClick={addType} disabled={adding} className="bg-blue-600">
+              {adding ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Créer l'offre
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {initialTypes.map((type) => {
+          const info = RENTAL_TYPES[(type.rental_type || "stand").toUpperCase()] || RENTAL_TYPES.STAND;
+          const Icon = info.icon;
+          const isEditing = editingId === type.id;
+          const d = drafts[type.id] || {};
+
+          return (
+            <div
+              key={type.id}
+              className="border border-gray-800 rounded-lg bg-gray-900/60 p-3"
+            >
+              {!isEditing ? (
+                <div className="flex items-center gap-3">
+                  {type.cover_image ? (
+                    <img
+                      src={type.cover_image}
+                      alt={type.name}
+                      className="w-14 h-14 rounded-lg object-cover border border-gray-700 flex-shrink-0"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-lg bg-gray-800 flex items-center justify-center flex-shrink-0">
+                      <Icon className="w-6 h-6 text-gray-500" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-white font-semibold truncate">{type.name}</span>
+                      <Badge className="bg-gray-800 text-gray-300 text-xs">{info.label}</Badge>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {Number(type.base_price || 0).toLocaleString()} F CFA •{" "}
+                      {type.quantity_available} dispo • {type.size || "N/A"}
+                    </p>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button size="icon" variant="ghost" onClick={() => startEdit(type)} title="Modifier">
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => removeType(type)}
+                      title="Supprimer"
+                      className="text-gray-400 hover:text-red-400"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                      <Label className={fieldLabel.className}>Nom *</Label>
+                      <Input
+                        value={d.name || ""}
+                        onChange={(e) =>
+                          setDrafts({ ...drafts, [type.id]: { ...d, name: e.target.value } })
+                        }
+                        className="bg-gray-800 border-gray-700 text-white"
+                      />
+                    </div>
+                    <div>
+                      <Label className={fieldLabel.className}>Type</Label>
+                      <Select
+                        value={d.rental_type || "stand"}
+                        onValueChange={(v) =>
+                          setDrafts({ ...drafts, [type.id]: { ...d, rental_type: v } })
+                        }
+                      >
+                        <SelectTrigger className="bg-gray-800 border-gray-700 text-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-gray-900 border-gray-700 text-white">
+                          {rentalOptions.map((r) => (
+                            <SelectItem key={r.id} value={r.id}>
+                              {r.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div>
+                      <Label className={fieldLabel.className}>Prix (F CFA)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        value={d.base_price || "0"}
+                        onChange={(e) =>
+                          setDrafts({ ...drafts, [type.id]: { ...d, base_price: e.target.value } })
+                        }
+                        className="bg-gray-800 border-gray-700 text-white"
+                      />
+                    </div>
+                    <div>
+                      <Label className={fieldLabel.className}>
+                        Quantité{rentedOf(type) > 0 ? ` (${rentedOf(type)} loués)` : ""}
+                      </Label>
+                      <Input
+                        type="number"
+                        min={rentedOf(type)}
+                        value={d.quantity_available || "0"}
+                        onChange={(e) =>
+                          setDrafts({
+                            ...drafts,
+                            [type.id]: { ...d, quantity_available: e.target.value },
+                          })
+                        }
+                        className="bg-gray-800 border-gray-700 text-white"
+                      />
+                    </div>
+                    <div>
+                      <Label className={fieldLabel.className}>Dimensions</Label>
+                      <Input
+                        value={d.size || ""}
+                        onChange={(e) =>
+                          setDrafts({ ...drafts, [type.id]: { ...d, size: e.target.value } })
+                        }
+                        className="bg-gray-800 border-gray-700 text-white"
+                      />
+                    </div>
+                    <div>
+                      <Label className={fieldLabel.className}>Capacité</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        value={d.capacity || "2"}
+                        onChange={(e) =>
+                          setDrafts({ ...drafts, [type.id]: { ...d, capacity: e.target.value } })
+                        }
+                        className="bg-gray-800 border-gray-700 text-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className={fieldLabel.className}>Affiche de couverture</Label>
+                    <ImageUpload
+                      onImageUploaded={(url) =>
+                        setDrafts({ ...drafts, [type.id]: { ...d, cover_image: url } })
+                      }
+                      existingImage={d.cover_image || ""}
+                      folder="stand-covers"
+                      aspectRatio="4/3"
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button variant="ghost" onClick={() => setEditingId(null)}>
+                      Annuler
+                    </Button>
+                    <Button
+                      onClick={() => saveEdit(type)}
+                      disabled={savingId === type.id}
+                      className="bg-blue-600"
+                    >
+                      {savingId === type.id ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : (
+                        <Save className="w-4 h-4 mr-2" />
+                      )}
+                      Enregistrer
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 export default StandRentalInterface;

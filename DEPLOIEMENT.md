@@ -45,6 +45,29 @@ mysql -u <utilisateur> -p -h <hote> <base> < migrations-prod/full-schema.sql
 mysql -u <utilisateur> -p -h <hote> <base> < migrations-prod/event-tickets.sql
 ```
 
+### 2.1 Migrations incrementales (a chaque ajout de colonne)
+
+`prisma generate` (execute au build) regenere le client depuis
+`schema.prisma` mais **n'applique aucun changement a la base**. Toute nouvelle
+colonne de `schema.prisma` doit donc etre ajoutee en production **avant** le
+build, sinon Prisma genere un client qui interroge une colonne inexistante
+(`Unknown column`) et la page correspondante tombe en erreur 500.
+
+Pour chaque ajout de colonne, un fichier SQL idempotent est depose dans
+`migrations-prod/`. Exemple courant :
+
+```bash
+mysql -u <utilisateur> -p -h <hote> <base> < migrations-prod/stand-types-cover-image.sql
+```
+
+Ou en un seul fichier Node (affiche l'etat, ne fait rien si deja applique) :
+
+```bash
+DATABASE_URL="mysql://..." node scripts/migrate-stand-types.mjs
+```
+
+Verification apres deploiement : `curl -I https://<service>/api/db/health`.
+
 ## 3. Recuperer le code par Git
 
 hPanel > **Advanced > Git** : connecter le depot GitHub

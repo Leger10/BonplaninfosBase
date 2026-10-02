@@ -156,8 +156,10 @@ const ContestDetailPage = () => {
             });
             if (voteError) throw voteError;
             if (!voteData?.success) {
-                const err = { code: voteData?.error?.code || 'VOTE_FAILED', message: voteData?.error?.message || voteData?.message || 'Échec du vote' };
-                throw err;
+                throw {
+                    code: voteData?.error?.code || 'VOTE_FAILED',
+                    message: voteData?.error?.message || voteData?.message || 'Échec du vote',
+                };
             }
             await forceRefreshUserProfile();
             toast({ title: "Vote réussi!", description: `Vous avez donné ${quantity} voix à ${candidate.name}.` });

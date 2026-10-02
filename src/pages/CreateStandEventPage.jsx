@@ -227,6 +227,24 @@ const StandTypeItem = memo(({ st, index, onChange, onRemove, canRemove }) => {
           </div>
         </div>
 
+        {/* Affiche de couverture propre à ce type de stand */}
+        <div className="space-y-2 mb-4">
+          <Label className={`font-bold text-base ${colors.text}`}>
+            Affiche de ce type de stand 🖼️
+          </Label>
+          <p className="text-xs text-gray-400">
+            Image présentée aux visiteurs pour ce type d'offre. Formats libres,
+            la taille est réduite automatiquement.
+          </p>
+          <ImageUpload
+            onImageUploaded={(url) => onChange(st.id, "cover_image", url)}
+            existingImage={st.cover_image || ""}
+            folder="stand-covers"
+            aspectRatio="4/3"
+            bucket="media"
+          />
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
           <div className="space-y-2">
             <Label className={`font-bold text-base ${colors.text}`}>
@@ -885,12 +903,26 @@ const CreateStandEventPage = () => {
       return;
     }
 
-    // Vérifier qu'il y a au moins un stand type valide
-    const validStandTypes = standTypes.filter(st => 
-      st.name && st.name.trim() !== "" && 
-      st.base_price > 0 && 
-      st.quantity_available > 0
+    // Vérifier qu'il y a au moins un stand type valide.
+    // Une offre à prix 0 (offerte / inclus dans le billet) est légitime :
+    // l'ancien `base_price > 0` la supprimait en silence, sans message.
+    const validStandTypes = standTypes.filter(st =>
+      st.name && st.name.trim() !== "" &&
+      parseFloat(st.base_price) >= 0 && !Number.isNaN(parseFloat(st.base_price)) &&
+      parseInt(st.quantity_available, 10) > 0
     );
+
+    // Signaler explicitement les offres écartées plutôt que de les perdre.
+    const droppedTypes = standTypes.filter(st => !validStandTypes.includes(st));
+    if (droppedTypes.length > 0) {
+      toast({
+        title: "Offres non enregistrées",
+        description: droppedTypes
+          .map((st) => `« ${st.name || "sans nom"} »`)
+          .join(", ") + " : nom ou quantité manquant.",
+        variant: "destructive",
+      });
+    }
 
     if (validStandTypes.length === 0) {
       toast({
@@ -1002,10 +1034,19 @@ const CreateStandEventPage = () => {
         quantity_available: parseInt(st.quantity_available) || 0,
         quantity_rented: 0,
         is_active: true,
+        cover_image: st.cover_image || null,
       }));
 
-      console.log(`📋 ${standTypesToInsert.length} stand_types à insérer`);
+      console.log(
+        `📋 ${standTypesToInsert.length} stand_types à insérer (types: ${[
+          ...new Set(standTypesToInsert.map((s) => s.rental_type)),
+        ].join(", ")})`,
+      );
 
+      // Insert en LOT : toutes les offres doivent être persistées.
+      // Le client renvoie désormais le tableau intact jusqu'au moteur
+      // (server/queryPolicy.mjs conservait auparavant body[0] seul, ce qui
+      // ne créait que la première offre et affichait « Stand Standard »).
       const { error: typesError } = await supabase
         .from("stand_types")
         .insert(standTypesToInsert);
@@ -1024,8 +1065,12 @@ const CreateStandEventPage = () => {
         .insert({
           event_id: newEventId,
           stands_enabled: true,
+          // `+` est prioritaire sur `||` : l'ancien
+          // `(acc + parseInt(x)) || 0` remettait le total à 0 à chaque tour
+          // dès qu'un `quantity_available` était vide (NaN), donc
+          // `total_stands` ne comptait que la dernière offre lue.
           total_stands: validStandTypes.reduce(
-            (acc, st) => acc + parseInt(st.quantity_available) || 0,
+            (acc, st) => acc + (parseInt(st.quantity_available, 10) || 0),
             0,
           ),
           created_at: new Date().toISOString(),

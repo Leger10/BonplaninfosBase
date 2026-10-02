@@ -8,6 +8,10 @@ const ImageUpload = ({
   onImageUploaded, 
   existingImage,
   folder = 'event-covers',
+  // Conservée pour compatibilité avec les appelants existants, mais PLUS
+  // appliquée : aucune image n'est refusée pour sa taille, c'est l'image
+  // envoyée qui est réduite (voir compressImage). Un `maxSizeMB={1}` hérité
+  // d'un autre écran ne doit plus bloquer l'utilisateur.
   maxSizeMB = 2,
   aspectRatio = '16/9',
   className = '',
@@ -76,19 +80,85 @@ const ImageUpload = ({
     });
   };
 
+  /**
+   * Réduit une image jusqu'à ce qu'elle passe sous `targetBytes`.
+   *
+   * Le fichier choisi par l'utilisateur n'est PAS refusé pour cause de poids :
+   * c'est l'image envoyée qui est réduite. On commence par un grand gabarit
+   * (1600px, adapté à une affiche) puis on baisse la qualité JPEG, et en
+   * dernier recours on réduit les dimensions. Le but est qu'une affiche de 8 Mo
+   * prise en photo avec un téléphone soit acceptée telle quelle.
+   */
+  const compressImage = async (file, targetBytes = 900 * 1024) => {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('Lecture du fichier impossible'));
+      reader.readAsDataURL(file);
+    });
+
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error('Image illisible ou format non pris en charge par le navigateur'));
+      el.src = dataUrl;
+    });
+
+    // Gabarit maximal : suffisant pour une affiche nette sur mobile et desktop.
+    const LONG_EDGE = 1600;
+    let width = img.naturalWidth || img.width;
+    let height = img.naturalHeight || img.height;
+    const ratio = Math.min(1, LONG_EDGE / Math.max(width, height));
+    width = Math.max(1, Math.round(width * ratio));
+    height = Math.max(1, Math.round(height * ratio));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    // Fond blanc : sans cela, la transparence d'un PNG devient du noir en JPEG.
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(img, 0, 0, width, height);
+
+    const encode = (q) =>
+      new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/jpeg', q));
+
+    // 1) Qualité JPEG décroissante jusqu'à passer sous le seuil.
+    for (const q of [0.86, 0.75, 0.65, 0.55, 0.45]) {
+      const blob = await encode(q);
+      if (blob && blob.size <= targetBytes) {
+        return { blob, width, height };
+      }
+    }
+
+    // 2) Trop lourd : on réduit les dimensions et on réessaie.
+    let shrink = 0.8;
+    for (let i = 0; i < 5; i++) {
+      width = Math.max(320, Math.round(width * shrink));
+      height = Math.max(320, Math.round(height * shrink));
+      canvas.width = width;
+      canvas.height = height;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      for (const q of [0.7, 0.55, 0.4]) {
+        const blob = await encode(q);
+        if (blob && blob.size <= targetBytes) {
+          return { blob, width, height };
+        }
+      }
+      shrink = 0.7;
+    }
+
+    // 3) Dernière tentative : qualité minimale au gabarit réduit.
+    const blob = await encode(0.3);
+    return { blob, width, height };
+  };
+
   const handleFileSelect = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
-
-    // Vérifier taille
-    if (file.size > maxSizeMB * 1024 * 1024) {
-      toast({
-        title: "Fichier trop volumineux",
-        description: `La taille maximale est de ${maxSizeMB}MB.`,
-        variant: "destructive",
-      });
-      return;
-    }
 
     // Vérifier que c'est une image
     if (!file.type.startsWith('image/')) {
@@ -104,7 +174,7 @@ const ImageUpload = ({
     const objectUrl = URL.createObjectURL(file);
     setPreviewUrl(objectUrl);
     
-    // Upload avec conversion automatique
+    // Upload avec réduction automatique
     await uploadFile(file);
   };
 
@@ -115,33 +185,44 @@ const ImageUpload = ({
     try {
       let fileToUpload = originalFile;
       let conversionMessage = '';
-      
-      // TOUJOURS convertir en JPEG pour éviter les erreurs mime
-      // Même si c'est déjà un JPEG, on recompresse pour réduire la taille
-      conversionMessage = `Conversion et compression en cours...`;
-      
+      const originalSize = originalFile.size;
+
+      // Réduire systématiquement : plus aucune image n'est refusée pour sa
+      // taille, le fichier envoyé est allégé avant l'upload.
       try {
-        // Convertir en JPEG (format universel)
-        fileToUpload = await convertToSupportedFormat(originalFile);
-        conversionMessage = `✅ Image convertie en JPEG et compressée (${compressionSaved}% économisés)`;
+        const { blob, width, height } = await compressImage(originalFile);
+        if (!blob) throw new Error('Compression impossible');
+        fileToUpload = new File([blob], 'image.jpg', { type: 'image/jpeg' });
+        const savedPercent = Math.max(
+          0,
+          Math.round((1 - blob.size / originalSize) * 100),
+        );
+        setCompressionSaved(savedPercent);
+        conversionMessage = `✅ Image optimisée ${width}×${height} (${savedPercent}% de moins)`;
       } catch (conversionError) {
-        console.error('Conversion error:', conversionError);
-        // Fallback: essayer d'uploader l'original
-        console.log('Fallback: upload du fichier original');
-        conversionMessage = `⚠️ Upload du format original`;
+        console.error('Compression error:', conversionError);
+        // Repli : on tente le fichier original plutôt que de bloquer.
+        fileToUpload = originalFile;
+        conversionMessage = '⚠️ Image envoyée au format original';
       }
 
-      // Générer un nom de fichier unique
-      const fileExt = 'jpg'; // Forcer l'extension jpg
+      // Générer un nom de fichier unique. L'extension suit le contenu réel :
+      // forcer « .jpg » sur un fichier original (cas du repli) produisait une
+      // URL dont le type ne correspondait pas à l'octet stocké.
+      const isJpeg = fileToUpload.type === 'image/jpeg';
+      const fileExt = isJpeg
+        ? 'jpg'
+        : (fileToUpload.name.match(/\.([a-z0-9]+)$/i)?.[1] || 'bin').toLowerCase();
+      const contentType = fileToUpload.type || 'application/octet-stream';
       const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
 
       // Upload vers Supabase Storage
-      const { error: uploadError, data: uploadData } = await supabase.storage
+      const { error: uploadError } = await supabase.storage
         .from(bucket)
         .upload(fileName, fileToUpload, {
           cacheControl: '31536000', // 1 an
           upsert: false,
-          contentType: 'image/jpeg', // Forcer le bon mime type
+          contentType,
         });
 
       if (uploadError) {
@@ -348,10 +429,10 @@ const ImageUpload = ({
                 {uploading ? 'Conversion en cours...' : 'Cliquez pour télécharger une image'}
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-400">
-                Tous formats acceptés (PNG, WEBP, JPG, HEIC) • Max {maxSizeMB}MB
+                Tous formats acceptés (PNG, WEBP, JPG, HEIC) • Taille libre
               </p>
               <p className="text-xs text-green-600 dark:text-green-400 font-medium">
-                ✨ Conversion automatique en JPEG optimisé
+                ✨ Réduction automatique de la taille, sans limite de poids
               </p>
             </div>
           </div>
@@ -365,10 +446,10 @@ const ImageUpload = ({
             <p className="font-medium mb-1">✨ Optimisations automatiques :</p>
             <ul className="list-disc list-inside space-y-0.5">
               <li>Conversion automatique en JPEG (100% compatible)</li>
-              <li>Compression jusqu'à 70% d'économies</li>
-              <li>Redimensionnement 800x600 max</li>
+              <li>Taille libre : l'image est réduite avant l'envoi</li>
+              <li>Redimensionnement 1600px max, ajusté si besoin</li>
+              <li>Objectif ~900 Ko par image</li>
               <li>Cache CDN 1 an</li>
-              <li>Réduction de l'utilisation Supabase</li>
             </ul>
           </div>
         </div>

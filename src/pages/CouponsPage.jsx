@@ -147,12 +147,12 @@ const CouponsPage = () => {
                       <div className="flex items-center gap-2 text-gray-400">
                         <TrendingUp className="w-4 h-4" />
                         <span>Total généré :</span>
-                        <span className="text-white font-medium">{coupon.total_amount.toLocaleString()} FCFA</span>
+                        <span className="text-white font-medium">{Number(coupon.total_amount || 0).toLocaleString('fr-FR')} FCFA</span>
                       </div>
                       <div className="flex items-center gap-2 text-gray-400">
                         <Coins className="w-4 h-4" />
                         <span>Commission :</span>
-                        <span className="text-green-400 font-medium">{coupon.commission_earned.toLocaleString()} FCFA</span>
+                        <span className="text-green-400 font-medium">{Number(coupon.commission_earned || 0).toLocaleString('fr-FR')} FCFA</span>
                       </div>
                       <div className="flex items-center gap-2 text-gray-400">
                         <Calendar className="w-4 h-4" />

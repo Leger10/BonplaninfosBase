@@ -388,10 +388,10 @@ const CandidateCard = ({
   const [loading, setLoading] = useState(false);
   const [showWalletInfo, setShowWalletInfo] = useState(false);
   const navigate = useNavigate();
-  const [confirmation, setConfirmation] = useState({
-    isOpen: false,
-    onConfirm: null,
-  });
+  // Un simple booléen : le gestionnaire du clic est lu au moment du rendu, ce
+  // qui évite de capturer une closure figée (votePaymentMethod valant "coins")
+  // quand l'utilisateur bascule sur USSD à l'intérieur de la boîte de dialogue.
+  const [confirmation, setConfirmation] = useState({ isOpen: false });
   const { user } = useAuth();
   const [showDetails, setShowDetails] = useState(false);
   const [candidateVoteCount, setCandidateVoteCount] = useState(
@@ -500,7 +500,7 @@ const CandidateCard = ({
 
     // 🎁 Vote GRATUIT (sans compte) : pas de débit, pas de USSD
     if (isFreeVoting) {
-      setConfirmation({ isOpen: false, onConfirm: null });
+      setConfirmation({ isOpen: false });
       if (!user) {
         const storedPhone = getStoredPhone();
         if (!storedPhone) {
@@ -554,7 +554,7 @@ if (maxVotesPerUser > 0 && !(maxVotesPerPhone > 0 && storedPhone) && used + vote
       return;
     }
 
-    setConfirmation({ isOpen: false, onConfirm: null });
+    setConfirmation({ isOpen: false });
     if (!user) {
       navigate("/auth");
       return;
@@ -611,7 +611,17 @@ if (maxVotesPerUser > 0 && !(maxVotesPerPhone > 0 && storedPhone) && used + vote
       });
 
       if (voteError) throw voteError;
-      if (!voteResult?.success) throw new Error(voteResult?.message || "Erreur lors du vote");
+      // Le serveur renvoie { data: { success, ... }, error: null }. Un vote
+      // réellement refusé arrive dans voteError avec un code précis
+      // (INSUFFICIENT_COINS, VOTING_CLOSED…) : on le remonte tel quel plutôt
+      // qu'un message générique, sinon un vrai refus passe pour une panne.
+      if (!voteResult?.success) {
+        throw new Error(
+          voteResult?.error?.message ||
+            voteResult?.message ||
+            "Erreur lors du vote",
+        );
+      }
 
       const { data: existingVote } = await supabase
         .from("user_votes")
@@ -948,9 +958,7 @@ if (maxVotesPerUser > 0 && !(maxVotesPerPhone > 0 && storedPhone) && used + vote
                 </Button>
 
                 <Button
-                  onClick={() =>
-                    setConfirmation({ isOpen: true, onConfirm: handleVote })
-                  }
+                  onClick={() => setConfirmation({ isOpen: true })}
                   disabled={loading}
                   size="sm"
                   className={`col-span-5 text-[11px] sm:text-xs text-white border-0 shadow-lg relative overflow-hidden group/vote
@@ -1326,9 +1334,14 @@ if (maxVotesPerUser > 0 && !(maxVotesPerPhone > 0 && storedPhone) && used + vote
 
       <AlertDialog
         open={confirmation.isOpen}
-        onOpenChange={(o) =>
-          !o && setConfirmation({ isOpen: false, onConfirm: null })
-        }
+        onOpenChange={(o) => {
+          if (!o) {
+            setConfirmation({ isOpen: false });
+            // Repartir de « pièces » à chaque ouverture : sinon un choix USSD
+            // fait pour un candidat reste actif pour le suivant.
+            setVotePaymentMethod("coins");
+          }
+        }}
       >
         <AlertDialogContent className="bg-gray-900 text-white border-gray-700">
           {isFreeVoting ? (
@@ -1349,9 +1362,9 @@ if (maxVotesPerUser > 0 && !(maxVotesPerPhone > 0 && storedPhone) && used + vote
               <AlertDialogHeader>
                 <AlertDialogTitle>Confirmer le vote</AlertDialogTitle>
                 <AlertDialogDescription className="text-gray-400">
-                  Voter pour {candidate.name} ({voteCount} voix) pour{" "}
-                  {totalCostPi} pièces (
-                  {ussdFcfa.toLocaleString("fr-FR")} FCFA)?
+                  Voter pour {candidate.name} ({voteCount} voix) —{" "}
+                  {totalCostPi} pièces, soit{" "}
+                  {ussdFcfa.toLocaleString("fr-FR")} FCFA.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <div className="flex gap-2 my-2">
@@ -1361,7 +1374,7 @@ if (maxVotesPerUser > 0 && !(maxVotesPerPhone > 0 && storedPhone) && used + vote
                   className="flex-1"
                   size="sm"
                 >
-                  <Coins className="w-4 h-4 mr-1" /> Pièces
+                  <Coins className="w-4 h-4 mr-1" /> Payer avec compte
                 </Button>
                 <Button
                   variant={votePaymentMethod === "ussd" ? "default" : "outline"}
@@ -1369,7 +1382,7 @@ if (maxVotesPerUser > 0 && !(maxVotesPerPhone > 0 && storedPhone) && used + vote
                   className="flex-1"
                   size="sm"
                 >
-                  <Trophy className="w-4 h-4 mr-1" /> USSD
+                  <Trophy className="w-4 h-4 mr-1" /> Payer par Orange Money
                 </Button>
               </div>
               {votePaymentMethod === "coins" ? (
@@ -1399,7 +1412,7 @@ if (maxVotesPerUser > 0 && !(maxVotesPerPhone > 0 && storedPhone) && used + vote
               Annuler
             </AlertDialogCancel>
             <AlertDialogAction
-              onClick={confirmation.onConfirm}
+              onClick={handleVote}
               className="bg-emerald-600 text-white"
             >
               Confirmer
@@ -2153,7 +2166,11 @@ if ((userData?.coin_balance || 0) < totalCost) {
 
       if (cartVoteError) throw cartVoteError;
       if (!cartVoteResult?.success) {
-        throw new Error(cartVoteResult?.message || "Erreur lors du vote");
+        throw new Error(
+          cartVoteResult?.error?.message ||
+            cartVoteResult?.message ||
+            "Erreur lors du vote",
+        );
       }
 
 

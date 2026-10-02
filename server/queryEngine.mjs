@@ -32,6 +32,10 @@ const JSON_TEXT_COLUMNS = new Set([
   'admin_withdrawal_config.withdrawal_dates',
   'admin_withdrawal_config.withdrawal_methods',
   'organizer_withdrawal_requests.payment_details',
+  // admin_logs.details reçoit du JSON sérialisé (amount, reason, reversed...).
+  // Sans décode, le client lit une chaîne : details.amount vaut undefined et
+  // tous les versements manuels sont comptés à 0 pièce.
+  'admin_logs.details',
 ]);
 
 function decodeJsonColumns(table, rows) {
