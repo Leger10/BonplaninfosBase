@@ -85,15 +85,21 @@ app.get('/api/db/health', async (req, res) => {
       models: ['events', 'categories', 'profiles', 'candidates', 'promotions'],
     });
   } catch (e) {
-    const detail = String(e?.message || e)
-      .split('\n')
-      .map((l) => l.trim())
-      .filter(Boolean)[0] || String(e);
+    const raw = String(e?.message || e);
+    const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean);
+    // Prisma place la cause utile sur les lignes suivantes (« Can't reach
+    // database server at `host:port` », « Access denied for user ... »).
+    // Sans elles, un 503 n'apportait aucune information exploitable.
+    const cause =
+      lines.find((l) => /can't reach|can't connect|access denied|unknown database|timed out|ECONNREFUSED/i.test(l)) ||
+      lines[1] ||
+      lines[0] ||
+      raw;
     res.status(503).json({
       ok: false,
       database: 'unreachable',
       latency_ms: Date.now() - started,
-      error: detail,
+      error: cause,
     });
   }
 });
