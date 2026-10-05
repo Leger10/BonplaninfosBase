@@ -84,9 +84,14 @@ git clone https://github.com/Leger10/BonplaninfosBase.git .
 
 ```bash
 npm ci
-npx prisma generate
 npm run build
 ```
+
+`prisma generate` est branche en `postinstall` (script `postinstall` de
+`package.json`) : `npm ci`/`npm install` regenere donc toujours le client
+depuis `prisma/schema.prisma`, y compris sur les hebergeurs ou la commande
+de build n'est pas modifiable. Ajoute `npx prisma generate` si vous
+preferez l'executer vous-meme.
 
 `npm run build` genere `dist/`. Les variables `VITE_*` sont figees dans le build :
 elles doivent etre presentes dans `.env` **avant** cette etape.
@@ -335,8 +340,8 @@ hPanel / dashboard ne sert a rien ici : tout se passe dans le dashboard Render.
 
 ## 10.2 Service Web manuel (equivalent)
 
-Build   : `npm ci && npx prisma generate && npm run build`
-Start   : `node server/index.mjs`
+Build   : `npm ci && npm run build`
+Start   : `node server/index.mjs` (ou `node server.js`)
 Disque  : onglet **Disks** > `bonplaninfos-media` monte sur `/var/data`
 Vars    : identiques a la liste ci-dessus (`PORT` est injecte par Render).
 

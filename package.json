@@ -12,6 +12,7 @@
     "build": "node tools/generate-llms.js || true && node ./node_modules/vite/dist/node/cli.js build",
     "preview": "vite preview --host --port 3000",
     "start": "node server/index.mjs",
+    "postinstall": "prisma generate",
     "sitemap": "node scripts/generate-sitemap.js",
     "netlify-build": "npm run build",
     "prebuild": "node scripts/download-pwa-icons.js"
