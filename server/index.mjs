@@ -70,8 +70,32 @@ app.post('/api/query', requireActorForWrites, async (req, res) => {
 });
 
 // Compat ancien dbService : /api/db/... -> même moteur de requête simplifié
+// Le contrôle de santé interroge réellement MySQL. La liste des models venait
+// du client Prisma en mémoire (_runtimeDataModel) : elle renvoyait "ok" même
+// avec une DATABASE_URL injoignable, ce qui masquait une base inopérante.
 app.get('/api/db/health', async (req, res) => {
-  res.json({ ok: true, models: ['events', 'categories', 'profiles', 'candidates', 'promotions'] });
+  const started = Date.now();
+  try {
+    const { getDb } = await import('./db.mjs');
+    await getDb().$queryRaw`SELECT 1`;
+    res.json({
+      ok: true,
+      database: 'reachable',
+      latency_ms: Date.now() - started,
+      models: ['events', 'categories', 'profiles', 'candidates', 'promotions'],
+    });
+  } catch (e) {
+    const detail = String(e?.message || e)
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)[0] || String(e);
+    res.status(503).json({
+      ok: false,
+      database: 'unreachable',
+      latency_ms: Date.now() - started,
+      error: detail,
+    });
+  }
 });
 
 // Edge functions locales : routées vers netlify/functions/<name>.cjs ou .js
