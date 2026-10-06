@@ -21,6 +21,36 @@ const app = express();
 app.set('json spaces', 2);
 app.use(express.json({ limit: '30mb' }));
 
+// Découverte de l'adresse publique : les fonctions /.netlify/functions/* passent
+// par le shim local-supabase (netlify/functions/_lib/local-supabase.cjs) qui doit
+// rappeler ce serveur. Sur Hostinger le process n'est pas joignable en loopback
+// (ECONNREFUSED sur 127.0.0.1/*) : on expose donc l'hôte des requêtes entrantes,
+// le shim bascule alors en https:443 vers l'hôte public (comme le navigateur).
+app.use((req, res, next) => {
+  let host = String(req.headers.host || '').trim();
+  if (host) {
+    let h = host;
+    let p = '';
+    if (h.startsWith('[')) {
+      const end = h.indexOf(']');
+      h = h.slice(1, end === -1 ? h.length : end);
+      const rest = end !== -1 ? host.slice(end + 1) : '';
+      if (rest.startsWith(':')) p = rest.slice(1);
+    } else {
+      const colon = h.lastIndexOf(':');
+      if (colon !== -1 && /^\d+$/.test(h.slice(colon + 1))) {
+        p = h.slice(colon + 1);
+        h = h.slice(0, colon);
+      }
+    }
+    const loopback = /^localhost$/.test(h) || /^127\.|^192\.168\.|^10\.|^0\.0\.0\.0$/.test(h);
+    process.env.SUPABASE_LOCAL_HOST = h;
+    if (p) process.env.SUPABASE_LOCAL_PORT = p;
+    process.env.SUPABASE_LOCAL_PROTO = loopback ? 'http' : 'https';
+  }
+  next();
+});
+
 const PORT = process.env.PORT || 8888;
 
 // API
@@ -257,15 +287,7 @@ if (fs.existsSync(DIST)) {
 // CanSDO: éviter l'écrasement des erreurs aval
 app.use((req, res) => res.status(404).json({ error: `Route introuvable : ${req.path}` }));
 
-const server = app.listen(PORT, () => {
-  const bound = server.address().port;
-  // Les fonctions .netlify/functions/* passent par le shim local-supabase, qui
-  // contacte ce même serveur en HTTP interne. On lui communique l'adresse réelle,
-  // sinon il vise 127.0.0.1:8888 par défaut et échoue en ECONNREFUSED sur les
-  // hébergeurs où le PORT effectif est différent (Hostinger).
-  process.env.SUPABASE_LOCAL_HOST = process.env.SUPABASE_LOCAL_HOST || '127.0.0.1';
-  process.env.SUPABASE_LOCAL_PORT = String(bound);
-  console.log(`BonPlan Infos server local -> http://localhost:${bound}`);
+app.listen(PORT, () => {
+  console.log(`BonPlan Infos server local -> http://localhost:${PORT}`);
   console.log(`  Media : ${MEDIA_ROOT}`);
-  console.log(`  Fonctions internes -> http://${process.env.SUPABASE_LOCAL_HOST}:${process.env.SUPABASE_LOCAL_PORT}`);
 });

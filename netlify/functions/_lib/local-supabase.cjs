@@ -11,10 +11,29 @@
 //   supabase.storage.from(bucket).upload(path, buf, opts) .getPublicUrl(path)
 //   supabase.auth.admin.listUsers({})  supabase.auth.admin.createUser({...})
 const http = require('http');
+const https = require('https');
 
-const DEFAULT_PORT = process.env.PORT || 8888;
-const API_HOST = process.env.SUPABASE_LOCAL_HOST || '127.0.0.1';
-const API_PORT = process.env.SUPABASE_LOCAL_PORT || DEFAULT_PORT;
+// Adresse du serveur local à joindre. Sur Hostinger le process n'est pas
+// joignable via loopback (ECONNREFUSED) : server/index.mjs expose l'hôte vu
+// par les requêtes entrantes (SUPABASE_LOCAL_HOST = hostname public) et le
+// shim bascule alors en https:443, comme le navigateur. En local, l'hôte
+// reste 127.0.0.1 en http sur PORT.
+let API_HOST = process.env.SUPABASE_LOCAL_HOST || '127.0.0.1';
+let API_PORT = process.env.SUPABASE_LOCAL_PORT;
+if (API_HOST.startsWith('[')) {
+  const end = API_HOST.indexOf(']');
+  API_PORT = API_PORT || (end !== -1 && API_HOST.slice(end + 1).startsWith(':') ? API_HOST.slice(end + 2) : '');
+  API_HOST = API_HOST.slice(1, end === -1 ? API_HOST.length : end);
+} else {
+  const colon = API_HOST.lastIndexOf(':');
+  if (colon !== -1 && /^\d+$/.test(API_HOST.slice(colon + 1))) {
+    API_PORT = API_PORT || API_HOST.slice(colon + 1);
+    API_HOST = API_HOST.slice(0, colon);
+  }
+}
+const isLoopback = !API_HOST || API_HOST === '127.0.0.1' || API_HOST === 'localhost' || API_HOST.startsWith('192.168.') || API_HOST.startsWith('10.');API_PORT = Number(API_PORT) || (isLoopback ? Number(process.env.PORT) || 8888 : 443);
+const API_PROTO = process.env.SUPABASE_LOCAL_PROTO || (isLoopback ? 'http' : 'https');
+const transport = API_PROTO === 'https' ? https : http;
 const MAX_BODY = 100 * 1024 * 1024;
 
 function request(path, { method = 'POST', payload, raw } = {}) {
@@ -26,7 +45,7 @@ function request(path, { method = 'POST', payload, raw } = {}) {
     const internalHeaders = process.env.INTERNAL_RPC_KEY
       ? { 'X-Internal-Key': process.env.INTERNAL_RPC_KEY }
       : {};
-    const req = http.request(
+    const req = transport.request(
       {
         host: API_HOST,
         port: API_PORT,
