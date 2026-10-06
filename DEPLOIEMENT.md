@@ -327,9 +327,7 @@ hPanel / dashboard ne sert a rien ici : tout se passe dans le dashboard Render.
    persistant monte sur `/var/data` (`MEDIA_ROOT=/var/data/media`).
 4. Renseigner les variables `sync: false` dans le service (onglet **Environment**) :
    `DATABASE_URL`, `VITE_SITE_URL`, `DEPLOY_URL`, `LOGIN_URL`,
-   `VITE_SUPABASE_URL` (URL publique du service, figee dans le build),
-   `VITE_VAPID_PUBLIC_KEY`, `VITE_VAPID_PRIVATE_KEY`,
-   `VITE_SUPABASE_SERVICE_ROLE_KEY`.
+   `VITE_VAPID_PUBLIC_KEY`, `VITE_VAPID_PRIVATE_KEY`.
    `JWT_SECRET` et `INTERNAL_RPC_KEY` sont generes automatiquement
    (regenerables depuis l'onglet Environment si besoin).
 5. **Deploy** : build = `npm ci && npx prisma generate && npm run build`,
