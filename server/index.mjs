@@ -16,6 +16,7 @@ import { storageRouter } from './storage.mjs';
 import { rpcRouter } from './rpc.mjs';
 import { requireActorForWrites, requireAdmin } from './session.mjs';
 import { checkWritePolicy, checkReadPolicy } from './queryPolicy.mjs';
+import { purgeOldEvents } from './purgeOldEvents.mjs';
 
 const app = express();
 app.set('json spaces', 2);
@@ -61,6 +62,18 @@ app.use('/api/auth/admin/create-user', requireAdmin({ superOnly: true }));
 app.use('/api/auth', authRouter);
 app.use('/api/storage', storageRouter);
 app.use('/api/rpc', rpcRouter);
+// Purge automatique des événements passés de plus d'un mois (super admin).
+app.post('/api/admin/purge-old-events', requireAdmin({ superOnly: true }), async (req, res) => {
+  try {
+    const dryRun = req.body?.dryRun !== false;
+    const result = await purgeOldEvents({ dryRun });
+    console.log(`[purge] admin route -> ${result.purgedEvents} purgés, ${result.candidateCount} candidats${dryRun ? ' (dry run)' : ''}`);
+    res.json({ data: result, error: null });
+  } catch (e) {
+    console.error('[purge] admin route', e);
+    res.status(500).json({ data: null, error: { message: e?.message?.split('\n')[0], code: 'PURGE_ERROR', details: null, hint: null } });
+  }
+});
 // CRUD générique : les lectures restent publiques (pages visibles sans compte),
 // les écritures exigent une session (utilisateur ou clé interne des fonctions)
 // ET passent par server/queryPolicy.mjs, qui restreint chaque écriture aux
@@ -291,3 +304,24 @@ app.listen(PORT, () => {
   console.log(`BonPlan Infos server local -> http://localhost:${PORT}`);
   console.log(`  Media : ${MEDIA_ROOT}`);
 });
+
+const PURGE_ENABLED = process.env.PURGE_FINISHED_ENABLED !== 'false';
+const PURGE_INTERVAL_H = Math.max(1, parseInt(process.env.PURGE_FINISHED_INTERVAL_HOURS || '24', 10));
+if (PURGE_ENABLED) {
+  const runPurge = async () => {
+    try {
+      const dryRun = process.env.PURGE_FINISHED_DRY_RUN === 'true';
+      const r = await purgeOldEvents({ dryRun });
+      const detail = r.candidateCount
+        ? `${r.purgedEvents} purgés / ${r.candidateCount} détectés, tables absentes: ${r.missingTables.length}`
+        : '0 événement passé détecté';
+      console.log(`[purge] ${detail}${dryRun ? ' (dry run)' : ''}`);
+    } catch (e) {
+      console.error('[purge]', e?.message);
+    }
+  };
+  setTimeout(() => {
+    runPurge();
+    setInterval(runPurge, PURGE_INTERVAL_H * 3600 * 1000);
+  }, 60_000);
+}
