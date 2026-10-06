@@ -217,6 +217,33 @@ fs.mkdirSync(MEDIA_ROOT, { recursive: true });
 app.use('/media', express.static(MEDIA_ROOT));
 app.use('/storage/v1/object/public', express.static(MEDIA_ROOT));
 
+// Placeholder d'image généré côté serveur (fallback photo_url des candidats…)
+const clampDim = (v, fallback) => {
+  const n = Math.floor(Number(v));
+  return Number.isFinite(n) && n > 0 ? Math.min(2048, n) : fallback;
+};
+app.get('/api/placeholder/:w/:h', (req, res) => {
+  const w = clampDim(req.params.w, 64);
+  const h = clampDim(req.params.h, 64);
+  const m = Math.max(2, Math.round(Math.min(w, h) * 0.18));
+  const rx = Math.max(2, Math.round(Math.min(w, h) * 0.06));
+  const stroke = Math.max(1, Math.round(Math.min(w, h) / 16));
+  const cx = Math.round(w * 0.36);
+  const cy = Math.round(h * 0.38);
+  const r = Math.max(2, Math.round(Math.min(w, h) * 0.09));
+  const gy = Math.round(h * 0.55);
+  const px = Math.round(w * 0.42);
+  const p2 = Math.round(w * 0.58);
+  const p3x = Math.round(w * 0.62);
+  const p3y = Math.round(h * 0.62);
+  const p4x = Math.round(w * 0.78);
+  const p5x = Math.round(w * 0.9);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><rect width="100%" height="100%" fill="#111827"/><rect x="${m}" y="${m}" width="${w - 2 * m}" height="${h - 2 * m}" rx="${rx}" fill="none" stroke="#374151" stroke-width="${stroke}"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#4b5563" stroke-width="${stroke}"/><path d="M ${m} ${h - m} L ${px} ${gy} L ${p2} ${h - m} Z M ${p3x} ${p3y} L ${p4x} ${h - m} L ${p5x} ${h - m}" fill="none" stroke="#4b5563" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  res.set('Content-Type', 'image/svg+xml');
+  res.set('Cache-Control', 'public, max-age=86400');
+  res.send(svg);
+});
+
 // Build statique (production)
 const DIST = path.join(ROOT, 'dist');
 if (fs.existsSync(DIST)) {
@@ -230,7 +257,15 @@ if (fs.existsSync(DIST)) {
 // CanSDO: éviter l'écrasement des erreurs aval
 app.use((req, res) => res.status(404).json({ error: `Route introuvable : ${req.path}` }));
 
-app.listen(PORT, () => {
-  console.log(`BonPlan Infos server local -> http://localhost:${PORT}`);
+const server = app.listen(PORT, () => {
+  const bound = server.address().port;
+  // Les fonctions .netlify/functions/* passent par le shim local-supabase, qui
+  // contacte ce même serveur en HTTP interne. On lui communique l'adresse réelle,
+  // sinon il vise 127.0.0.1:8888 par défaut et échoue en ECONNREFUSED sur les
+  // hébergeurs où le PORT effectif est différent (Hostinger).
+  process.env.SUPABASE_LOCAL_HOST = process.env.SUPABASE_LOCAL_HOST || '127.0.0.1';
+  process.env.SUPABASE_LOCAL_PORT = String(bound);
+  console.log(`BonPlan Infos server local -> http://localhost:${bound}`);
   console.log(`  Media : ${MEDIA_ROOT}`);
+  console.log(`  Fonctions internes -> http://${process.env.SUPABASE_LOCAL_HOST}:${process.env.SUPABASE_LOCAL_PORT}`);
 });
