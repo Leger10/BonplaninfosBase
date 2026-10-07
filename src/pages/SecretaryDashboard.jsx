@@ -30,14 +30,17 @@ import USSDPaymentsTab from '@/components/admin/USSDPaymentsTab';
 const SecretaryDashboard = () => {
     const { t } = useTranslation();
     const { user } = useAuth();
-    const { userProfile, loadingProfile } = useData();
+    const { userProfile, loadingProfile, profileLoaded } = useData();
     const [allUsers, setAllUsers] = useState([]);
     const [loadingData, setLoadingData] = useState(true);
     const [refundModalOpen, setRefundModalOpen] = useState(false);
     const isAppointedBySuperAdmin = userProfile?.user_type === 'secretary' && userProfile?.appointed_by_super_admin;
 
     const fetchData = useCallback(async () => {
-        if (!userProfile?.country) return;
+        if (!userProfile?.country) {
+            setLoadingData(false);
+            return;
+        }
         setLoadingData(true);
         try {
             const { data: usersData, error: usersError } = await supabase
@@ -62,13 +65,31 @@ const SecretaryDashboard = () => {
     useEffect(() => {
         if (userProfile) {
             fetchData();
+        } else if (profileLoaded) {
+            // Profil introuvable : on ne reste pas bloqué sur le spinner.
+            setLoadingData(false);
         }
-    }, [userProfile, fetchData]);
+    }, [userProfile, profileLoaded, fetchData]);
 
     if (loadingProfile || loadingData) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white p-4 md:p-8 flex items-center justify-center">
                 <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
+            </div>
+        );
+    }
+
+    if (profileLoaded && !userProfile) {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white p-4 md:p-8 flex flex-col items-center justify-center gap-4">
+                <h1 className="text-2xl font-bold">Profil introuvable</h1>
+                <p className="text-gray-400">Le chargement de votre profil a échoué. Réessayez.</p>
+                <button
+                    onClick={() => window.location.reload()}
+                    className="px-4 py-2 rounded-md bg-blue-600 hover:bg-blue-500"
+                >
+                    Réessayer
+                </button>
             </div>
         );
     }

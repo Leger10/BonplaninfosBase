@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useToast } from '@/components/ui/use-toast';
 
@@ -14,6 +14,12 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [hasFetchError, setHasFetchError] = useState(false);
   const [forceRefresh, setForceRefresh] = useState(() => () => { });
+
+  // Références stables : sans elles, un changement d'identité de handleSession
+  // (setHasFetchError / setForceRefresh) relançait initSession en boucle et le
+  // dashboard "rechargeait" sans jamais s'arrêter.
+  const handleSessionRef = useRef(null);
+  const hasFetchErrorRef = useRef(false);
 
   // Helper for retrying promises with exponential backoff
   const retryPromise = useCallback(async (fn, retries = 3, delay = 500, operationName = 'Supabase Operation') => {
@@ -56,7 +62,7 @@ export const AuthProvider = ({ children }) => {
           if (import.meta.env.DEV) {
             console.error(`[${operationName}] Network error persisted after retries.`);
           }
-          if (!hasFetchError) {
+          if (!hasFetchErrorRef.current) {
             toast({
               variant: "destructive",
               title: "Erreur de connexion",
@@ -84,7 +90,7 @@ export const AuthProvider = ({ children }) => {
       }
       throw error;
     }
-  }, [toast, hasFetchError]);
+  }, [toast]);
 
   const clearSessionData = useCallback(() => {
     if (import.meta.env.DEV) {
@@ -191,9 +197,10 @@ export const AuthProvider = ({ children }) => {
       if (isBadJwtError) {
         clearSessionData();
       } else {
-        if (errorMessage.includes('Failed to fetch') || errorMessage.includes('Network request failed')) {
-          setHasFetchError(true);
-        }
+      if (errorMessage.includes('Failed to fetch') || errorMessage.includes('Network request failed')) {
+        hasFetchErrorRef.current = true;
+        setHasFetchError(true);
+      }
       }
       setLoading(false);
       return;
@@ -262,6 +269,7 @@ export const AuthProvider = ({ children }) => {
       setSession(currentSession);
       setUser(currentUser);
       setUserProfile(profileData);
+      hasFetchErrorRef.current = false;
       setHasFetchError(false);
       await fetchLicense(currentUser.id);
 
@@ -316,6 +324,12 @@ export const AuthProvider = ({ children }) => {
     return () => window.removeEventListener('unhandledrejection', handleUnhandledRejection);
   }, [clearSessionData, handleSession]);
 
+  // Conserve la dernière version de handleSession pour les effets à
+  // dépendances stables (initialisation, abonnement).
+  useEffect(() => {
+    handleSessionRef.current = handleSession;
+  });
+
   useEffect(() => {
     let mounted = true;
 
@@ -348,7 +362,7 @@ export const AuthProvider = ({ children }) => {
         );
 
         if (sessionError) {
-          if (mounted) handleSession(null, sessionError);
+          if (mounted) handleSessionRef.current?.(null, sessionError);
           return;
         }
 
@@ -361,22 +375,35 @@ export const AuthProvider = ({ children }) => {
           );
 
           if (userError) {
-            if (mounted) handleSession(null, userError);
+            if (mounted) handleSessionRef.current?.(null, userError);
           } else {
-            if (mounted) handleSession(localSession);
+            if (mounted) handleSessionRef.current?.(localSession);
           }
         } else {
-          if (mounted) handleSession(null);
+          if (mounted) handleSessionRef.current?.(null);
         }
       } catch (err) {
         if (import.meta.env.DEV) {
           console.error("Session initialization error:", err);
         }
-        if (mounted) handleSession(null, err);
+        if (mounted) handleSessionRef.current?.(null, err);
       }
     };
 
     initSession();
+
+    return () => {
+      mounted = false;
+    };
+    // L'initialisation doit tourner une seule fois : elle ne dépend que de la
+    // première exécution (les appels passent par handleSessionRef, toujours à jour).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Abonnement aux changements d'état, isolé de l'initialisation : ses
+  // dépendances stables empêchent de relancer initSession().
+  useEffect(() => {
+    let mounted = true;
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
@@ -390,7 +417,7 @@ export const AuthProvider = ({ children }) => {
           clearSessionData();
           setLoading(false);
         } else if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN' || event === 'USER_UPDATED') {
-          handleSession(session);
+          handleSessionRef.current?.(session);
         }
       }
     );
@@ -399,7 +426,7 @@ export const AuthProvider = ({ children }) => {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [handleSession, clearSessionData, retryPromise, toast]);
+  }, [clearSessionData]);
 
   const signUp = useCallback(async (email, password, metadata) => {
     try {

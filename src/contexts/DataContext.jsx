@@ -59,6 +59,10 @@ export const DataProvider = ({ children }) => {
 
   // États principaux
   const [userProfile, setUserProfile] = useState(null);
+  // true dès la fin de la première tentative de chargement du profil (succès ou
+  // échec) : les pages qui attendent userProfile peuvent distinguer "encore en
+  // cours" de "introuvable", au lieu de tourner indéfiniment sur un spinner.
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [welcomePopups, setWelcomePopups] = useState([]);
  const [appSettings, setAppSettings] = useState({
   app_name: "BonPlanInfos",
@@ -101,6 +105,7 @@ export const DataProvider = ({ children }) => {
   const fetchUserProfile = useCallback(async () => {
     if (!user) {
       setUserProfile(null);
+      setProfileLoaded(false);
       return;
     }
     if (isFetchingProfile.current) return;
@@ -113,6 +118,7 @@ export const DataProvider = ({ children }) => {
 
     if (isCacheValid && refreshTrigger === 0) {
       setUserProfile(profileCache.current.data);
+      setProfileLoaded(true);
       return;
     }
 
@@ -141,6 +147,7 @@ export const DataProvider = ({ children }) => {
     } finally {
       safeTimeEnd("fetchUserProfile");
       setLoadingProfile(false);
+      setProfileLoaded(true);
       isFetchingProfile.current = false;
     }
   }, [user, refreshTrigger]);
@@ -500,6 +507,7 @@ export const DataProvider = ({ children }) => {
     appSettings,
     loading,
     loadingProfile,
+    profileLoaded,
     notificationBellAnimation,
     notificationCount,
     fetchNotificationCount,

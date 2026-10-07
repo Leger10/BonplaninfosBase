@@ -285,8 +285,8 @@ const AdminStatusBanner = ({ status }) => {
 };
 const AdminDashboard = () => {
   const { t } = useTranslation();
-  const { user } = useAuth();
-  const { userProfile, loadingProfile, getPromotions, getEvents } = useData();
+  const { user, loading: authLoading } = useAuth();
+  const { userProfile, loadingProfile, profileLoaded, forceRefreshUserProfile, getPromotions, getEvents } = useData();
   const [allUsers, setAllUsers] = useState([]);
   const [allAnnouncements, setAllAnnouncements] = useState([]);
   const [allEvents, setAllEvents] = useState([]);
@@ -428,9 +428,18 @@ const AdminDashboard = () => {
   }, [userProfile?.id, userProfile?.updated_at, isAdmin, isSuperAdmin, user?.id, getPromotions, getEvents, t, partnerZone]);
 
   // Rechargement des données quand partnerZone change (important pour la mise à jour)
-  useEffect(() => { if (userProfile) { fetchData(); } }, [fetchData]);
+  useEffect(() => {
+    if (userProfile) {
+      fetchData();
+    } else if (profileLoaded) {
+      // Profil introuvable (réseau/serveur) : on sort du spinner, la page
+      // propose un rechargement au lieu de tourner indéfiniment.
+      setLoadingData(false);
+    }
+  }, [fetchData, userProfile, profileLoaded]);
 
   // Gestion des écrans de chargement et erreurs
+  if (!authLoading && !user) { return (<div className="min-h-screen bg-background text-foreground p-4 md:p-8 flex flex-col items-center justify-center gap-4"><AlertCircle className="w-12 h-12 text-red-500" /><h1 className="text-2xl font-bold">{t("admin_dashboard.unauthorized_title")}</h1><p className="text-muted-foreground">{t("admin_dashboard.unauthorized_desc")}</p><Button onClick={() => { window.location.href = "/auth"; }} variant="outline">Se connecter</Button></div>); }
   if (loadingProfile || loadingData) { return (<div className="min-h-screen bg-background text-foreground p-4 md:p-8 flex items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>); }
   if (fetchError) {
     return (
@@ -439,6 +448,21 @@ const AdminDashboard = () => {
         <h1 className="text-2xl font-bold">Erreur de chargement</h1>
         <p className="text-muted-foreground">{fetchError}</p>
         <Button onClick={() => fetchData()} variant="outline">
+          <RefreshCwIcon className="w-4 h-4 mr-2" /> Réessayer
+        </Button>
+      </div>
+    );
+  }
+
+  if (!userProfile) {
+    return (
+      <div className="min-h-screen bg-background text-foreground p-4 md:p-8 flex flex-col items-center justify-center gap-4">
+        <AlertCircle className="w-12 h-12 text-red-500" />
+        <h1 className="text-2xl font-bold">Profil introuvable</h1>
+        <p className="text-muted-foreground">
+          Le chargement de votre profil a échoué. Vérifiez votre connexion puis réessayez.
+        </p>
+        <Button onClick={() => { setLoadingData(true); forceRefreshUserProfile(); }} variant="outline">
           <RefreshCwIcon className="w-4 h-4 mr-2" /> Réessayer
         </Button>
       </div>
