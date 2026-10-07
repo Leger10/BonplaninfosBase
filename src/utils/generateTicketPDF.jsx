@@ -65,18 +65,32 @@ const openPDFInNewTab = (doc, fileName) => {
 };
 
 // Colors Map for Ticket Types
+// Les valeurs RGB correspondent aux classes Tailwind du sélecteur de couleur
+// (CreateTicketingEventPage) pour que le PDF ait la MÊME couleur que le billet
+// affiché à l'achat.
 const DB_COLOR_MAP = {
-    blue: [59, 130, 246],
-    bronze: [205, 127, 50],
-    silver: [160, 160, 160],
-    gold: [234, 179, 8],
-    purple: [147, 51, 234],
-    red: [239, 68, 68],
-    green: [34, 197, 94],
-    black: [30, 30, 30]
+    blue: [59, 130, 246],      // bg-blue-500
+    bronze: [217, 119, 6],     // bg-amber-600
+    silver: [148, 163, 184],   // bg-slate-400
+    gold: [234, 179, 8],       // bg-yellow-500
+    purple: [147, 51, 234],    // bg-purple-600
+    red: [239, 68, 68],        // bg-red-500
+    green: [34, 197, 94],      // bg-green-500
+    pink: [236, 72, 153],      // bg-pink-500
+    cyan: [6, 182, 212],       // bg-cyan-500
+    orange: [249, 115, 22],    // bg-orange-500
+    indigo: [99, 102, 241],    // bg-indigo-500
+    black: [15, 23, 42],       // bg-slate-900
+    white: [255, 255, 255],    // bg-white
 };
 
 const DEFAULT_COLOR = [255, 140, 0];
+
+// Une couleur claire (blanc, argent…) impose un texte foncé pour rester lisible.
+const isLightColor = (rgb) => {
+    const [r, g, b] = rgb || [0, 0, 0];
+    return (r + g + b) / 3 > 170;
+};
 
 const getTicketColor = (type, colorKey) => {
   if (colorKey && DB_COLOR_MAP[colorKey]) {
@@ -349,6 +363,9 @@ export const generateTicketPDF = async (event, tickets, user, { returnBlob = fal
 
       let cursorY = 0;
 
+      // Texte foncé sur fond clair (blanc/argent) pour rester lisible.
+      const darkOnColor = isLightColor(ticketColor) ? [15, 23, 42] : ticketColor;
+
       // --- 1. EN-TÊTE ---
       doc.setFillColor(...ticketColor);
       doc.rect(0, 0, pageWidth, 18, "F");
@@ -367,7 +384,7 @@ export const generateTicketPDF = async (event, tickets, user, { returnBlob = fal
         }
       }
 
-      doc.setTextColor(255, 255, 255);
+      doc.setTextColor(...(isLightColor(ticketColor) ? [15, 23, 42] : [255, 255, 255]));
       doc.setFontSize(7);
       doc.setFont("helvetica", "normal");
       doc.text("BILLET OFFICIEL", pageWidth - margin, 11, { align: "right" });
@@ -377,7 +394,7 @@ export const generateTicketPDF = async (event, tickets, user, { returnBlob = fal
       // --- 2. PRIX --- ✅ FORMATAGE ULTRA ROBUSTE
       doc.setFontSize(12);
       doc.setFont("helvetica", "bold");
-      doc.setTextColor(...ticketColor);
+      doc.setTextColor(...darkOnColor);
       
       // ✅ Utilisation de formatPrice pour un affichage propre
       const formattedPrice = formatPrice(priceFcfa);
@@ -429,7 +446,7 @@ export const generateTicketPDF = async (event, tickets, user, { returnBlob = fal
       doc.roundedRect(margin, cursorY, contentWidth, 12, 2, 2, "FD");
 
       doc.setFontSize(10);
-      doc.setTextColor(...ticketColor);
+      doc.setTextColor(...darkOnColor);
       doc.setFont("helvetica", "bold");
       
       const maxTypeWidth = contentWidth - 20;
@@ -509,7 +526,7 @@ export const generateTicketPDF = async (event, tickets, user, { returnBlob = fal
       // --- 9. LIEN DU SITE ---
       doc.setFont("helvetica", "bold");
       doc.setFontSize(8);
-      doc.setTextColor(...ticketColor);
+      doc.setTextColor(...darkOnColor);
       doc.text("www.bonplaninfos.net", pageWidth / 2, cursorY, { align: "center" });
       cursorY += 5;
 

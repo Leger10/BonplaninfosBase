@@ -498,6 +498,31 @@ const MyTicketsTab = ({ isGuestView = false }) => {
       const dbTickets = data || [];
       console.log("✅ Tickets fetched:", dbTickets.length);
 
+      // Enrichir les billets en base avec leur type (nom + couleur) : la requête
+      // `select("*")` sur event_tickets ne renvoie pas la relation imbriquée, ce
+      // qui faisait afficher « Standard » / bleu et un PDF décoloré.
+      const dbTypeIds = [
+        ...new Set(
+          dbTickets
+            .map((t) => t.ticket_type_id)
+            .filter(Boolean)
+        ),
+      ];
+      if (dbTypeIds.length > 0) {
+        const { data: dbTypes, error: dbTypesErr } = await supabase
+          .from("ticket_types")
+          .select("id,name,color,description")
+          .in("id", dbTypeIds);
+        if (!dbTypesErr && dbTypes) {
+          const dbTypeMap = new Map(dbTypes.map((x) => [x.id, x]));
+          dbTickets.forEach((t) => {
+            if (t.ticket_type_id && !t.ticket_types) {
+              t.ticket_types = dbTypeMap.get(t.ticket_type_id) || null;
+            }
+          });
+        }
+      }
+
       // La base fait foi pour un utilisateur connecté. On y ajoute les billets
       // invités du navigateur qui n'y figurent pas encore (achat sans compte,
       // puis connexion) : sinon ils disparaissaient de l'écran.

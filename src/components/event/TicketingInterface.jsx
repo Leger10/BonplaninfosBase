@@ -106,12 +106,47 @@ const TICKET_COLORS = {
     text: "text-white",
     badge: "bg-green-500 text-white",
   },
+  pink: {
+    bg: "bg-gradient-to-br from-pink-600 to-pink-700",
+    border: "border-pink-700",
+    hover: "hover:from-pink-700 hover:to-pink-800",
+    text: "text-white",
+    badge: "bg-pink-500 text-white",
+  },
+  cyan: {
+    bg: "bg-gradient-to-br from-cyan-600 to-cyan-700",
+    border: "border-cyan-700",
+    hover: "hover:from-cyan-700 hover:to-cyan-800",
+    text: "text-slate-900",
+    badge: "bg-cyan-500 text-slate-900",
+  },
+  orange: {
+    bg: "bg-gradient-to-br from-orange-600 to-orange-700",
+    border: "border-orange-700",
+    hover: "hover:from-orange-700 hover:to-orange-800",
+    text: "text-white",
+    badge: "bg-orange-500 text-white",
+  },
+  indigo: {
+    bg: "bg-gradient-to-br from-indigo-600 to-indigo-700",
+    border: "border-indigo-700",
+    hover: "hover:from-indigo-700 hover:to-indigo-800",
+    text: "text-white",
+    badge: "bg-indigo-500 text-white",
+  },
   black: {
     bg: "bg-gradient-to-br from-slate-800 to-slate-900",
     border: "border-slate-900",
     hover: "hover:from-slate-900 hover:to-black",
     text: "text-white",
     badge: "bg-slate-700 text-white",
+  },
+  white: {
+    bg: "bg-gradient-to-br from-white to-gray-200",
+    border: "border-gray-300",
+    hover: "hover:from-gray-100 hover:to-gray-300",
+    text: "text-slate-900",
+    badge: "bg-white text-slate-900 border border-gray-300",
   },
 };
 
@@ -1211,6 +1246,10 @@ const TicketingInterface = ({
           shortCode = generateShortCode();
         }
 
+        const typeInfo = (effectiveTicketTypes || []).find(
+          (tt) => tt.name === t.type
+        );
+
         return {
           ticket_number: shortCode, // Utiliser le code court comme numéro de ticket
           type_name: t.type,
@@ -1219,6 +1258,7 @@ const TicketingInterface = ({
           ticket_code_short: shortCode,
           qr_code: t.qr_code, // Garder le QR code original pour référence
           full_code: t.qr_code || t.number, // Garder le code complet pour traçabilité
+          color: typeInfo?.color || null, // Couleur réelle du billet (source de vérité)
         };
       });
 

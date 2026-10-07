@@ -138,7 +138,7 @@ const USSDPaymentsTab = ({ actorId }) => {
         const { data: tix, error: tixErr } = await srv
           .from("tickets")
           .select(
-            "id,event_id,attendee_name,qr_code,ticket_code_short,ticket_number,status,purchase_price_pi,total_amount_fcfa,purchased_at,transaction_reference"
+            "id,event_id,attendee_name,qr_code,ticket_code_short,ticket_number,status,purchase_price_pi,total_amount_fcfa,purchased_at,transaction_reference,ticket_type_id"
           )
           .in("transaction_reference", ticketOrderIds);
         if (!tixErr && tix && tix.length) {
@@ -153,6 +153,20 @@ const USSDPaymentsTab = ({ actorId }) => {
           (evts || []).forEach((e) => {
             evMap[e.id] = e;
           });
+          // Couleur + nom réels du type de billet (source de vérité du sélecteur)
+          const typeIds = [
+            ...new Set(tix.map((t) => t.ticket_type_id).filter(Boolean)),
+          ];
+          let typeMap = {};
+          if (typeIds.length > 0) {
+            const { data: types } = await srv
+              .from("ticket_types")
+              .select("id,name,color")
+              .in("id", typeIds);
+            (types || []).forEach((ty) => {
+              typeMap[ty.id] = ty;
+            });
+          }
           ticketsMap = {};
           tix.forEach((t) => {
             if (!ticketsMap[t.transaction_reference])
@@ -160,6 +174,7 @@ const USSDPaymentsTab = ({ actorId }) => {
             ticketsMap[t.transaction_reference].push({
               ...t,
               event: evMap[t.event_id] || null,
+              ticket_type: typeMap[t.ticket_type_id] || null,
             });
           });
         }
@@ -293,8 +308,8 @@ const USSDPaymentsTab = ({ actorId }) => {
       ticket_code: t.qr_code || t.ticket_number || "",
       ticket_code_short: t.ticket_code_short || "",
       qr_code: t.qr_code || "",
-      type_name: "Standard",
-      color: "blue",
+      type_name: t.ticket_type?.name || "Standard",
+      color: t.ticket_type?.color || "blue",
       price: t.purchase_price_pi || 0,
       price_fcfa:
         t.total_amount_fcfa || (t.purchase_price_pi || 0) * 10 || p.amount_fcfa || 0,
