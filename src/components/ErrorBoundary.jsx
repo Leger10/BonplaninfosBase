@@ -25,7 +25,8 @@ class ErrorBoundary extends React.Component {
       hasError: false, 
       messageIndex: 0,
       errorId: null,
-      countdown: 10  // Compteur de secondes avant rechargement
+      countdown: 10,  // Compteur de secondes avant rechargement
+      autoStopped: false
     };
     this.interval = null;
     this.countdownInterval = null;
@@ -66,10 +67,18 @@ class ErrorBoundary extends React.Component {
         }, 1000);
       }
       
-      // Rechargement automatique après 10 secondes
+      // Rechargement automatique après 10 secondes (limité : anti-boucle)
       if (!this.reloadTimer) {
         this.reloadTimer = setTimeout(() => {
-          window.location.reload();
+          const KEY = "error_boundary_autoreloads";
+          let n = 0;
+          try { n = Number(sessionStorage.getItem(KEY) || 0) || 0; } catch (e) { n = 0; }
+          if (n < 3) {
+            try { sessionStorage.setItem(KEY, String(n + 1)); } catch (e) {}
+            window.location.reload();
+          } else {
+            this.setState({ autoStopped: true, countdown: 0 });
+          }
         }, 10000);
       }
     }
@@ -86,6 +95,8 @@ class ErrorBoundary extends React.Component {
       clearTimeout(this.reloadTimer);
       this.reloadTimer = null;
     }
+    // Un rechargement manuel relance les tentatives automatiques.
+    try { sessionStorage.removeItem("error_boundary_autoreloads"); } catch (e) {}
     window.location.reload();
   };
 
@@ -172,7 +183,9 @@ class ErrorBoundary extends React.Component {
           <h1 className="error-title">Récupération en cours</h1>
           <p className="error-message">{messages[this.state.messageIndex]}</p>
           <div className="countdown">
-            Rechargement automatique dans {this.state.countdown} secondes
+            {this.state.autoStopped
+              ? "Rechargement automatique suspendu (trop de tentatives)."
+              : `Rechargement automatique dans ${this.state.countdown} secondes`}
           </div>
           <div className="progress-bar">
             <div className="progress-fill"></div>

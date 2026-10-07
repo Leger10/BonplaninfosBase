@@ -34,6 +34,8 @@ export function resolveTarget(table, fkColumn, alias) {
     if (names.has('categories')) return 'categories';
   }
   if (fkColumn === 'license_id') {
+    // partners.license_id reference partner_licenses (catalogue reel) ; "licenses" est l'ancienne table vide.
+    if (table === 'partners' && names.has('partner_licenses')) return 'partner_licenses';
     if (names.has('licenses')) return 'licenses';
     if (names.has('partner_licenses')) return 'partner_licenses';
     if (names.has('admin_licences')) return 'admin_licences';

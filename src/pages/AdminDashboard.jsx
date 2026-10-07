@@ -253,11 +253,11 @@ const LicenseStatus = ({ user }) => {
         <div className="flex items-center gap-3">
           <Clock className="w-6 h-6 flex-shrink-0" />
           <div>
-            <p className="font-bold text-lg">{t("admin_dashboard.license.status_title")}:<span className={`ml-2 px-2 py-1 rounded-md ${daysRemaining > 30 ? "bg-green-500 text-white" : daysRemaining > 7 ? "bg-yellow-500 text-white" : daysRemaining > 0 ? "bg-orange-500 text-white" : "bg-red-500 text-white"}`}>{partner.license.name} - {statusText}</span></p>
+            <p className="font-bold text-lg">{t("admin_dashboard.license.status_title")}:<span className={`ml-2 px-2 py-1 rounded-md ${daysRemaining > 30 ? "bg-green-500 text-white" : daysRemaining > 7 ? "bg-yellow-500 text-white" : daysRemaining > 0 ? "bg-orange-500 text-white" : "bg-red-500 text-white"}`}>{partner.license?.name || "Licence"} - {statusText}</span></p>
             <div className="text-xs mt-2 space-y-1 text-gray-300">
               <p>{t("admin_dashboard.license.activated_on")}: {activationDate.toLocaleDateString("fr-FR")}</p>
                {/* <p>{t("admin_dashboard.license.expires_on")}: {expirationDate.toLocaleDateString("fr-FR")}</p> */}
-              {partner.license.commission_rate && (<p>Taux de commission: <strong>{partner.license.commission_rate}%</strong></p>)}
+              {partner.license?.commission_rate && (<p>Taux de commission: <strong>{partner.license.commission_rate}%</strong></p>)}
             </div>
           </div>
         </div>
