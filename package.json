@@ -110,6 +110,9 @@
     "vite": "^6.4.3",
     "vite-plugin-imagemin": "^0.6.1"
   },
+  "overrides": {
+    "websocket-driver": "^0.7.5"
+  },
   "engines": {
     "node": ">=18"
   }
