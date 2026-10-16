@@ -321,7 +321,7 @@ const NearbyEvents = () => {
 
     // Gérer les événements protégés
     if (event.event_type === 'protected' && !isUnlocked) {
-      const cost = 2;
+      const cost = Number(event.price_pi) || 2;
       const costFcfa = cost * (adminConfig?.coin_to_fcfa_rate || 10);
       
       setConfirmation({

@@ -23,6 +23,7 @@ import {
   Globe,
   MapPin,
   Image as ImageIcon,
+  Lock,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -96,9 +97,11 @@ const CreateSimpleEventPage = () => {
   const [categories, setCategories] = useState([]);
   const [imagePreview, setImagePreview] = useState("");
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [isProtected, setIsProtected] = useState(false);
+  const [protectedPriceCoins, setProtectedPriceCoins] = useState("");
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { userProfile } = useData();
+  const { userProfile, adminConfig } = useData();
 
   useEffect(() => {
     if (userProfile) {
@@ -181,6 +184,10 @@ const CreateSimpleEventPage = () => {
     }
   };
 
+  const coinRate = Number(adminConfig?.coin_to_fcfa_rate) || 10;
+  const protectedPrice = Math.floor(Number(protectedPriceCoins)) || 0;
+  const isProtectedEvent = isProtected && protectedPrice >= 1;
+
   const canSubmit =
     formData.title &&
     formData.event_start_at &&
@@ -188,6 +195,7 @@ const CreateSimpleEventPage = () => {
     formData.city &&
     formData.country &&
     formData.category_id &&
+    (!isProtected || protectedPrice >= 1) &&
     !isProcessingImage;
 
   // Actual submission after contract acceptance
@@ -245,14 +253,14 @@ const CreateSimpleEventPage = () => {
         title: formData.title,
         description: formData.description,
         category_id: formData.category_id,
-        event_type: "standard",
+        event_type: isProtectedEvent ? "protected" : "standard",
         event_start_at: formData.event_start_at || null,
         location: formData.location,
         address: formData.location,
         city: formData.city,
         country: formData.country,
-        price_fcfa: 0,
-        price_pi: 0,
+        price_fcfa: isProtectedEvent ? protectedPrice * coinRate : 0,
+        price_pi: isProtectedEvent ? protectedPrice : 0,
         organizer_id: user.id,
         status: "active",
         is_active: true,
@@ -274,9 +282,11 @@ const CreateSimpleEventPage = () => {
 
       toast({
         title: "Événement publié !",
-        description: formData.is_public_to_all
-          ? "Votre événement est maintenant visible par toute la communauté."
-          : "Votre événement est visible dans votre zone.",
+        description: isProtectedEvent
+          ? "Votre événement protégé est en ligne. Les visiteurs devront payer en pièces ou par Mobile Money pour y accéder."
+          : formData.is_public_to_all
+            ? "Votre événement est maintenant visible par toute la communauté."
+            : "Votre événement est visible dans votre zone.",
       });
       navigate(`/event/${data.id}`);
     } catch (error) {
@@ -526,6 +536,55 @@ const CreateSimpleEventPage = () => {
                           : "Public : Ville uniquement"}
                       </span>
                     </div>
+                  </div>
+
+                  {/* Protection payante */}
+                  <div className="p-6 border-2 border-amber-500/20 bg-amber-500/5 rounded-xl space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor="protected-toggle"
+                          className="text-base font-semibold flex items-center gap-2"
+                        >
+                          <Lock className="w-4 h-4 text-amber-600" />
+                          Événement protégé (accès payant)
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                          {isProtected
+                            ? "L'accès à cet événement nécessitera un paiement en pièces ou par Mobile Money."
+                            : "Activez pour rendre l'accès à cet événement payant."}
+                        </p>
+                      </div>
+                      <Switch
+                        id="protected-toggle"
+                        checked={isProtected}
+                        onCheckedChange={setIsProtected}
+                      />
+                    </div>
+                    {isProtected && (
+                      <div className="space-y-2">
+                        <Label htmlFor="protected-price">
+                          Prix d'accès (en pièces) *
+                        </Label>
+                        <Input
+                          id="protected-price"
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={protectedPriceCoins}
+                          onChange={(e) =>
+                            setProtectedPriceCoins(e.target.value)
+                          }
+                          className="h-12"
+                          placeholder="Ex: 5"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          {protectedPrice >= 1
+                            ? `≈ ${(protectedPrice * coinRate).toLocaleString("fr-FR")} FCFA par accès (1 pièce = ${coinRate} FCFA).`
+                            : "Indiquez un nombre entier de pièces (minimum 1)."}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 

@@ -194,7 +194,7 @@ const HomePage = () => {
       setShowUSSDModal(true);
       return;
     }
-    const cost = 2;
+    const cost = Number(event.price_pi) || 2;
     await CoinService.handleAction({
       userId: user.id,
       requiredCoins: cost,
@@ -281,7 +281,7 @@ const confirmProtectedUSSD = async (proofDataUrl, phoneInput) => {
       isAdmin;
 
     if (event.event_type === "protected" && !isUnlocked) {
-      const cost = 2;
+      const cost = Number(event.price_pi) || 2;
       const costFcfa = cost * (adminConfig?.coin_to_fcfa_rate || 10);
       setConfirmation({
         isOpen: true,
