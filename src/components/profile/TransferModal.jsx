@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
 import { useTranslation } from 'react-i18next';
+import { useData } from '@/contexts/DataContext';
 import {
   Dialog,
   DialogContent,
@@ -38,14 +39,20 @@ const TransferModal = ({
   exchangeRate = 10 // default 1 coin = 10 F CFA
 }) => {
   const { t } = useTranslation();
+  const { appSettings } = useData();
 
   const [showDetails, setShowDetails] = useState(false);
   const [showFeesInfo, setShowFeesInfo] = useState(false);
   
 
-  // ⚠️ NOTE: La traduction indique 10% mais le code utilise 5%
-  // Si vous voulez 10%, changez PLATFORM_FEE_PERCENT = 10
-  const PLATFORM_FEE_PERCENT = 5;
+  // ⚠️ Le pourcentage est celui configuré par l'admin (onglet Configuration).
+  // Avant, il était figé à 5% ici alors que le réglage admin n'était lu nulle
+  // part : le client et le serveur pouvaient diverger.
+  const configuredFeePercent = Number(appSettings?.platform_fee_percentage);
+  const PLATFORM_FEE_PERCENT =
+    Number.isFinite(configuredFeePercent) && configuredFeePercent > 0
+      ? configuredFeePercent
+      : 5;
 
   // 🔥 CALCUL DU TRANSFERT NET
   // 1. Frais de plateforme = totalAmount × 5% (arrondi au supérieur)

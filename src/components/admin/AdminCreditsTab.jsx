@@ -21,10 +21,13 @@ const AdminCreditsTab = () => {
     totalUSD: 0
   });
 
-  // Récupérer les taux de conversion depuis la configuration
-  const coinToFcfaRate = adminConfig?.coin_to_fcfa_rate || 10;
-  const eurRate = adminConfig?.currency_eur_rate || 650;
-  const usdRate = adminConfig?.currency_usd_rate || 550;
+  // Récupérer les taux de conversion depuis la configuration.
+  // Convention : FCFA pour 1 € / 1 $. Les valeurs en base sont des chaînes et
+  // peuvent valoir "0" : sans normalisation "0" || 650 vaut "0" (chaîne
+  // non vide, donc truthy) et les totaux EUR/USD devenaient Infinity.
+  const coinToFcfaRate = Number(adminConfig?.coin_to_fcfa_rate) > 0 ? Number(adminConfig.coin_to_fcfa_rate) : 10;
+  const eurRate = Number(adminConfig?.currency_eur_rate) > 0 ? Number(adminConfig.currency_eur_rate) : 650;
+  const usdRate = Number(adminConfig?.currency_usd_rate) > 0 ? Number(adminConfig.currency_usd_rate) : 550;
 
   // Fonction pour charger les logs de crédits
   const fetchCreditLogs = async () => {

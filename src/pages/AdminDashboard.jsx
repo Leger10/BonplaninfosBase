@@ -280,7 +280,7 @@ const AdminStatusBanner = ({ status }) => {
   const { t } = useTranslation();
   if (status === "active") return null;
   let message, colorClass;
-  switch (status) { case "pending_verification": case "pending": message = t("admin_dashboard.banner.pending"); colorClass = "bg-yellow-500/20 text-yellow-300 border-yellow-500/30"; break; case "suspended": message = t("admin_dashboard.banner.suspended"); colorClass = "bg-orange-500/20 text-orange-300 border-orange-500/30"; break; case "expired": message = t("admin_dashboard.banner.expired"); colorClass = "bg-red-500/20 text-red-300 border-red-500/30"; break; default: return null; }
+  switch (status) { case "pending_verification": case "pending": message = t("admin_dashboard.banner.pending"); colorClass = "bg-yellow-500/20 text-yellow-300 border-yellow-500/30"; break; case "suspended": message = t("admin_dashboard.banner.suspended"); colorClass = "bg-orange-500/20 text-orange-300 border-orange-500/30"; break; case "expired": message = t("admin_dashboard.banner.expired"); colorClass = "bg-red-500/20 text-red-300 border-red-500/30"; break; case "inactive": message = t("admin_dashboard.banner.no_partner"); colorClass = "bg-slate-500/20 text-slate-300 border-slate-500/30"; break; default: return null; }
   return (<div className={`p-4 mb-6 rounded-lg border flex items-center gap-3 ${colorClass}`}><AlertTriangle className="w-6 h-6 flex-shrink-0" /><p className="font-semibold">{message}</p></div>);
 };
 const AdminDashboard = () => {
@@ -485,7 +485,7 @@ const AdminDashboard = () => {
         {isAdmin && displayZoneCountry && (<div className="mt-2"><Badge variant="outline" className="text-sm"><MapPin className="w-3 h-3 mr-1" />Zone: {displayZoneCountry}{displayZoneCity && `, ${displayZoneCity}`}</Badge></div>)}
       </header>
       {isAdmin && isFunctionalityActive && displayZoneCountry && (<AdminStats userProfile={userProfile} partnerZone={partnerZone} />)}
-      {isAdmin && isFunctionalityActive && <LicenseStatus user={userProfile} />}
+      {isAdmin && <LicenseStatus user={userProfile} />}
       {isAdmin && <AdminStatusBanner status={partnerStatus} />}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">

@@ -435,7 +435,8 @@
     "banner": {
       "pending": "Votre compte admin est en attente de vérification. Certaines fonctionnalités peuvent être limitées.",
       "suspended": "Votre compte admin a été suspendu. Veuillez contacter le support.",
-      "expired": "Votre licence a expiré. Veuillez la renouveler pour restaurer l'accès complet."
+      "expired": "Votre licence a expiré. Veuillez la renouveler pour restaurer l'accès complet.",
+      "no_partner": "Aucun contrat partenaire n'est associé à ce compte : les onglets et fonctionnalités admin restent désactivés tant que votre licence n'est pas active. Contactez le support pour activer votre espace."
     },
     "salary_dashboard": {
       "title": "Tableau de Bord de Salaire",
@@ -1358,7 +1359,59 @@
   "choose_file": "Choisir un fichier",
   "no_file_chosen": "Aucun fichier choisi",
 
+  "pricing": {
+    "meta": {
+      "title": "Tarifs | BonPlan Infos",
+      "description": "Découvrez les packs de pièces et les offres business de BonPlan Infos : boost d'événements, promotions et partenariats."
+    },
+    "hero": {
+      "title": "Nos Tarifs",
+      "subtitle": "Des packs de pièces accessibles pour les utilisateurs et des offres dédiées aux professionnels qui veulent gagner en visibilité."
+    },
+    "user_packs": {
+      "title": "Packs de Pièces"
+    },
+    "popular": "Populaire",
+    "coins": "pièces",
+    "buy_pack": "Acheter ce pack",
+    "business": {
+      "title": "Offres Business",
+      "boost": {
+        "title": "Boost d'Événement",
+        "price": "Tarif selon le pack choisi",
+        "description": "Placez votre événement en tête des résultats pour toucher plus de participants.",
+        "feature1": "Mise en avant dans le fil des événements",
+        "feature2": "Durée de visibilité au choix",
+        "feature3": "Suivi des consultations",
+        "actionText": "Booster un événement"
+      },
+      "promo": {
+        "title": "Promotion Commerciale",
+        "price": "Tarif selon le pack choisi",
+        "description": "Promouvez votre commerce auprès de la communauté locale.",
+        "feature1": "Affichage dans les promotions de votre zone",
+        "feature2": "Mise en avant sur la page d'accueil",
+        "feature3": "Ciblage par ville et par catégorie",
+        "actionText": "Créer une promotion"
+      },
+      "partner": {
+        "title": "Partenariat Business",
+        "price": "Licence sur mesure",
+        "description": "Devenez partenaire officiel et gérez votre zone avec un tableau de bord dédié.",
+        "feature1": "Tableau de bord admin dédié",
+        "feature2": "Gestion des événements et promotions de votre zone",
+        "feature3": "Accompagnement par l'équipe BonPlan Infos",
+        "actionText": "Devenir partenaire"
+      }
+    }
+  },
   "common": {
+    "limits": {
+      "withdrawMinFcfa": "Minimum de retrait : {{min}} FCFA (solde actuel : {{current}} FCFA).",
+      "loginRequired": "Connectez-vous pour effectuer cette action.",
+      "markAllReadDisabled": "Toutes vos notifications sont déjà lues.",
+      "selectEventFirst": "Sélectionnez d'abord un événement à booster."
+    },
     "error_title": "Erreur",
     "success_title": "Succès",
 
@@ -1655,6 +1708,7 @@
     "afterFees": "Après déduction des frais",
     "showDetails": "Voir les détails du calcul",
     "hideDetails": "Masquer les détails",
+    "coins": "pièces",
     "details": {
       "gross": "Montant brut",
       "fee": "Frais ({{percent}}%)",
@@ -1703,9 +1757,6 @@
       "cancel": "Annuler",
       "transfer": "Transférer"
     }
-  },
-  "transferModal": {
-    "coins": "pièces"
   },
 
   "pinVerification": {

@@ -433,7 +433,8 @@
     "banner": {
       "pending": "Your admin account is pending verification. Some features may be limited.",
       "suspended": "Your admin account has been suspended. Please contact support.",
-      "expired": "Your license has expired. Please renew it to restore full access."
+      "expired": "Your license has expired. Please renew it to restore full access.",
+      "no_partner": "No partner contract is linked to this account: admin tabs and features stay disabled until your license is active. Contact support to activate your workspace."
     },
     "salary_dashboard": {
       "title": "Salary Dashboard",
@@ -1356,7 +1357,59 @@
   "choose_file": "Choose a file",
   "no_file_chosen": "No file chosen",
 
+  "pricing": {
+    "meta": {
+      "title": "Pricing | BonPlan Infos",
+      "description": "Discover BonPlan Infos coin packs and business offers: event boosts, promotions and partnerships."
+    },
+    "hero": {
+      "title": "Our Pricing",
+      "subtitle": "Affordable coin packs for users and dedicated offers for professionals who want more visibility."
+    },
+    "user_packs": {
+      "title": "Coin Packs"
+    },
+    "popular": "Popular",
+    "coins": "coins",
+    "buy_pack": "Buy this pack",
+    "business": {
+      "title": "Business Offers",
+      "boost": {
+        "title": "Event Boost",
+        "price": "Price depends on the selected pack",
+        "description": "Move your event to the top of the results to reach more attendees.",
+        "feature1": "Highlighted in the events feed",
+        "feature2": "Visibility duration of your choice",
+        "feature3": "View tracking",
+        "actionText": "Boost an event"
+      },
+      "promo": {
+        "title": "Business Promotion",
+        "price": "Price depends on the selected pack",
+        "description": "Promote your business to the local community.",
+        "feature1": "Listed in your area's promotions",
+        "feature2": "Featured on the home page",
+        "feature3": "Targeting by city and category",
+        "actionText": "Create a promotion"
+      },
+      "partner": {
+        "title": "Business Partnership",
+        "price": "Custom license",
+        "description": "Become an official partner and manage your area with a dedicated dashboard.",
+        "feature1": "Dedicated admin dashboard",
+        "feature2": "Manage events and promotions in your area",
+        "feature3": "Support from the BonPlan Infos team",
+        "actionText": "Become a partner"
+      }
+    }
+  },
   "common": {
+    "limits": {
+      "withdrawMinFcfa": "Minimum withdrawal: {{min}} FCFA (current balance: {{current}} FCFA).",
+      "loginRequired": "Sign in to perform this action.",
+      "markAllReadDisabled": "All your notifications are already read.",
+      "selectEventFirst": "Select an event to boost first."
+    },
     "error_title": "Error",
     "confirm": "Confirm",
     "cancel": "Cancel",
@@ -1621,6 +1674,7 @@
     "afterFees": "After fee deduction",
     "showDetails": "Show calculation details",
     "hideDetails": "Hide details",
+    "coins": "coins",
     "details": {
       "gross": "Gross amount",
       "fee": "Fee ({{percent}}%)",

@@ -1,6 +1,14 @@
 import { supabase } from '@/lib/customSupabaseClient';
 import { v4 as uuidv4 } from 'uuid';
 
+// Bornes d'un achat personnalisé de pièces. Elles doivent rester synchrones avec
+// la validation serveur (initiateCustomCoins) ET avec l'affichage de CoinPacksPage :
+// avant, le client acceptait 1 FCFA alors que le serveur refusait sous 500 FCFA.
+export const CUSTOM_PURCHASE_MIN_FCFA = 500;
+export const CUSTOM_PURCHASE_MAX_FCFA = 400000;
+// Base de conversion : 1 pièce = 10 FCFA (sert de dénominateur aux bonus).
+export const COINS_PER_FCFA_DIVISOR = 10;
+
 export class PurchaseService {
 
   static async getCoinPacks() {
@@ -131,10 +139,10 @@ export class PurchaseService {
   }
 
   static async initiateCustomCoins(userId, { amount_fcfa }) {
-    if (amount_fcfa < 500) throw new Error('Le montant minimum pour un achat personnalisé est de 500 FCFA.');
-    if (amount_fcfa > 400000) throw new Error('Le montant maximum pour un achat personnalisé est de 400,000 FCFA.');
+    if (amount_fcfa < CUSTOM_PURCHASE_MIN_FCFA) throw new Error(`Le montant minimum pour un achat personnalisé est de ${CUSTOM_PURCHASE_MIN_FCFA} FCFA.`);
+    if (amount_fcfa > CUSTOM_PURCHASE_MAX_FCFA) throw new Error(`Le montant maximum pour un achat personnalisé est de ${CUSTOM_PURCHASE_MAX_FCFA.toLocaleString('fr-FR')} FCFA.`);
 
-    const baseCoins = Math.floor(amount_fcfa / 10);
+    const baseCoins = Math.floor(amount_fcfa / COINS_PER_FCFA_DIVISOR);
     const bonusCoins = this.calculateCustomBonus(amount_fcfa);
     const totalCoins = baseCoins + bonusCoins;
     const transactionId = `BPI-CUSTOM-${uuidv4().substring(0, 8)}`;

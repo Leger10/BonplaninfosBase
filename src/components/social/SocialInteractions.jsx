@@ -17,9 +17,11 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 const SocialInteractions = ({ event, onInteraction, variant = 'horizontal' }) => {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const [likesCount, setLikesCount] = useState(0);
   const [commentsCount, setCommentsCount] = useState(0);
   const [isLiked, setIsLiked] = useState(false);
@@ -323,11 +325,12 @@ const SocialInteractions = ({ event, onInteraction, variant = 'horizontal' }) =>
   const iconSize = variant === 'vertical' ? "w-6 h-6" : "w-5 h-5";
   const textSize = variant === 'vertical' ? "text-xs font-bold text-white drop-shadow-md mt-1" : "text-sm font-medium";
 
-  const VerticalButton = ({ icon: Icon, label, count, active, onClick, loading }) => (
+  const VerticalButton = ({ icon: Icon, label, count, active, onClick, loading, title }) => (
     <div className="flex flex-col items-center">
       <button 
         onClick={onClick}
         disabled={loading}
+        title={title}
         className={buttonClass(active)}
       >
         {loading ? <Loader2 className={`${iconSize} animate-spin`} /> : <Icon className={`${iconSize} ${active ? 'fill-current' : ''}`} />}
@@ -343,9 +346,9 @@ const SocialInteractions = ({ event, onInteraction, variant = 'horizontal' }) =>
       <div className={containerClass}>
         {/* Like */}
         {variant === 'vertical' ? (
-          <VerticalButton icon={Heart} label="J'aime" count={likesCount} active={isLiked} onClick={handleLike} loading={loadingLike} />
+          <VerticalButton icon={Heart} label="J'aime" count={likesCount} active={isLiked} onClick={handleLike} loading={loadingLike} title={!user ? t('common.limits.loginRequired') : ''} />
         ) : (
-          <Button variant="ghost" size="sm" className={cn("flex gap-2", isLiked ? 'text-red-500' : 'text-muted-foreground')} onClick={handleLike} disabled={loadingLike}>
+          <Button variant="ghost" size="sm" className={cn("flex gap-2", isLiked ? 'text-red-500' : 'text-muted-foreground')} onClick={handleLike} disabled={loadingLike || !user} title={!user ? t('common.limits.loginRequired') : ''}>
             {loadingLike ? <Loader2 className="w-5 h-5 animate-spin" /> : <Heart className={cn("w-5 h-5", isLiked && "fill-current")} />}
             <span>{likesCount || "J'aime"}</span>
           </Button>
@@ -411,11 +414,14 @@ const SocialInteractions = ({ event, onInteraction, variant = 'horizontal' }) =>
                 onChange={(e) => setNewComment(e.target.value)} 
                 className="min-h-[40px] resize-none" 
                 disabled={!user}
+                placeholder={!user ? t('common.limits.loginRequired') : undefined}
+                title={!user ? t('common.limits.loginRequired') : undefined}
               />
               <Button 
                 size="icon" 
                 onClick={handlePostComment} 
                 disabled={loadingComment || !newComment.trim() || !user}
+                title={!user ? t('common.limits.loginRequired') : ''}
               >
                 {loadingComment ? <Loader2 className="animate-spin" /> : <Send />}
               </Button>

@@ -41,6 +41,26 @@ const safeTimeEnd = (label) => {
   }
 };
 
+// Les colonnes numériques d'app_settings sont des Decimal MySQL : elles
+// remontent en chaîne ("10", "0"…). Or "0" est truthy, donc les gardes du type
+// `settings.coin_to_fcfa_rate || 10` retombaient sur "0" : en production
+// (coin_to_fcfa_rate = "0", currency_*_rate = "0") toutes les conversions FCFA
+// valaient 0 et le total EUR/USD devenait Infinity. On normalise donc une seule
+// fois : nombre fini strictement positif, sinon valeur par défaut.
+const toPositiveNumber = (value, fallback) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+};
+
+export const normalizeSettings = (settings = {}) => ({
+  ...settings,
+  coin_to_fcfa_rate: toPositiveNumber(settings.coin_to_fcfa_rate, 10),
+  min_withdrawal_pi: toPositiveNumber(settings.min_withdrawal_pi, 50),
+  currency_eur_rate: toPositiveNumber(settings.currency_eur_rate, 650),
+  currency_usd_rate: toPositiveNumber(settings.currency_usd_rate, 550),
+  platform_fee_percentage: toPositiveNumber(settings.platform_fee_percentage, 5),
+});
+
 export const DataProvider = ({ children }) => {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -177,7 +197,7 @@ export const DataProvider = ({ children }) => {
         support_email: "support@bonplaninfos.net",
         ...data
       };
-      setAppSettings(prev => ({ ...prev, ...defaultSettings }));
+      setAppSettings(prev => normalizeSettings({ ...prev, ...defaultSettings }));
     } else if (!data) {
       // Si pas de données, créer une ligne par défaut
       const { error: insertError } = await supabase
@@ -201,7 +221,7 @@ export const DataProvider = ({ children }) => {
           .maybeSingle();
         
         if (newData) {
-          setAppSettings(prev => ({ ...prev, ...newData }));
+          setAppSettings(prev => normalizeSettings({ ...prev, ...newData }));
         }
       }
     }
@@ -505,6 +525,11 @@ export const DataProvider = ({ children }) => {
     userProfile,
     welcomePopups,
     appSettings,
+    // Alias historique : de nombreux composants lisent la configuration via
+    // `useData().adminConfig`, mais le provider ne l'exposait pas → toutes les
+    // valeurs de configuration (taux, frais, seuils) étaient ignorées et
+    // remplacées par des constantes codées en dur.
+    adminConfig: appSettings,
     loading,
     loadingProfile,
     profileLoaded,

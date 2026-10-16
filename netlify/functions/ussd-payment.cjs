@@ -1281,6 +1281,37 @@ const resolvePayment = async (body, targetStatus) => {
             validated_at: null,
         },
     };
+    // Tombola : vérifier la disponibilité des tickets AVANT de marquer le
+    // paiement comme validé. Le stock est contrôlé à la soumission (plus haut),
+    // mais d'autres acheteurs peuvent l'épuiser avant la validation. Sans ce
+    // contrôle en amont, le paiement restait "completed" sans ticket livré et
+    // l'échec était avalé plus bas (l'acheteur voyait "Paiement validé ✅").
+    if (targetStatus === 'completed' && payment.pack_id === 'raffle_payment') {
+        const preProofs = await findUssdEvidence(payment.id);
+        const preMeta = preProofs[0] || null;
+        const preRaffleId = preMeta && preMeta.raffle_event_id;
+        const preQty = Math.max(1, parseInt((preMeta && preMeta.quantity) || 0, 10) || 0);
+        if (preRaffleId && preQty > 0) {
+            const { data: preRaffle } = await supabase
+                .from('raffle_events')
+                .select('tickets_sold, total_tickets')
+                .eq('id', preRaffleId)
+                .maybeSingle();
+            const sold = Number((preRaffle && preRaffle.tickets_sold) || 0);
+            const total = Number((preRaffle && preRaffle.total_tickets) || 0);
+            if (!preRaffle || sold + preQty > total) {
+                return {
+                    statusCode: 409,
+                    body: {
+                        success: false,
+                        message: `Tickets de tombola insuffisants : ${Math.max(0, total - sold)} disponible(s) pour ${preQty} demandé(s). Validation refusée pour éviter un encaissement sans ticket. Rejetez ce dépôt pour rembourser l'acheteur.`,
+                        current_status: 'pending'
+                    }
+                };
+            }
+        }
+    }
+
     const transition = statusTransitions[targetStatus];
     const { data: movedRows, error: moveErr } = await supabase
         .from('payments')
@@ -1303,6 +1334,7 @@ const resolvePayment = async (body, targetStatus) => {
     }
 
     let deliveryMeta = null;
+    let deliveryFailure = null;
     {
         const proofs = await findUssdEvidence(payment.id);
         deliveryMeta = proofs[0] || null;
@@ -1853,6 +1885,19 @@ const resolvePayment = async (body, targetStatus) => {
                 }
             } catch (e) {
                 console.error('⚠️ Livraison des tickets de tombola USSD échouée:', e.message);
+                deliveryFailure = `Tombola : ${e.message}. Aucun ticket n'a été livré ; rejetez ce dépôt pour rembourser l'acheteur.`;
+                // Filet de sécurité : si le stock s'est épuisé entre le contrôle
+                // d'amont et l'insertion (course rare), on ne laisse pas le
+                // paiement en "completed" sans ticket. On le repasse en
+                // 'cancelled' (les packs tombola n'ont pas crédité de pièces).
+                try {
+                    await supabase
+                        .from('payments')
+                        .update({ status: 'cancelled', rejected_by: actorId || null, rejected_at: now(), processed_at: now() })
+                        .eq('id', payment.id);
+                } catch (revertErr) {
+                    console.error('⚠️ Annulation du paiement tombola non appliquée:', revertErr.message);
+                }
             }
         }
     }
@@ -1899,6 +1944,17 @@ const resolvePayment = async (body, targetStatus) => {
                 console.error('⚠️ Ouverture de l\'accès protégé USSD échouée:', e.message);
             }
         }
+    }
+
+    if (deliveryFailure) {
+        return {
+            statusCode: 409,
+            body: {
+                success: false,
+                status: 'failed_delivery',
+                message: deliveryFailure
+            }
+        };
     }
 
     return {

@@ -749,6 +749,13 @@ const BoostPage = () => {
               className="px-12 py-7 text-lg rounded-full shadow-xl hover:shadow-2xl transition-shadow"
               variant="premium"
               size="lg"
+              title={
+                !selectedContent
+                  ? "Sélectionnez d'abord un contenu à booster."
+                  : !selectedPack
+                    ? "Sélectionnez d'abord un pack de promotion."
+                    : undefined
+              }
             >
               {loading ? (
                 <>

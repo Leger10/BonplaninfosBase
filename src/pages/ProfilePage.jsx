@@ -39,7 +39,7 @@ import MyTicketsTab from "@/components/profile/MyTicketsTab";
 const ProfilePage = () => {
   const { t } = useTranslation();
   const { user, loading: authLoading, session } = useAuth();
-  const { userProfile, getEvents, forceRefreshUserProfile } = useData();
+  const { userProfile, getEvents, forceRefreshUserProfile, appSettings } = useData();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
@@ -290,7 +290,8 @@ const ProfilePage = () => {
     );
   }
 
-  const pendingFee = Math.ceil(totalPending * 0.05);
+  const pendingFeePercent = Number(appSettings?.platform_fee_percentage) > 0 ? Number(appSettings.platform_fee_percentage) : 5;
+  const pendingFee = Math.ceil(totalPending * (pendingFeePercent / 100));
   const pendingNet = totalPending - pendingFee;
   const balanceCfa = (userProfile?.coin_balance || 0) * COIN_TO_FCFA_RATE;
 

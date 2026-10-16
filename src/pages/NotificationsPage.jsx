@@ -161,6 +161,7 @@ const NotificationsPage = () => {
               variant="outline"
               onClick={markAllAsRead}
               disabled={unreadCount === 0}
+              title={unreadCount === 0 ? t("common.limits.markAllReadDisabled") : undefined}
             >
               {t("notifications_page.mark_all_read")}
             </Button>

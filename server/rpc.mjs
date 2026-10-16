@@ -61,18 +61,27 @@ function parseValidDates(raw) {
   return [...new Set(out)];
 }
 
-const PLATFORM_FEE_RATE = 0.05;
+// Taux de frais de plateforme par défaut (5%). Le taux réel est lu dans
+// app_settings.platform_fee_percentage (onglet Config) : avant, ce réglage
+// n'était lu par aucun calcul et le taux restait figé à 5% quoi qu'il arrive.
+const DEFAULT_PLATFORM_FEE_RATE = 0.05;
 
 async function getAppSettings() {
   try {
     const row = await db().app_settings.findFirst();
+    const feePercent = Number(row?.platform_fee_percentage);
     return {
       rate: Number(row?.coin_to_fcfa_rate) || 10,
       minWithdrawalPi: Number(row?.min_withdrawal_pi) || 50,
+      platformFeeRate: Number.isFinite(feePercent) && feePercent > 0 ? feePercent / 100 : DEFAULT_PLATFORM_FEE_RATE,
     };
   } catch (e) {
-    return { rate: 10, minWithdrawalPi: 50 };
+    return { rate: 10, minWithdrawalPi: 50, platformFeeRate: DEFAULT_PLATFORM_FEE_RATE };
   }
+}
+
+async function getPlatformFeeRate() {
+  return (await getAppSettings()).platformFeeRate;
 }
 
 async function getMinWithdrawalPi() {
@@ -99,7 +108,8 @@ async function creditOrganizerEarnings(params = {}) {
   if (!coins) return { success: false, message: 'Gain nul : rien a crediter.' };
   const dbc = p_dbc || db();
   const now = p_created_at ? new Date(p_created_at) : new Date();
-  const platformCommission = p_apply_platform_fee ? Math.floor(coins * PLATFORM_FEE_RATE) : 0;
+  const platformFeeRate = await getPlatformFeeRate();
+  const platformCommission = p_apply_platform_fee ? Math.floor(coins * platformFeeRate) : 0;
   const row = await dbc.organizer_earnings.create({
     data: {
       id: uuidv4(),
@@ -113,7 +123,7 @@ async function creditOrganizerEarnings(params = {}) {
       platform_commission: platformCommission,
       platform_fee: platformCommission * 10,
       net_amount: (coins - platformCommission) * 10,
-      fee_percent: p_apply_platform_fee ? PLATFORM_FEE_RATE * 100 : 0,
+      fee_percent: p_apply_platform_fee ? platformFeeRate * 100 : 0,
       ticket_count: p_ticket_count || null,
       earning_type: p_earning_type || p_transaction_type,
       event_type: p_event_type,
@@ -1895,9 +1905,10 @@ const HANDLERS = {
       take: 200,
     });
     const pendingRows = rows.filter((row) => row.status === 'pending');
+    const platformFeeRate = await getPlatformFeeRate();
     const pendingGross = pendingRows.reduce((sum, row) => sum + Number(row.earnings_coins || 0), 0);
     const pendingFee = pendingRows.reduce(
-      (sum, row) => sum + Number(row.platform_commission ?? Math.floor(Number(row.earnings_coins || 0) * PLATFORM_FEE_RATE)),
+      (sum, row) => sum + Number(row.platform_commission ?? Math.floor(Number(row.earnings_coins || 0) * platformFeeRate)),
       0,
     );
     const lifetimeGross = rows.reduce((sum, row) => sum + Number(row.earnings_coins || 0), 0);
@@ -1968,8 +1979,9 @@ const HANDLERS = {
       return ok({ success: true, message: 'Aucun gain en attente à transférer.', total_gross: 0, platform_fee: 0, total_net: 0, transferred_count: 0 });
     }
     const gross = pendingRows.reduce((sum, row) => sum + Number(row.earnings_coins || 0), 0);
+    const platformFeeRate = await getPlatformFeeRate();
     const platformFee = pendingRows.reduce(
-      (sum, row) => sum + Number(row.platform_commission ?? Math.floor(Number(row.earnings_coins || 0) * PLATFORM_FEE_RATE)),
+      (sum, row) => sum + Number(row.platform_commission ?? Math.floor(Number(row.earnings_coins || 0) * platformFeeRate)),
       0
     );
     const net = gross - platformFee;
@@ -2443,7 +2455,7 @@ const HANDLERS = {
     if (amountPi <= 0) return ok({ success: false, message: 'Montant de retrait invalide.' });
 
     const dbc = db();
-    const { rate, minWithdrawalPi } = await getAppSettings();
+    const { rate, minWithdrawalPi, platformFeeRate } = await getAppSettings();
     const profile = await dbc.profiles.findUnique({
       where: { id: organizerId },
       select: { available_earnings: true },
@@ -2458,7 +2470,7 @@ const HANDLERS = {
     }
 
     const amountFcfa = amountPi * rate;
-    const feeFcfa = Number(details.fee_amount_fcfa) || Math.ceil(amountFcfa * PLATFORM_FEE_RATE);
+    const feeFcfa = Number(details.fee_amount_fcfa) || Math.ceil(amountFcfa * platformFeeRate);
     const netFcfa = Number(details.net_amount_fcfa) || Math.max(0, amountFcfa - feeFcfa);
     const now = new Date();
 
@@ -2475,7 +2487,7 @@ const HANDLERS = {
         amount_fcfa: amountFcfa,
         fees: feeFcfa,
         net_amount: netFcfa,
-        payment_details: JSON.stringify({ ...details, fee_percent: details.fee_percent ?? PLATFORM_FEE_RATE * 100 }),
+        payment_details: JSON.stringify({ ...details, fee_percent: details.fee_percent ?? platformFeeRate * 100 }),
         status: 'pending',
         validation_status: 'pending',
         requested_at: now,

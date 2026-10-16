@@ -8,10 +8,12 @@ import { Loader2, History, RefreshCw, AlertCircle, TrendingDown, CalendarClock, 
 import { Badge } from '@/components/ui/badge';
 import WithdrawalModal from '@/components/common/WithdrawalModal';
 import { formatCurrency } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 const WithdrawalTab = () => {
   const { user } = useAuth();
   const { appSettings } = useData();
+  const { t } = useTranslation();
   
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [withdrawalHistory, setWithdrawalHistory] = useState([]);
@@ -124,6 +126,7 @@ const WithdrawalTab = () => {
                     size="lg" 
                     className="bg-white text-emerald-700 hover:bg-emerald-50 font-bold shadow-lg text-lg px-8 h-14 w-full md:w-auto"
                     disabled={balances.total < minWithdrawal}
+                    title={balances.total < minWithdrawal ? t('common.limits.withdrawMinFcfa', { min: (minWithdrawal * rate).toLocaleString('fr-FR'), current: (balances.total * rate).toLocaleString('fr-FR') }) : ''}
                   >
                     <ArrowUpRight className="mr-2 h-5 w-5" /> 
                     Demander un retrait

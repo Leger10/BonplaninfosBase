@@ -24,6 +24,12 @@ import {
 } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import MultilingualSeoHead from "@/components/MultilingualSeoHead";
+import {
+  PurchaseService,
+  CUSTOM_PURCHASE_MIN_FCFA,
+  CUSTOM_PURCHASE_MAX_FCFA,
+  COINS_PER_FCFA_DIVISOR,
+} from "@/services/purchaseService";
 
 // Configuration des packs avec liens MoneyFusion spécifiques
 const CREDIT_PACKS = [
@@ -297,19 +303,40 @@ const CreditPacksPage = () => {
       return;
     }
 
-    let estimatedCoins = Math.floor(amount / 10);
-    let bonus = 0;
-
-    // Bonus selon les tranches demandées
-    if (amount >= 10000 && amount < 50000) {
-      bonus = Math.floor(estimatedCoins * 0.05); // 5% de bonus
-    } else if (amount >= 50000) {
-      bonus = Math.floor(estimatedCoins * 0.1); // 10% de bonus
+    if (amount < CUSTOM_PURCHASE_MIN_FCFA) {
+      toast({
+        title: "Montant trop faible",
+        description: `Le montant minimum pour un achat personnalisé est de ${CUSTOM_PURCHASE_MIN_FCFA.toLocaleString("fr-FR")} FCFA.`,
+        variant: "destructive",
+      });
+      return;
     }
-    // Pas de bonus en dessous de 10 000 FCFA
+
+    if (amount > CUSTOM_PURCHASE_MAX_FCFA) {
+      toast({
+        title: "Montant trop élevé",
+        description: `Le montant maximum pour un achat personnalisé est de ${CUSTOM_PURCHASE_MAX_FCFA.toLocaleString("fr-FR")} FCFA.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    let estimatedCoins = Math.floor(amount / COINS_PER_FCFA_DIVISOR);
+
+    // Grille de bonus unique : celle de PurchaseService.calculateCustomBonus.
+    // Avant, cette page appliquait 5% / 10% alors que le serveur appliquait des
+    // tranches 1→8% : le même montant donnait deux nombres de pièces différents.
+    const bonus = PurchaseService.calculateCustomBonus(amount);
 
     initPayment(amount, estimatedCoins + bonus, "custom", CUSTOM_PAYMENT_LINK);
   };
+
+  // Aperçu de l'achat personnalisé : mêmes bornes et même grille que le serveur.
+  const customAmountNumber = Math.max(0, Math.floor(Number(customAmount) || 0));
+  const customBaseCoins = Math.floor(customAmountNumber / COINS_PER_FCFA_DIVISOR);
+  const customBonusCoins = PurchaseService.calculateCustomBonus(customAmountNumber);
+  const customTotalCoins = customBaseCoins + customBonusCoins;
+  const customBonusPercent = customBaseCoins > 0 ? Math.round((customBonusCoins / customBaseCoins) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-black py-12 px-4 text-gray-100">
@@ -623,6 +650,8 @@ const CreditPacksPage = () => {
                       type="number"
                       placeholder="Montant en FCFA"
                       value={customAmount}
+                      min={CUSTOM_PURCHASE_MIN_FCFA}
+                      max={CUSTOM_PURCHASE_MAX_FCFA}
                       onChange={(e) => setCustomAmount(e.target.value)}
                       className="pr-16 bg-gray-800 border-gray-700 text-white placeholder-gray-500 focus:border-yellow-500 focus:ring-yellow-500/20 h-12 text-base"
                     />
@@ -641,21 +670,30 @@ const CreditPacksPage = () => {
                   </Button>
                 </div>
 
-                {Number(customAmount) > 0 && (
+                {customAmountNumber > 0 && (
                   <div className="mt-4 p-3 bg-gray-800/50 rounded-lg border border-gray-700">
                     <p className="text-sm font-medium text-gray-300">
                       Vous recevrez environ{" "}
                       <span className="font-bold text-yellow-300">
-                        {Math.floor(Number(customAmount) / 10).toLocaleString()}{" "}
+                        {customTotalCoins.toLocaleString()}{" "}
                         Crédits
                       </span>
-                      {Number(customAmount) >= 10000 && (
+                      {customBonusCoins > 0 && (
                         <span className="text-green-400 ml-2">
-                          + {Number(customAmount) >= 50000 ? "10%" : "5%"} de
-                          bonus
+                          + {customBonusPercent}% de bonus (+
+                          {customBonusCoins.toLocaleString()} pièces)
                         </span>
                       )}
                     </p>
+                    {customAmountNumber > 0 &&
+                      (customAmountNumber < CUSTOM_PURCHASE_MIN_FCFA ||
+                        customAmountNumber > CUSTOM_PURCHASE_MAX_FCFA) && (
+                        <p className="text-xs text-amber-400 mt-2">
+                          Achat personnalisé possible entre{" "}
+                          {CUSTOM_PURCHASE_MIN_FCFA.toLocaleString("fr-FR")} et{" "}
+                          {CUSTOM_PURCHASE_MAX_FCFA.toLocaleString("fr-FR")} FCFA.
+                        </p>
+                      )}
                   </div>
                 )}
               </div>

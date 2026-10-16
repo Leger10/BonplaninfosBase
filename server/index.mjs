@@ -313,7 +313,7 @@ if (PURGE_ENABLED) {
       const dryRun = process.env.PURGE_FINISHED_DRY_RUN === 'true';
       const r = await purgeOldEvents({ dryRun });
       const detail = r.candidateCount
-        ? `${r.purgedEvents} purgés / ${r.candidateCount} détectés, tables absentes: ${r.missingTables.length}`
+        ? `${r.purgedEvents} purgés / ${r.candidateCount} détectés, ${r.warnedEvents} organisateur(s) averti(s), tables absentes: ${r.missingTables.length}`
         : '0 événement passé détecté';
       console.log(`[purge] ${detail}${dryRun ? ' (dry run)' : ''}`);
     } catch (e) {

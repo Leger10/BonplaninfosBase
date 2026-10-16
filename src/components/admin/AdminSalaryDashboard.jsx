@@ -302,11 +302,23 @@ const AdminSalaryDashboard = () => {
                 className="bg-emerald-600 hover:bg-emerald-700 text-white"
                 disabled={!canWithdraw || estimatedSalary < 1000}
                 onClick={() => setIsWithdrawalModalOpen(true)}
+                title={
+                  !canWithdraw
+                    ? "Les retraits sont fermés aujourd'hui."
+                    : estimatedSalary < 1000
+                      ? `Minimum de retrait : 1 000 FCFA (salaire estimé : ${estimatedSalary.toLocaleString('fr-FR')} FCFA).`
+                      : ""
+                }
               >
                 <TrendingUp className="w-5 h-5 mr-2" />
                 {canWithdraw ? "Retrait" : "Fermé"}
               </Button>
             </div>
+            {canWithdraw && estimatedSalary < 1000 && (
+              <p className="text-xs text-amber-600 mt-3 text-right">
+                Minimum de retrait : 1 000 FCFA — salaire estimé actuel : {estimatedSalary.toLocaleString('fr-FR')} FCFA.
+              </p>
+            )}
           </div>
 
           <p className="text-xs text-gray-500 mt-4 text-center">

@@ -261,6 +261,13 @@ const CreatorDashboardTab = () => {
                 onClick={handleWithdrawClick} 
                 className="flex-1 bg-white text-indigo-800 hover:bg-indigo-50 font-bold shadow-sm"
                 disabled={!isWalletUnlocked || (isWalletUnlocked && availableBalanceFcfa < 500) || isLocked}
+                title={
+                  !isWalletUnlocked
+                    ? t('creatorDashboard.cards.availableBalance.disabledTooltip')
+                    : availableBalanceFcfa < 500
+                      ? t('common.limits.withdrawMinFcfa', { min: 500, current: availableBalanceFcfa.toLocaleString('fr-FR') })
+                      : ''
+                }
               >
                 {!isWalletUnlocked && <Lock className="w-3 h-3 mr-2 text-indigo-400" />}
                 <ArrowUpRight className="mr-2 h-4 w-4" /> {t('creatorDashboard.cards.availableBalance.withdrawButton')}

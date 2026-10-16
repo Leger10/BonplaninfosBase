@@ -91,9 +91,12 @@ const ConfigTab = () => {
       ...updateData,
       coin_to_fcfa_rate: Number(updateData.coin_to_fcfa_rate) || 10,
       min_withdrawal_pi: Number(updateData.min_withdrawal_pi) || 50,
-      platform_fee_percentage: Number(updateData.platform_fee_percentage) || 5,
-      currency_eur_rate: Number(updateData.currency_eur_rate) || 0.0015,
-      currency_usd_rate: Number(updateData.currency_usd_rate) || 0.0016,
+      platform_fee_percentage: Number(updateData.platform_fee_percentage) > 0 ? Number(updateData.platform_fee_percentage) : 5,
+      // Convention unique : FCFA pour 1 € / 1 $ (lue telle quelle par
+      // AdminCreditsTab). Avant, ce formulaire stockait l'inverse (0.0015 EUR
+      // pour 1 FCFA), ce qui divisait les conversions par ~430 000.
+      currency_eur_rate: Number(updateData.currency_eur_rate) > 0 ? Number(updateData.currency_eur_rate) : 650,
+      currency_usd_rate: Number(updateData.currency_usd_rate) > 0 ? Number(updateData.currency_usd_rate) : 550,
       logo_url: logoUrl,
     };
 
@@ -205,12 +208,12 @@ const ConfigTab = () => {
               <Input id="minWithdrawal" type="number" value={configForm?.min_withdrawal_pi || 50} onChange={(e) => handleInputChange('min_withdrawal_pi', e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="eurRate">Taux EUR (pour 1 FCFA)</Label>
-              <Input id="eurRate" type="number" step="0.0001" value={configForm?.currency_eur_rate || 0.0015} onChange={(e) => handleInputChange('currency_eur_rate', e.target.value)} />
+              <Label htmlFor="eurRate">Taux EUR (FCFA pour 1 €)</Label>
+              <Input id="eurRate" type="number" min="1" step="1" value={configForm?.currency_eur_rate || 650} onChange={(e) => handleInputChange('currency_eur_rate', e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="usdRate">Taux USD (pour 1 FCFA)</Label>
-              <Input id="usdRate" type="number" step="0.0001" value={configForm?.currency_usd_rate || 0.0016} onChange={(e) => handleInputChange('currency_usd_rate', e.target.value)} />
+              <Label htmlFor="usdRate">Taux USD (FCFA pour 1 $)</Label>
+              <Input id="usdRate" type="number" min="1" step="1" value={configForm?.currency_usd_rate || 550} onChange={(e) => handleInputChange('currency_usd_rate', e.target.value)} />
             </div>
           </div>
 
