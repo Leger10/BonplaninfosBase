@@ -17,6 +17,7 @@ import { rpcRouter } from './rpc.mjs';
 import { requireActorForWrites, requireAdmin } from './session.mjs';
 import { checkWritePolicy, checkReadPolicy } from './queryPolicy.mjs';
 import { purgeOldEvents } from './purgeOldEvents.mjs';
+import { pushRouter, cronRouter } from './pushRoutes.mjs';
 
 const app = express();
 app.set('json spaces', 2);
@@ -54,6 +55,46 @@ app.use((req, res, next) => {
 
 const PORT = process.env.PORT || 8888;
 
+function extractQueryId(query) {
+  const filters = Array.isArray(query?.filters) ? query.filters : [];
+  const match = filters.find((f) => String(f?.column) === 'id' && (!f?.op || f.op === 'eq'));
+  if (match && match.value !== undefined && match.value !== null) return String(match.value);
+  if (query?.body && !Array.isArray(query.body) && query.body.id) return String(query.body.id);
+  return null;
+}
+
+// Hooks push apres une ecriture reussie. Jamais bloquants : une panne de
+// notification ne doit pas faire echouer l'operation metier.
+function runPushHooks({ tableName, method, query, result, prevEvent, eventId }) {
+  const task = async () => {
+    const scheduler = await import('./pushScheduler.mjs');
+    if (tableName === 'events') {
+      let id = eventId;
+      if (!id) {
+        const data = result?.data;
+        if (Array.isArray(data)) id = data[0]?.id;
+        else if (data && typeof data === 'object') id = data.id;
+      }
+      if (!id && query?.body && !Array.isArray(query.body)) id = query.body.id;
+      if (method === 'delete') {
+        if (id) await scheduler.handleEventDeleted(String(id));
+        return;
+      }
+      if (id) await scheduler.handleEventUpserted(String(id), prevEvent);
+      return;
+    }
+    if (tableName === 'event_participations' && method === 'insert') {
+      const rows = Array.isArray(query?.body) ? query.body : [query?.body].filter(Boolean);
+      for (const row of rows) {
+        if (row?.event_id && row?.user_id) {
+          await scheduler.handleParticipantAdded(row.event_id, row.user_id);
+        }
+      }
+    }
+  };
+  task().catch((e) => console.error('[push] hook', e?.message?.split('\n')[0]));
+}
+
 // API
 // Administration des comptes : les gardes sont posés ici, pas dans le routeur,
 // pour ne pas créer de cycle d'import entre auth.mjs et session.mjs.
@@ -62,6 +103,8 @@ app.use('/api/auth/admin/create-user', requireAdmin({ superOnly: true }));
 app.use('/api/auth', authRouter);
 app.use('/api/storage', storageRouter);
 app.use('/api/rpc', rpcRouter);
+app.use('/api/push', pushRouter);
+app.use('/api/cron', cronRouter);
 // Purge automatique des événements passés de plus d'un mois (super admin).
 app.post('/api/admin/purge-old-events', requireAdmin({ superOnly: true }), async (req, res) => {
   try {
@@ -100,12 +143,28 @@ app.post('/api/query', requireActorForWrites, async (req, res) => {
       }
       query = verdict.query;
     }
+    let prevEvent = null;
+    let eventId = null;
+    const tableName = String(query.table || '');
+    if (tableName === 'events' && (method === 'update' || method === 'delete')) {
+      eventId = extractQueryId(query);
+      if (eventId) {
+        try {
+          const { getDb } = await import('./db.mjs');
+          const rows = await getDb().$queryRawUnsafe('SELECT * FROM events WHERE id = ? LIMIT 1', eventId);
+          prevEvent = rows?.[0] || null;
+        } catch (e) {
+          console.error('[push] lecture avant evenement', e?.message?.split('\n')[0]);
+        }
+      }
+    }
     const result = await runQuery(query);
     if (result.error) {
       console.log(`[query] ${method} ${q.table} -> ${result.status} ${result.error.code || ''} ${JSON.stringify(result.error.message)?.slice(0, 160)}`);
       return res.status(result.status || 400).json(result);
     }
     res.json(result);
+    runPushHooks({ tableName, method, query, result, prevEvent, eventId });
   } catch (err) {
     console.error('[api/query]', err);
     res.status(500).json({ data: null, error: { message: err?.message?.split('\n')[0], code: '500', details: null, hint: null } });
@@ -304,6 +363,15 @@ app.listen(PORT, () => {
   console.log(`BonPlan Infos server local -> http://localhost:${PORT}`);
   console.log(`  Media : ${MEDIA_ROOT}`);
 });
+
+// Worker des notifications push (rappels + annonces + confirmations).
+// Desactivable avec PUSH_WORKER_ENABLED=false (le cron /api/cron/push prend
+// alors le relais). N'empeche jamais le demarrage du serveur.
+if (process.env.PUSH_WORKER_ENABLED !== 'false') {
+  import('./pushScheduler.mjs')
+    .then((m) => m.startPushWorker())
+    .catch((e) => console.error('[push] demarrage worker', e?.message?.split('\n')[0]));
+}
 
 const PURGE_ENABLED = process.env.PURGE_FINISHED_ENABLED !== 'false';
 const PURGE_INTERVAL_H = Math.max(1, parseInt(process.env.PURGE_FINISHED_INTERVAL_HOURS || '24', 10));

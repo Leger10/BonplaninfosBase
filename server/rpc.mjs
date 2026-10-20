@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import { getDb } from './db.mjs';
 import { requireActorUnless, ADMIN_ROLES } from './session.mjs';
 import { checkPolicy } from './rpcPolicy.mjs';
+import { afterRpc } from './pushScheduler.mjs';
 
 const r = Router();
 
@@ -3098,6 +3099,10 @@ r.post('/', requireActorUnless(PUBLIC_RPCS), async (req, res) => {
     if (!decision.ok) return res.status(decision.status).json(decision.body);
     if (HANDLERS[name]) {
       const result = await HANDLERS[name](decision.args, req.actor);
+      // Confirmation push (billet, stand, vote...) sans bloquer la reponse.
+      afterRpc(name, decision.args, req.actor, result).catch((e) =>
+        console.error('[push] afterRpc', e?.message?.split('\n')[0]),
+      );
       return res.json(result);
     }
     if (NOT_IMPLEMENTED[name]) {

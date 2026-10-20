@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { useToast } from '@/components/ui/use-toast';
-import { 
-  isPushSupported, 
+import {
+  isPushSupported,
+  isFirebaseConfigured,
   askNotificationPermission,
-  subscribeToPushNotifications, 
-  syncSubscription, 
-  savePushTokenToSupabase 
+  subscribeToPushNotifications,
+  syncSubscription,
+  onForegroundMessage,
+  getPushStatus,
 } from '@/utils/pushNotifications';
 import { Button } from '@/components/ui/button';
 import { BellRing, X, Loader2 } from 'lucide-react';
@@ -17,76 +19,102 @@ const PushNotificationManager = () => {
   const { toast } = useToast();
   const [showPrompt, setShowPrompt] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  
-  // 'default', 'granted', 'denied'
   const [permissionState, setPermissionState] = useState('default');
+  const [activeDevices, setActiveDevices] = useState(0);
 
-  // Check current status on mount
   useEffect(() => {
     if (!isPushSupported()) return;
-    
-    // Check permission status directly from Notification API
     setPermissionState(Notification.permission);
 
-    // If permission is already granted, ensure we are synced
-    if (Notification.permission === 'granted' && user) {
-        syncSubscription(user).catch(err => console.error("Sync failed silently:", err));
-    } 
-    // If permission is default and user is logged in, show prompt after a delay
-    else if (Notification.permission === 'default' && user) {
-        // Check if user dismissed it previously in this session
-        const isDismissed = sessionStorage.getItem('push_prompt_dismissed') === 'true';
-        if (!isDismissed) {
-            const timer = setTimeout(() => setShowPrompt(true), 3000);
-            return () => clearTimeout(timer);
-        }
+    if (!user) {
+      setShowPrompt(false);
+      return undefined;
     }
+
+    let cancelled = false;
+    const sync = async () => {
+      if (Notification.permission === 'granted') {
+        await syncSubscription().catch(() => null);
+      }
+      const status = await getPushStatus();
+      if (!cancelled) setActiveDevices(Number(status?.active) || 0);
+    };
+    sync();
+
+    if (Notification.permission === 'default') {
+      const dismissed = sessionStorage.getItem('push_prompt_dismissed') === 'true';
+      if (!dismissed) {
+        const timer = setTimeout(() => setShowPrompt(true), 3000);
+        return () => {
+          cancelled = true;
+          clearTimeout(timer);
+        };
+      }
+    }
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
+  // Affiche un toast si une notification arrive application ouverte.
+  useEffect(() => {
+    if (!user || !isPushSupported()) return undefined;
+    let cancelled = false;
+    let unsubscribe = () => {};
+    onForegroundMessage(({ title, body }) => {
+      toast({ title, description: body });
+    })
+      .then((fn) => {
+        if (typeof fn === 'function') {
+          if (cancelled) fn();
+          else unsubscribe = fn;
+        }
+      })
+      .catch(() => null);
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [user, toast]);
+
   const handleEnableNotifications = async () => {
+    if (!isFirebaseConfigured()) {
+      toast({
+        title: 'Configuration manquante',
+        description: 'Les notifications ne sont pas encore configurées.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsLoading(true);
     try {
-      const isGranted = await askNotificationPermission();
-      setPermissionState(isGranted ? 'granted' : 'denied');
-
-      if (isGranted) {
-        // Subscribe the user via Service Worker
-        const subscription = await subscribeToPushNotifications();
-        
-        if (subscription && user) {
-            // Save to database
-            const { error } = await savePushTokenToSupabase(user, subscription);
-            
-            if (error) {
-                console.error("Database save error:", error);
-                toast({
-                    title: "Erreur technique",
-                    description: "Notifications activées sur l'appareil, mais échec de l'enregistrement serveur.",
-                    variant: "destructive"
-                });
-            } else {
-                toast({
-                    title: "Notifications activées !",
-                    description: "Vous serez informé des nouveaux événements.",
-                    className: "bg-green-600 text-white"
-                });
-            }
-        }
-        setShowPrompt(false);
-      } else {
+      const granted = await askNotificationPermission();
+      setPermissionState(granted ? 'granted' : 'denied');
+      if (!granted) {
         toast({
-            title: "Notifications bloquées",
-            description: "Vous devez autoriser les notifications dans les paramètres de votre navigateur.",
-            variant: "destructive"
+          title: 'Notifications bloquées',
+          description: 'Autorisez les notifications dans les paramètres de votre navigateur.',
+          variant: 'destructive',
         });
         setShowPrompt(false);
+        return;
       }
+      await subscribeToPushNotifications();
+      const status = await getPushStatus();
+      setActiveDevices(Number(status?.active) || 0);
+      sessionStorage.removeItem('push_prompt_dismissed');
+      setShowPrompt(false);
+      toast({
+        title: 'Notifications activées !',
+        description: 'Vous serez informé des événements et rappels de la plateforme.',
+        className: 'bg-green-600 text-white',
+      });
     } catch (error) {
       console.error('Error enabling notifications:', error);
       toast({
-        title: "Erreur",
-        description: "Impossible d'activer les notifications : " + (error.message || "Erreur inconnue"),
-        variant: "destructive"
+        title: 'Activation impossible',
+        description: error?.message || 'Erreur inconnue',
+        variant: 'destructive',
       });
     } finally {
       setIsLoading(false);
@@ -98,8 +126,9 @@ const PushNotificationManager = () => {
     sessionStorage.setItem('push_prompt_dismissed', 'true');
   };
 
-  // Don't render if not supported
   if (!isPushSupported()) return null;
+  if (permissionState === 'denied') return null;
+  if (permissionState === 'granted' && activeDevices > 0) return null;
 
   return (
     <AnimatePresence>
@@ -117,14 +146,15 @@ const PushNotificationManager = () => {
             <div className="flex-1">
               <h4 className="font-semibold text-sm mb-1">Ne ratez aucun événement !</h4>
               <p className="text-xs text-muted-foreground mb-3">
-                Activez les notifications pour recevoir les alertes des nouveaux événements et promos en temps réel.
+                Activez les notifications pour recevoir les annonces de publication, les rappels
+                (24 h et 1 h avant) ainsi que vos confirmations de billets, votes et stands.
               </p>
               <div className="flex gap-2">
-                <Button 
-                    size="sm" 
-                    onClick={handleEnableNotifications} 
-                    disabled={isLoading}
-                    className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                <Button
+                  size="sm"
+                  onClick={handleEnableNotifications}
+                  disabled={isLoading}
+                  className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
                 >
                   {isLoading ? (
                     <>
@@ -135,20 +165,15 @@ const PushNotificationManager = () => {
                     'Activer'
                   )}
                 </Button>
-                <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    onClick={handleDismiss}
-                    className="h-8 text-xs"
-                >
+                <Button size="sm" variant="ghost" onClick={handleDismiss} className="h-8 text-xs">
                   Plus tard
                 </Button>
               </div>
             </div>
-            <button 
-                onClick={handleDismiss} 
-                className="text-muted-foreground hover:text-foreground p-1"
-                aria-label="Fermer"
+            <button
+              onClick={handleDismiss}
+              className="text-muted-foreground hover:text-foreground p-1"
+              aria-label="Fermer"
             >
               <X className="w-4 h-4" />
             </button>

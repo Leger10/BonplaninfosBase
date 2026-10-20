@@ -8,6 +8,12 @@ secrets.txt
 *.key
 *.pem
 
+# Comptes de service Firebase (cle privee : ne jamais committer)
+firebase-service-account*.json
+firebase-adminsdk*.json
+*service-account*.json
+serviceAccountKey*.json
+
 # Logs pm2 (production)
 logs/
 *.log
