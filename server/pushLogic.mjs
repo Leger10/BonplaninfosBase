@@ -8,10 +8,12 @@ export const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 export const DEFAULT_TIMEZONE_OFFSET_MINUTES = 0;
 export const MAX_ATTEMPTS = 5;
 
-// Creneaux de rappel : 24 h et 1 h avant le debut de l'evenement.
+// Creneaux de rappel : la veille (J-1) et le jour meme a 6 h heure locale.
+// `leadMs` = decalage fixe avant le debut ; `atLocalHour` = heure fixe sur le
+// calendrier local de l'evenement (independante du decalage horaire).
 export const DEFAULT_REMINDER_KINDS = [
   { kind: '24h', leadMs: 24 * 60 * 60 * 1000 },
-  { kind: '1h', leadMs: 60 * 60 * 1000 },
+  { kind: 'jourJ', atLocalHour: 6 },
 ];
 
 const LOCAL_DATE_RE = /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?$/;
@@ -46,6 +48,31 @@ export function eventStartKey(value, timezoneOffsetMinutes = DEFAULT_TIMEZONE_OF
   return Number.isNaN(ms) ? 'na' : new Date(ms).toISOString();
 }
 
+// Instant reel d'un creneau de rappel (NaN si le creneau est inutilisable).
+function reminderInstant(item, start, offset) {
+  if (Number.isFinite(Number(item.atLocalHour))) {
+    const hour = Math.min(23, Math.max(0, Math.floor(Number(item.atLocalHour))));
+    // Heure murale de l'evenement = instant + decalage (meme convention que
+    // formatEventTime, qui formate les composantes UTC de cet objet).
+    const wall = new Date(start + offset * 60_000);
+    const target = Date.UTC(
+      wall.getUTCFullYear(),
+      wall.getUTCMonth(),
+      wall.getUTCDate(),
+      hour,
+      0,
+      0,
+      0,
+    );
+    const scheduled = target - offset * 60_000;
+    // L'evenement commence avant l'heure du rappel (ex. debut a 5 h) : on
+    // remonte d'une heure avant le debut plutot que de rappeler apres coup.
+    return scheduled < start ? scheduled : start - 60 * 60 * 1000;
+  }
+  if (Number.isFinite(Number(item.leadMs))) return start - Number(item.leadMs);
+  return NaN;
+}
+
 // Rappels a creer : uniquement ceux dont l'heure est encore future.
 export function computeReminderPlan({
   eventStartAt,
@@ -57,13 +84,13 @@ export function computeReminderPlan({
   if (Number.isNaN(start)) return [];
   const nowMs = now instanceof Date ? now.getTime() : Number(now);
   if (!Number.isFinite(nowMs)) return [];
+  const offset = Number(timezoneOffsetMinutes) || 0;
   const plan = [];
   for (const item of kinds) {
-    if (!item || !item.kind || !Number.isFinite(Number(item.leadMs))) continue;
-    const scheduled = start - Number(item.leadMs);
-    if (scheduled > nowMs) {
-      plan.push({ kind: String(item.kind), scheduledAt: new Date(scheduled) });
-    }
+    if (!item || !item.kind) continue;
+    const scheduled = reminderInstant(item, start, offset);
+    if (!Number.isFinite(scheduled) || scheduled <= nowMs) continue;
+    plan.push({ kind: String(item.kind), scheduledAt: new Date(scheduled) });
   }
   return plan.sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime());
 }
@@ -119,6 +146,12 @@ export function buildReminderMessage(kind, {
   const when = formatEventTime(eventStartAt, timezoneOffsetMinutes);
   const place = citySuffix(city);
   const at = when ? ` (${when})` : '';
+  if (kind === 'jourJ') {
+    return {
+      title: `Aujourd'hui : ${title}`,
+      body: `Bonjour {{prenom}}, l'événement « ${title} »${place} commence aujourd'hui${at}. Pensez à votre billet.`,
+    };
+  }
   if (kind === '1h') {
     return {
       title: `C'est bientôt : ${title}`,
@@ -136,6 +169,8 @@ export function buildEventMessage(type, {
   city,
   eventStartAt,
   timezoneOffsetMinutes = DEFAULT_TIMEZONE_OFFSET_MINUTES,
+  amount,
+  reason,
 } = {}) {
   const title = String(eventTitle || 'votre événement').trim();
   const when = formatEventTime(eventStartAt, timezoneOffsetMinutes);
@@ -182,6 +217,14 @@ export function buildEventMessage(type, {
         title: 'Participation confirmée',
         body: `Bonjour {{prenom}}, votre participation à « ${title} »${at} est confirmée.`,
       };
+    case 'coins_credited': {
+      const n = Math.max(0, Math.floor(Number(amount) || 0));
+      const why = String(reason || '').trim();
+      return {
+        title: 'Pièces créditées',
+        body: `Bonjour {{prenom}}, ${n} pièce${n > 1 ? 's' : ''} ont été ajoutées à votre solde${why ? ` (${why})` : ''}.`,
+      };
+    }
     case 'test':
       return {
         title: 'Notifications activées',

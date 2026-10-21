@@ -252,14 +252,21 @@ export async function handleEventDeleted(eventId) {
   await cancelReminders(eventId);
 }
 
-async function enqueuePersonal(type, eventId, userId, { ref = '' } = {}) {
+async function enqueuePersonal(
+  type,
+  eventId,
+  userId,
+  { ref = '', amount, reason, url = '/notifications' } = {},
+) {
   if (!userId) return null;
-  const event = await loadEvent(eventId);
+  const event = eventId ? await loadEvent(eventId) : null;
   const message = buildEventMessage(type, {
     eventTitle: event?.title,
     city: event?.city,
     eventStartAt: event?.event_start_at,
     timezoneOffsetMinutes: tzOffset(),
+    amount,
+    reason,
   });
   const base = buildPersonalDedupeKey(type, eventId, userId);
   const dedupeKey = ref ? `${base}:${String(ref).slice(0, 60)}` : base;
@@ -271,7 +278,7 @@ async function enqueuePersonal(type, eventId, userId, { ref = '' } = {}) {
     dedupeKey,
     title: message.title,
     body: message.body,
-    url: '/notifications',
+    url,
   });
   return { dedupeKey };
 }
@@ -285,12 +292,56 @@ export async function handleParticipantAdded(eventId, userId) {
   await scheduleEventReminders(eventId, { event });
 }
 
+// Credits de pieces : notification personnelle sans evenement associe.
+// `amount` doit être strictement positif sinon rien n'est mis en file.
+const RPC_CREDITS = {
+  credit_user_coins: {
+    userId: (args) => args.p_user_id,
+    amount: (payload, args) => args.p_amount,
+    reason: (payload, args) => args.p_reason || 'Crédit administratif',
+    ref: (payload) => payload.transaction_id || Date.now().toString(36),
+  },
+  increment_user_coins: {
+    userId: (args) => args.p_user_id,
+    amount: (payload, args) => args.p_coin_increment,
+    reason: () => 'Crédit administratif',
+    ref: () => Date.now().toString(36),
+  },
+  credit_user_for_video: {
+    userId: (args, actor) => actor?.id || args.p_user_id,
+    amount: (payload) => payload.reward_coins,
+    reason: () => 'Vidéo récompensée',
+    ref: (payload, args) => args.p_video_id,
+    skip: (payload) => payload.already_credited === true,
+  },
+  complete_mandatory_video: {
+    userId: (args, actor) => actor?.id || args.user_uuid,
+    amount: (payload) => payload.reward_coins,
+    reason: () => 'Vidéo obligatoire',
+    ref: (payload, args) => args.video_uuid,
+    skip: (payload) => payload.already_completed === true,
+  },
+  add_commission_to_user: {
+    userId: (args) => args.p_user_id,
+    amount: (payload) => payload.commission_coins,
+    reason: () => 'Commission de parrainage',
+    ref: (payload, args) => args.p_payment_id || Date.now().toString(36),
+    skip: (payload) => payload.already_credited === true,
+  },
+};
+
 const RPC_EVENTS = {
-  purchase_tickets_v2: { type: 'ticket_confirmed', eventId: (args) => args.p_event_id },
-  purchase_raffle_tickets: { type: 'raffle_confirmed', eventId: (args) => args.p_raffle_event_id },
-  rent_stand: { type: 'stand_confirmed', eventId: (args) => args.p_event_id },
-  cast_contest_votes: { type: 'vote_confirmed', eventId: (args) => args.p_event_id },
-  cast_votes: { type: 'vote_confirmed', eventId: (args) => args.p_event_id },
+  purchase_tickets_v2: { type: 'ticket_confirmed', eventId: (args) => args.p_event_id, requireEvent: true },
+  purchase_raffle_tickets: { type: 'raffle_confirmed', eventId: (args) => args.p_raffle_event_id, requireEvent: true },
+  rent_stand: { type: 'stand_confirmed', eventId: (args) => args.p_event_id, requireEvent: true },
+  cast_contest_votes: { type: 'vote_confirmed', eventId: (args) => args.p_event_id, requireEvent: true },
+  cast_votes: { type: 'vote_confirmed', eventId: (args) => args.p_event_id, requireEvent: true },
+  ...Object.fromEntries(
+    Object.entries(RPC_CREDITS).map(([name, cfg]) => [
+      name,
+      { ...cfg, type: 'coins_credited', eventId: () => null, url: '/wallet' },
+    ]),
+  ),
 };
 
 // Appele apres chaque RPC reussie. Ne doit jamais faire echouer la RPC.
@@ -301,11 +352,22 @@ export async function afterRpc(name, args, actor, result) {
     if (!result || result.error) return;
     const payload = result.data && typeof result.data === 'object' ? result.data : result;
     if (payload.success === false) return;
-    const eventId = config.eventId(args || {});
-    const userId = args?.p_user_id || actor?.id;
-    if (!eventId || !userId) return;
-    const ref = payload.transaction_id || payload.booking_code || payload.booking_number || payload.vote_id || '';
-    await enqueuePersonal(config.type, eventId, userId, { ref });
+    if (config.skip && config.skip(payload, args || {})) return;
+    const userId = config.userId ? config.userId(args || {}, actor) : args?.p_user_id || actor?.id;
+    if (!userId) return;
+    const eventId = config.eventId ? config.eventId(args || {}) : null;
+    if (config.requireEvent && !eventId) return;
+    let ref = payload.transaction_id || payload.booking_code || payload.booking_number || payload.vote_id || '';
+    let amount;
+    let reason;
+    if (config.amount) {
+      amount = Math.max(0, Math.floor(Number(config.amount(payload, args || {})) || 0));
+      if (!(amount > 0)) return;
+      reason = config.reason ? config.reason(payload, args || {}) : '';
+      ref = config.ref ? config.ref(payload, args || {}) : ref;
+    }
+    await enqueuePersonal(config.type, eventId, userId, { ref, amount, reason, url: config.url });
+    if (!eventId) return;
     const event = await loadEvent(eventId);
     if (isEventPublished(event)) await scheduleEventReminders(eventId, { event });
   } catch (e) {

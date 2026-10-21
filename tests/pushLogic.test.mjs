@@ -27,19 +27,38 @@ import {
 
 const START = '2026-11-25 20:00:00';
 
-test('planifie 24h et 1h avant un evenement futur', () => {
+test('planifie 24 h (J-1) et 6 h locale le jour J', () => {
   const now = Date.parse('2026-11-20T10:00:00Z');
   const plan = computeReminderPlan({ eventStartAt: START, now, timezoneOffsetMinutes: 0 });
   assert.equal(plan.length, 2);
-  assert.deepEqual(plan.map((p) => p.kind), ['24h', '1h']);
+  assert.deepEqual(plan.map((p) => p.kind), ['24h', 'jourJ']);
   assert.equal(plan[0].scheduledAt.toISOString(), '2026-11-24T20:00:00.000Z');
-  assert.equal(plan[1].scheduledAt.toISOString(), '2026-11-25T19:00:00.000Z');
+  assert.equal(plan[1].scheduledAt.toISOString(), '2026-11-25T06:00:00.000Z');
 });
 
 test('ignore les rappels deja passes', () => {
-  const now = Date.parse('2026-11-25T12:00:00Z');
+  const now = Date.parse('2026-11-25T03:00:00Z');
   const plan = computeReminderPlan({ eventStartAt: START, now, timezoneOffsetMinutes: 0 });
-  assert.deepEqual(plan.map((p) => p.kind), ['1h']);
+  assert.deepEqual(plan.map((p) => p.kind), ['jourJ']);
+  assert.equal(plan[0].scheduledAt.toISOString(), '2026-11-25T06:00:00.000Z');
+});
+
+test('jour J avant 6 h : rappel remonte juste avant le debut', () => {
+  const now = Date.parse('2026-11-20T10:00:00Z');
+  const plan = computeReminderPlan({
+    eventStartAt: '2026-11-25 05:00:00',
+    now,
+    timezoneOffsetMinutes: 0,
+  });
+  assert.deepEqual(plan.map((p) => p.kind), ['24h', 'jourJ']);
+  assert.equal(plan[1].scheduledAt.toISOString(), '2026-11-25T04:00:00.000Z');
+});
+
+test('jour J suit l\'heure locale et pas UTC', () => {
+  const now = Date.parse('2026-11-20T10:00:00Z');
+  const plan = computeReminderPlan({ eventStartAt: START, now, timezoneOffsetMinutes: 60 });
+  const jourJ = plan.find((p) => p.kind === 'jourJ');
+  assert.equal(jourJ.scheduledAt.toISOString(), '2026-11-25T05:00:00.000Z');
 });
 
 test('ignore un evenement commence', () => {
@@ -99,6 +118,14 @@ test('messages de rappel personnalises', () => {
   const m1 = buildReminderMessage('1h', { eventTitle: 'Concert', eventStartAt: START });
   assert.match(m1.title, /bientôt/);
   assert.match(m1.body, /1 heure/);
+  const mJ = buildReminderMessage('jourJ', {
+    eventTitle: 'Concert',
+    city: 'Abidjan',
+    eventStartAt: START,
+  });
+  assert.equal(mJ.title, "Aujourd'hui : Concert");
+  assert.match(mJ.body, /commence aujourd'hui/);
+  assert.match(mJ.body, /\{\{prenom\}\}/);
 });
 
 test('messages evenement', () => {
@@ -190,6 +217,21 @@ test('etat de publication et annulation', () => {
   assert.equal(isEventCancelled({ status: 'active' }), false);
 });
 
-test('les creneaux par defaut sont 24h puis 1h', () => {
-  assert.deepEqual(DEFAULT_REMINDER_KINDS.map((k) => k.kind), ['24h', '1h']);
+test('les creneaux par defaut sont J-1 puis jour J a 6 h', () => {
+  assert.deepEqual(DEFAULT_REMINDER_KINDS, [
+    { kind: '24h', leadMs: 24 * 60 * 60 * 1000 },
+    { kind: 'jourJ', atLocalHour: 6 },
+  ]);
+});
+
+test('message de credit de pieces', () => {
+  const credit = buildEventMessage('coins_credited', { amount: 500, reason: 'Code promo' });
+  assert.equal(credit.title, 'Pièces créditées');
+  assert.match(credit.body, /500 pièce/);
+  assert.match(credit.body, /Code promo/);
+  assert.match(credit.body, /\{\{prenom\}\}/);
+  const singular = buildEventMessage('coins_credited', { amount: 1 });
+  assert.match(singular.body, /1 pièce /);
+  const zero = buildEventMessage('coins_credited', { amount: 0 });
+  assert.match(zero.body, /0 pièce /);
 });
