@@ -18,6 +18,7 @@ import {
   buildPersonalDedupeKey,
   buildReminderDedupeKey,
   buildReminderMessage,
+  compactError,
   computeReminderPlan,
   eventStartKey,
   isEventCancelled,
@@ -31,6 +32,7 @@ import { isPushConfigured, sendBroadcast, sendToUser } from './push.mjs';
 const WORKER_LOCK = Math.random().toString(36).slice(2, 12);
 let workerTimer = null;
 let schemaWarned = false;
+let configWarned = false;
 
 function tzOffset() {
   const value = Number(process.env.PUSH_TIMEZONE_OFFSET_MINUTES);
@@ -462,7 +464,7 @@ async function finalizeReminder(row, outcome) {
           SET status = 'skipped', locked_by = NULL, processing_at = NULL,
               last_error = ?, updated_at = UTC_TIMESTAMP()
         WHERE id = ? AND locked_by = ?`,
-      String(outcome.reason || '').slice(0, 500),
+      compactError(outcome.reason),
       row.id,
       WORKER_LOCK,
     );
@@ -479,7 +481,7 @@ async function finalizeReminder(row, outcome) {
         WHERE id = ? AND locked_by = ?`,
       next,
       attempts,
-      String(outcome.reason || '').slice(0, 500),
+      compactError(outcome.reason),
       row.id,
       WORKER_LOCK,
     );
@@ -490,7 +492,7 @@ async function finalizeReminder(row, outcome) {
               locked_by = NULL, processing_at = NULL, updated_at = UTC_TIMESTAMP()
         WHERE id = ? AND locked_by = ?`,
       attempts,
-      String(outcome.reason || '').slice(0, 500),
+      compactError(outcome.reason),
       row.id,
       WORKER_LOCK,
     );
@@ -516,7 +518,7 @@ async function finalizeOutbox(row, outcome) {
           SET status = 'skipped', locked_by = NULL, processing_at = NULL,
               last_error = ?, updated_at = UTC_TIMESTAMP()
         WHERE id = ? AND locked_by = ?`,
-      String(outcome.reason || '').slice(0, 500),
+      compactError(outcome.reason),
       row.id,
       WORKER_LOCK,
     );
@@ -533,7 +535,7 @@ async function finalizeOutbox(row, outcome) {
         WHERE id = ? AND locked_by = ?`,
       next,
       attempts,
-      String(outcome.reason || '').slice(0, 500),
+      compactError(outcome.reason),
       row.id,
       WORKER_LOCK,
     );
@@ -544,7 +546,7 @@ async function finalizeOutbox(row, outcome) {
               locked_by = NULL, processing_at = NULL, updated_at = UTC_TIMESTAMP()
         WHERE id = ? AND locked_by = ?`,
       attempts,
-      String(outcome.reason || '').slice(0, 500),
+      compactError(outcome.reason),
       row.id,
       WORKER_LOCK,
     );
@@ -640,6 +642,16 @@ export function startPushWorker() {
   const tick = async () => {
     try {
       const result = await runPushWorkerOnce({ limit: Number(process.env.PUSH_WORKER_BATCH) || 25 });
+      if (result?.configured === false) {
+        if (!configWarned) {
+          configWarned = true;
+          console.error(
+            '[push] FCM INACTIF : FIREBASE_SERVICE_ACCOUNT_PATH (ou _JSON) absent ou invalide. '
+              + 'Aucun envoi tant que ce n\'est pas corrige, les annonces restent en file.',
+          );
+        }
+        return;
+      }
       if (result?.reason === 'migration_required') {
         if (!schemaWarned) {
           schemaWarned = true;

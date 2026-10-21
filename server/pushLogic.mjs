@@ -238,7 +238,20 @@ export function buildEventMessage(type, {
   }
 }
 
-// Seules les URL internes sont acceptees : pas de javascript:, data:, //evil.
+// Message d'erreur compact : les exceptions Prisma prefixent leur message par
+// l'integralite de la requete, qui avale la colonne last_error (500 car.).
+// On garde la fin du message ou se trouve la cause reelle.
+export function compactError(message, max = 500) {
+  const limit = Math.max(50, Math.floor(Number(max) || 500));
+  let flat = String(message || '').replace(/\s+/g, ' ').trim();
+  if (!flat) return '';
+  flat = flat.replace(/^Invalid\s+`[^`]+`\s+invocation:\s*/i, '');
+  const at = flat.lastIndexOf('Error code');
+  if (at >= 0 && flat.length - at >= 60) flat = flat.slice(at);
+  return flat.length > limit ? `\u2026${flat.slice(-(limit - 1))}` : flat;
+}
+
+// URLs internes acceptees : pas de javascript:, data:, //evil.
 export function isSafeNotificationUrl(value, fallback = '/') {
   if (typeof value !== 'string') return fallback;
   const url = value.trim();

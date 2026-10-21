@@ -147,7 +147,8 @@ const PushNotificationManager = () => {
               <h4 className="font-semibold text-sm mb-1">Ne ratez aucun événement !</h4>
               <p className="text-xs text-muted-foreground mb-3">
                 Activez les notifications pour recevoir les annonces de publication, les rappels
-                (24 h et 1 h avant) ainsi que vos confirmations de billets, votes et stands.
+                (la veille et le jour même à 6 h) ainsi que vos confirmations de billets, votes et
+                stands.
               </p>
               <div className="flex gap-2">
                 <Button

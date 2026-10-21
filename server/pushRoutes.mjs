@@ -11,7 +11,7 @@ import crypto from 'node:crypto';
 import { resolveActor, isAdmin } from './session.mjs';
 import { hashToken, normalizeToken, isSafeNotificationUrl } from './pushLogic.mjs';
 import { getPushProjectId, isPushConfigured, sendTestToUser } from './push.mjs';
-import { broadcastFromAdmin, runPushWorkerOnce } from './pushScheduler.mjs';
+import { broadcastFromAdmin, checkPushSchema, runPushWorkerOnce } from './pushScheduler.mjs';
 
 export const pushRouter = express.Router();
 export const cronRouter = express.Router();
@@ -46,6 +46,43 @@ async function activeTokenCount(userId) {
     userId,
   );
   return Number(rows?.[0]?.n || 0);
+}
+
+// Profondeur de la file d'envoi, pour localiser la panne : une file qui
+// grossit sans jamais passer en 'sent' signale un worker ou FCM inactifs.
+async function queueDepth() {
+  const db = await getDbSafe();
+  const [outbox, reminders, tokens, lastFailure] = await Promise.all([
+    db.$queryRawUnsafe(
+      `SELECT status, COUNT(*) AS n FROM push_outbox GROUP BY status`,
+    ).catch(() => []),
+    db.$queryRawUnsafe(
+      `SELECT status, COUNT(*) AS n FROM push_reminders GROUP BY status`,
+    ).catch(() => []),
+    db.$queryRawUnsafe(
+      `SELECT COUNT(*) AS n FROM user_push_tokens WHERE is_active = 1`,
+    ).catch(() => [{ n: 0 }]),
+    db.$queryRawUnsafe(
+      `SELECT status, last_error, COUNT(*) AS n
+         FROM push_outbox
+        WHERE status IN ('failed', 'skipped', 'retry')
+        GROUP BY status, last_error
+        ORDER BY n DESC
+        LIMIT 5`,
+    ).catch(() => []),
+  ]);
+  const toMap = (rows) =>
+    Object.fromEntries((rows || []).map((r) => [String(r.status), Number(r.n) || 0]));
+  return {
+    outbox: toMap(outbox),
+    reminders: toMap(reminders),
+    activeTokens: Number(tokens?.[0]?.n || 0),
+    lastFailures: (lastFailure || []).map((r) => ({
+      status: String(r.status),
+      reason: String(r.last_error || '').slice(0, 200),
+      count: Number(r.n) || 0,
+    })),
+  };
 }
 
 // Limiteur en memoire (suffisant face a un abus simple ; le worker et FCM
@@ -155,10 +192,14 @@ pushRouter.post('/unregister', requireUser, async (req, res) => {
 pushRouter.get('/status', requireUser, async (req, res) => {
   try {
     const active = await activeTokenCount(req.actor.id);
+    const schema = await checkPushSchema().catch(() => ({ ready: false, error: 'indisponible' }));
     return ok(res, {
       active,
       configured: isPushConfigured(),
       projectId: getPushProjectId(),
+      schema,
+      queue: await queueDepth().catch(() => null),
+      workerEnabled: process.env.PUSH_WORKER_ENABLED !== 'false',
     });
   } catch (e) {
     console.error('[push/status]', e?.message);

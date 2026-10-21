@@ -236,18 +236,24 @@ export async function sendBroadcast({
   let scanned = 0;
 
   while (scanned < cap) {
+    // Curseur ecrit dans le SQL (et non lie) : MySQL refuse parfois la
+    // liaison de parametres sur LIMIT, ce qui faisait echouer la diffusion.
+    // lastId est un identifiant lu en base, valide avant injection.
+    const afterId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      String(lastId),
+    )
+      ? String(lastId)
+      : '';
+    const limit = Math.max(1, Math.min(Math.floor(Number(batchSize)) || 500, 5000));
     const rows = await db.$queryRawUnsafe(
       `SELECT t.id, t.fcm_token, p.full_name, p.notification_settings, p.is_active, p.deleted_at
          FROM user_push_tokens t
          LEFT JOIN profiles p ON p.id = t.user_id
         WHERE t.is_active = 1
           AND t.fcm_token IS NOT NULL AND t.fcm_token <> ''
-          AND (? = '' OR t.id > ?)
+          AND t.id > '${afterId}'
         ORDER BY t.id ASC
-        LIMIT ?`,
-      lastId,
-      lastId,
-      batchSize,
+        LIMIT ${limit}`,
     );
     if (!rows?.length) break;
 

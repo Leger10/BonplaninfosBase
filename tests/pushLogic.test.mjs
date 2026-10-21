@@ -15,6 +15,7 @@ import {
   shouldSendPush,
   firstNameFrom,
   renderBody,
+  compactError,
   nextRetryDelayMs,
   shouldRetry,
   hashToken,
@@ -234,4 +235,22 @@ test('message de credit de pieces', () => {
   assert.match(singular.body, /1 pièce /);
   const zero = buildEventMessage('coins_credited', { amount: 0 });
   assert.match(zero.body, /0 pièce /);
+});
+
+test("compactError garde la cause d'une erreur Prisma dans 500 caracteres", () => {
+  assert.equal(compactError(''), '');
+  assert.equal(compactError(null), '');
+  assert.equal(compactError('echec reseau'), 'echec reseau');
+  assert.equal(compactError('a\nb  c'), 'a b c');
+
+  const sql = 'SELECT t.id, t.fcm_token, p.full_name FROM user_push_tokens t '.repeat(12);
+  const raw =
+    `Invalid \`prisma.$queryRawUnsafe()\` invocation:\n\n${sql}\n\n`
+    + "Error code: `P2010`. Message: `DB error: Unknown column 't.id' in 'field list'`";
+  const compact = compactError(raw);
+  assert.ok(compact.length <= 500, `trop long : ${compact.length}`);
+  assert.ok(!compact.includes('prisma.$queryRawUnsafe'), 'le prefixe doit disparaitre');
+  assert.match(compact, /Error code/);
+  assert.match(compact, /Unknown column/);
+  assert.ok(!compact.includes('\n'), "pas de retour a la ligne");
 });
