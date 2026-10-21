@@ -6,6 +6,7 @@
 // - desactivation automatique des jetons invalides/expires.
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   chunk,
   firstNameFrom,
@@ -28,6 +29,27 @@ let messagingClient = null;
 let initError = null;
 let serviceAccount = null;
 
+const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// Emplacements acceptes sans configuration : la cle est deposee a la main sur
+// le serveur (fichier .env versionne, donc ecrase a chaque deploiement).
+const SERVICE_ACCOUNT_FALLBACKS = [
+  'firebase-service-account.json',
+  'private/firebase-service-account.json',
+  'server/firebase-service-account.json',
+];
+
+function serviceAccountCandidates() {
+  const found = [];
+  for (const rel of SERVICE_ACCOUNT_FALLBACKS) {
+    found.push(path.resolve(process.cwd(), rel), path.resolve(PROJECT_ROOT, rel));
+  }
+  return [...new Set(found)];
+}
+
+function readServiceAccount(filePath) {
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
+
 function parseServiceAccount() {
   if (serviceAccount) return serviceAccount;
   const rawJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
@@ -41,22 +63,39 @@ function parseServiceAccount() {
     }
     return serviceAccount;
   }
+  const errors = [];
   if (filePath && filePath.trim()) {
     try {
-      serviceAccount = JSON.parse(fs.readFileSync(path.resolve(filePath.trim()), 'utf8'));
+      serviceAccount = readServiceAccount(path.resolve(filePath.trim()));
+      return serviceAccount;
     } catch (e) {
-      throw new PushNotConfiguredError(`FIREBASE_SERVICE_ACCOUNT_PATH illisible : ${e.message}`);
+      errors.push(`${filePath.trim()} : ${e.message}`);
     }
-    return serviceAccount;
+  }
+  for (const candidate of serviceAccountCandidates()) {
+    if (!fs.existsSync(candidate)) continue;
+    try {
+      serviceAccount = readServiceAccount(candidate);
+      return serviceAccount;
+    } catch (e) {
+      errors.push(`${candidate} : ${e.message}`);
+    }
+  }
+  if (errors.length) {
+    throw new PushNotConfiguredError(
+      `Compte de service Firebase introuvable : ${errors.join(' ; ').slice(0, 300)}`
+      + '. Deposez firebase-service-account.json a la racine du projet.',
+    );
   }
   return null;
 }
 
 export function isPushConfigured() {
-  return Boolean(
-    (process.env.FIREBASE_SERVICE_ACCOUNT_JSON && process.env.FIREBASE_SERVICE_ACCOUNT_JSON.trim()) ||
-    (process.env.FIREBASE_SERVICE_ACCOUNT_PATH && process.env.FIREBASE_SERVICE_ACCOUNT_PATH.trim()),
-  );
+  const rawJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (rawJson && rawJson.trim()) return true;
+  const filePath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH;
+  if (filePath && filePath.trim()) return true;
+  return serviceAccountCandidates().some((candidate) => fs.existsSync(candidate));
 }
 
 export function getPushProjectId() {
@@ -74,7 +113,8 @@ async function getMessagingClient() {
   try {
     if (!isPushConfigured()) {
       throw new PushNotConfiguredError(
-        'Definissez FIREBASE_SERVICE_ACCOUNT_JSON (ou FIREBASE_SERVICE_ACCOUNT_PATH) pour activer les push.',
+        'Notifications push non configurees : deposez firebase-service-account.json a la racine '
+          + 'du projet, ou definez FIREBASE_SERVICE_ACCOUNT_JSON / FIREBASE_SERVICE_ACCOUNT_PATH.',
       );
     }
     if (!adminModule) adminModule = (await import('firebase-admin')).default;
@@ -87,7 +127,9 @@ async function getMessagingClient() {
     messagingClient = admin.messaging();
     return messagingClient;
   } catch (e) {
-    initError = e;
+    // Erreurs de configuration : on ne les fige pas, pour que le depot de la
+    // cle sur le serveur soit pris en compte sans redemarrage.
+    if (!(e instanceof PushNotConfiguredError)) initError = e;
     throw e;
   }
 }
