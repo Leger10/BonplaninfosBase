@@ -28,6 +28,7 @@ let adminModule = null;
 let messagingClient = null;
 let initError = null;
 let serviceAccount = null;
+let accountLogged = false;
 
 const PROJECT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Emplacements acceptes sans configuration : la cle est deposee a la main sur
@@ -61,30 +62,49 @@ function parseServiceAccount() {
     } catch (e) {
       throw new PushNotConfiguredError('FIREBASE_SERVICE_ACCOUNT_JSON invalide (JSON attendu)');
     }
+    if (!accountLogged) {
+      accountLogged = true;
+      console.log('[push] compte de service charge : variable FIREBASE_SERVICE_ACCOUNT_JSON');
+    }
     return serviceAccount;
   }
   const errors = [];
+  let loaded = null;
+  let usedPath = null;
   if (filePath && filePath.trim()) {
     try {
-      serviceAccount = readServiceAccount(path.resolve(filePath.trim()));
-      return serviceAccount;
+      usedPath = path.resolve(filePath.trim());
+      loaded = readServiceAccount(usedPath);
     } catch (e) {
       errors.push(`${filePath.trim()} : ${e.message}`);
+      usedPath = null;
     }
   }
-  for (const candidate of serviceAccountCandidates()) {
-    if (!fs.existsSync(candidate)) continue;
-    try {
-      serviceAccount = readServiceAccount(candidate);
-      return serviceAccount;
-    } catch (e) {
-      errors.push(`${candidate} : ${e.message}`);
+  if (!loaded) {
+    for (const candidate of serviceAccountCandidates()) {
+      if (!fs.existsSync(candidate)) continue;
+      try {
+        loaded = readServiceAccount(candidate);
+        usedPath = candidate;
+        break;
+      } catch (e) {
+        errors.push(`${candidate} : ${e.message}`);
+      }
     }
+  }
+  if (loaded) {
+    serviceAccount = loaded;
+    if (!accountLogged) {
+      accountLogged = true;
+      console.log(`[push] compte de service charge : ${usedPath}`);
+    }
+    return serviceAccount;
   }
   if (errors.length) {
     throw new PushNotConfiguredError(
-      `Compte de service Firebase introuvable : ${errors.join(' ; ').slice(0, 300)}`
-      + '. Deposez firebase-service-account.json a la racine du projet.',
+      `Compte de service Firebase introuvable : ${errors.join(' ; ')}`
+      + ` | emplacements verifies : ${serviceAccountCandidates().join(', ')}`
+      + ' | deposez firebase-service-account.json dans le dossier qui contient package.json.',
     );
   }
   return null;
