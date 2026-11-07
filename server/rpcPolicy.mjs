@@ -81,6 +81,7 @@ export const RPC_POLICY = {
   access_protected_event: { selfArg: 'p_user_id' },
   convert_coins_to_earnings: { selfArg: 'p_user_id' },
   transfer_pending_earnings_to_available: { selfArg: 'p_user_id' },
+  get_business_partner_dashboard: { selfArg: 'p_user_id' },
   update_user_profile: { selfArg: 'p_user_id' },
 
   // ---------- Vidéos récompense : uniquement pour soi, récompense servie

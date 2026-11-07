@@ -364,7 +364,9 @@ model app_settings {
   favicon                 String?   @db.Text
   meta_keywords           String?   @db.Text
   meta_description        String?   @db.Text
-  platform_fee_percentage Decimal?  @db.Decimal(20, 4)
+  platform_fee_percentage                Decimal?  @db.Decimal(20, 4)
+  withdrawal_fee_percentage              Decimal?  @db.Decimal(20, 4)
+  business_partner_commission_percentage Decimal?  @db.Decimal(20, 4)
   support_email           String?   @default("support@bonplaninfos.net") @db.Text
   admin_email             String?   @default("client@bonplaninfos.net") @db.Text
   noreply_email           String?   @default("bonplaninfos@gmail.com") @db.Text
@@ -3211,4 +3213,23 @@ model withdrawal_transactions {
   processed_by       String?   @db.Char(36)
   created_at         DateTime? @default(now()) @db.DateTime(0)
 
+}
+
+
+model business_partner_commissions {
+  id                 String    @id @default(uuid()) @db.Char(36)
+  partner_id         String    @db.Char(36)
+  organizer_id       String    @db.Char(36)
+  source_type        String    @db.VarChar(32)
+  source_id          String?   @db.VarChar(64)
+  gross_fee_coins    Int
+  commission_percent Decimal   @db.Decimal(5, 2)
+  commission_coins   Int
+  status             String    @default("credited") @db.VarChar(32)
+  metadata           String?   @db.LongText
+  created_at         DateTime? @default(now()) @db.DateTime(0)
+
+  @@index([partner_id])
+  @@index([organizer_id])
+  @@index([source_type, source_id])
 }

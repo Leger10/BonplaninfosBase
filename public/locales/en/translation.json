@@ -11,7 +11,6 @@
     "logout": "Logout",
     "notifications": "Notifications"
   },
-
   "_comment_createEvent": "🎫 Event creation page - Type selection",
   "createEvent": {
     "title": "What would you like to create?",
@@ -44,7 +43,6 @@
     },
     "startButton": "Start"
   },
-
   "reset_info": {
     "timestamp": "Timestamp",
     "free_reset": "Free reset",
@@ -52,10 +50,8 @@
     "reset_type": "Reset type",
     "earnings_reset": "Earnings reset"
   },
-
   "Theme": "Theme",
   "Language": "Language",
-
   "auth": {
     "fetch_error": {
       "title": "Connection Error",
@@ -101,17 +97,55 @@
     "password": "Password",
     "referral_code_optional": "Referral code (Optional)"
   },
-
   "home": "Home",
   "events": "Events",
   "contests": "events and contests",
   "discover": "Discover",
   "login": "Login",
   "logout": "Logout",
-  "profile": "Profile",
+  "profile": {
+    "notLoggedIn": {
+      "title": "Login required",
+      "description": "Your session has expired or you are not logged in. Please log in again to access your profile.",
+      "loginButton": "Login"
+    },
+    "balance": {
+      "title": "My Coin Balance",
+      "coins": "coins",
+      "approx": "≈ {{balance}} FCFA",
+      "description": "Coins purchased or earned, usable for events or convertible into earnings. 10% commission on transfers to earnings.",
+      "locked": "🔒 Locked",
+      "lockedDescription": "Unlock your wallet to see your balance.",
+      "unlockButton": "Unlock",
+      "transferButton": "Transfer for withdrawal"
+    },
+    "pendingEarnings": {
+      "title": "Earnings pending transfer",
+      "feeLabel": "Fee: {{percent}}%",
+      "totalPending": "Total pending:",
+      "netReceivable": "Net receivable:",
+      "unlockToTransfer": "Unlock to transfer",
+      "transferButton": "Transfer to my wallet",
+      "noEarnings": "No earnings to transfer",
+      "noEarningsDescription": "Revenue from your completed events will appear here."
+    },
+    "toast": {
+      "error": "Error",
+      "sessionExpired": "Session expired",
+      "transferSuccess": "Transfer successful",
+      "transferDetails": "Gross: {{gross}}π | Fee: {{fee}}π | Net added: {{net}}π"
+    },
+    "helmet": {
+      "title": "Profile"
+    }
+  },
   "wallet": "Wallet",
-  "settings": "Settings",
-
+  "settings": {
+    "title": "Settings - BonPlanInfos",
+    "description": "Manage your preferences and account settings on BonPlanInfos.",
+    "pageTitle": "Settings",
+    "pageSubtitle": "Customize your experience and manage your account security."
+  },
   "home_page": {
     "sponsored_events": "Sponsored Events",
     "boost_event": "Boost an event",
@@ -137,7 +171,6 @@
       "description": "We couldn't load the necessary data. Please check your connection and try again."
     }
   },
-
   "sponsors": {
     "meta_title": "Our Sponsors and Partners",
     "meta_description": "Discover the sponsors and partners supporting BonPlanInfos in its mission to revolutionize events in Africa",
@@ -170,14 +203,12 @@
       }
     }
   },
-
   "cookie_banner": {
     "message": "We use cookies to improve your experience. ",
     "learn_more": "Learn more",
     "accept": "Accept",
     "reject": "Reject"
   },
-
   "faq": {
     "meta_title": "Frequently Asked Questions - BonPlanInfos.net",
     "meta_description": "Find answers about BonPlanInfos.net, the African event platform, monetization and real profits with only 10% commission",
@@ -260,7 +291,6 @@
       }
     }
   },
-
   "secretary_dashboard": {
     "title": "Secretary Dashboard",
     "welcome": "Welcome, {{name}}",
@@ -311,7 +341,6 @@
       "credit_error_generic": "An error occurred during credit."
     }
   },
-
   "events_page": {
     "clear_all": "Clear all",
     "title": "Explore Events",
@@ -344,7 +373,6 @@
       "success_desc": "You can now see the details of \"{{title}}\"."
     }
   },
-
   "profile_page": {
     "helmet_title": "Profile of {{name}}",
     "helmet_desc": "Manage your profile, events and transactions on BonPlanInfos.",
@@ -356,7 +384,6 @@
     "loading_error_title": "Data Loading Error",
     "loading_error_desc": "We couldn't load all your profile data. Some information may be missing."
   },
-
   "wallet_page": {
     "title": "My Wallet",
     "total_balance": "Total Gain",
@@ -374,7 +401,6 @@
     "request_withdrawal_button": "Request withdrawal",
     "withdrawal_minimum": "Minimum for withdrawal: {{amount}} coins."
   },
-
   "admin_dashboard": {
     "unauthorized_title": "Unauthorized access",
     "unauthorized_desc": "You do not have the necessary permissions to access this page.",
@@ -468,7 +494,6 @@
       "submit": "Submit request"
     }
   },
-
   "notifications_page": {
     "title": "Notifications",
     "mark_all_read": "all read",
@@ -486,7 +511,6 @@
     "delete": "Delete",
     "archive": "Archive"
   },
-
   "navigation": {
     "home": "Home",
     "events": "Events",
@@ -497,7 +521,6 @@
     "login": "Login",
     "register": "Register"
   },
-
   "footer": {
     "home": "Home",
     "about": "About",
@@ -522,7 +545,6 @@
     "reject": "Reject",
     "accept": "Accept"
   },
-
   "data_protection": {
     "meta_title": "Personal Data Protection",
     "meta_description": "Personal data protection policy of BonPlanInfos. Compliant with African data protection regulations.",
@@ -604,7 +626,6 @@
     },
     "last_updated": "Last updated: November 2025"
   },
-
   "marketing": {
     "meta_title": "Monetize Your Events - Generate Revenue with Every Interaction",
     "meta_description": "Create events and earn money with every view, like and share. Join the thousands of organizers already generating revenue on our platform.",
@@ -684,7 +705,6 @@
       "cta": "Become a Partner Now"
     }
   },
-
   "about": {
     "meta_title": "About BonPlanInfos - The African event platform",
     "meta_description": "Discover BonPlanInfos, the platform revolutionizing event organization and monetization in Africa with only 10% commission",
@@ -761,7 +781,6 @@
       "available_hours": "Available Monday to Friday, 8am-6pm"
     }
   },
-
   "wallet_info_modal": {
     "title": "What are coins for?",
     "intro": "Coins are the virtual currency of BonPlanInfos. They allow you to access exclusive content and interact with events.",
@@ -776,13 +795,11 @@
     "cta_button": "Buy coins",
     "usage_priority": "Free coins are always used first for your actions!"
   },
-
   "events_title": "Featured Events",
   "all_events_button": "All events",
   "promoted_events": "Sponsored Events",
   "popular_contests": "Popular Contests",
   "see_all_contests": "See all contests",
-
   "event_card": {
     "days_remaining": "{{count}} day remaining",
     "days_remaining_plural": "{{count}} days remaining",
@@ -790,7 +807,6 @@
     "event_starting_today": "Starts today",
     "starting_from": "From"
   },
-
   "filters": {
     "all": "All",
     "promoted": "Boosted",
@@ -799,7 +815,6 @@
     "this_week": "This week",
     "free": "Free"
   },
-
   "event_detail": {
     "by_organizer": "By",
     "share": "Share",
@@ -822,7 +837,6 @@
     "raffle": "Raffle",
     "stands": "Stands"
   },
-
   "social_interactions": {
     "like": "Like",
     "comment": "Comment",
@@ -832,12 +846,10 @@
     "comment_placeholder": "Add a comment...",
     "post_comment": "Post"
   },
-
   "toasts": {
     "copied_to_clipboard": "Copied to clipboard!",
     "feature_not_implemented": "🚧 This feature is not yet implemented—but don't worry! You can request it in your next prompt! 🚀"
   },
-
   "partner_signup": {
     "meta_title": "Become a Partner - BonPlanInfos",
     "meta_description": "Become an official BonPlanInfos partner and generate stable monthly income. Territorial dealership program with 10% platform commission.",
@@ -938,7 +950,6 @@
       "submit_to_admin": "Submit to Super Admin"
     }
   },
-
   "create_event_page": {
     "meta": {
       "title": "Create an Event - Choose Type",
@@ -974,7 +985,6 @@
       "button": "View User Guide"
     }
   },
-
   "user_guide_page": {
     "meta": {
       "title": "BonPlanInfos - 100% African Event Platform",
@@ -1161,7 +1171,6 @@
       "copyright": "©2025 BonPlanInfos. All rights reserved."
     }
   },
-
   "help_center": {
     "meta_title": "Help Center - BonPlanInfos",
     "meta_description": "Find answers to your questions and contact our support team for any assistance on BonPlanInfos",
@@ -1226,7 +1235,6 @@
       }
     }
   },
-
   "admin": {
     "tabs": {
       "analytics": "Analytics",
@@ -1243,10 +1251,8 @@
       "welcome_popup": "Welcome Popup"
     }
   },
-
   "discover_places": "Discover places",
   "discover_more_places": "Discover more places",
-
   "discover_page": {
     "title": "Discover Places",
     "subtitle": "Find new places recommended by the community.",
@@ -1257,7 +1263,6 @@
     "add_new_location": "Add a new location",
     "add_place": "Add a Place"
   },
-
   "add_location": {
     "title": "Add a new place",
     "subtitle": "Share a great spot with the community.",
@@ -1273,7 +1278,6 @@
     "success_title": "Place submitted!",
     "success_message": "Thank you! Your place has been submitted and will be reviewed by our team."
   },
-
   "verify_ticket": {
     "title": "Ticket Verification",
     "scan_instruction": "Scan the ticket QR code or enter the scanner code.",
@@ -1298,7 +1302,6 @@
     "verifying_ticket": "Verifying ticket...",
     "enter_scanner_code": "Please enter a valid scanner code."
   },
-
   "create_event": {
     "title": "Create an Event",
     "subtitle": "Choose the type of event you want to organize.",
@@ -1313,7 +1316,6 @@
     "stands": "Stand Rental",
     "stands_desc": "Manage stand rentals for an exhibition or market."
   },
-
   "create_ticketing_event": {
     "title": "Create an Event with Ticketing",
     "event_details": "Event Details",
@@ -1341,7 +1343,6 @@
     "event_created_success": "Event created successfully!",
     "editing_event": "Editing event"
   },
-
   "ticketing_interface": {
     "select_ticket_type": "Select your tickets",
     "total_cost": "Total Cost:",
@@ -1351,12 +1352,10 @@
     "available": "available",
     "benefits": "Benefits:"
   },
-
   "select_country": "Select a country",
   "select_city": "Select a city",
   "choose_file": "Choose a file",
   "no_file_chosen": "No file chosen",
-
   "pricing": {
     "meta": {
       "title": "Pricing | BonPlan Infos",
@@ -1431,7 +1430,6 @@
     "copyLink": "Link copied",
     "success": "Success"
   },
-
   "eventDetail": {
     "notFound": "Event not found",
     "loading": "Loading...",
@@ -1506,7 +1504,6 @@
       "loginRequiredDesc": "Please log in to interact."
     }
   },
-
   "verificationStats": {
     "title": "Entry Statistics",
     "description": "Real-time attendance status",
@@ -1517,7 +1514,6 @@
     "duplicateScans_other": "{{count}} duplicate attempts detected",
     "noData": "No data available"
   },
-
   "legal_mentions": {
     "meta_title": "Legal Mentions",
     "meta_description": "Consult the legal notices of BonPlanInfos for information about the site editor, hosting and our legal obligations.",
@@ -1576,45 +1572,7 @@
       }
     }
   },
-
   "_comment_profile": "👤 Profile page - Account and earnings management",
-  "profile": {
-    "notLoggedIn": {
-      "title": "Login required",
-      "description": "Your session has expired or you are not logged in. Please log in again to access your profile.",
-      "loginButton": "Login"
-    },
-    "balance": {
-      "title": "My Coin Balance",
-      "coins": "coins",
-      "approx": "≈ {{balance}} FCFA",
-      "description": "Coins purchased or earned, usable for events or convertible into earnings. 10% commission on transfers to earnings.",
-      "locked": "🔒 Locked",
-      "lockedDescription": "Unlock your wallet to see your balance.",
-      "unlockButton": "Unlock",
-      "transferButton": "Transfer for withdrawal"
-    },
-    "pendingEarnings": {
-      "title": "Earnings pending transfer",
-      "feeLabel": "Fee: 10%",
-      "totalPending": "Total pending:",
-      "netReceivable": "Net receivable:",
-      "unlockToTransfer": "Unlock to transfer",
-      "transferButton": "Transfer to my wallet",
-      "noEarnings": "No earnings to transfer",
-      "noEarningsDescription": "Revenue from your completed events will appear here."
-    },
-    "toast": {
-      "error": "Error",
-      "sessionExpired": "Session expired",
-      "transferSuccess": "Transfer successful",
-      "transferDetails": "Gross: {{gross}}π | Fee: {{fee}}π | Net added: {{net}}π"
-    },
-    "helmet": {
-      "title": "Profile"
-    }
-  },
-
   "_comment_profileStats": "📊 Profile statistics (ProfileStats)",
   "profileStats": {
     "balance": "My balance",
@@ -1624,7 +1582,6 @@
     "unlockButton": "Unlock balances",
     "unlockPrompt": "Unlock to see"
   },
-
   "_comment_profileTabs": "📌 Profile tabs (ProfilePageContent)",
   "profileTabs": {
     "events": "Events",
@@ -1635,7 +1592,6 @@
     "scanners": "Scan team",
     "withdrawals": "Withdrawals"
   },
-
   "_comment_transferHistory": "📜 Transfer history (TransferHistory)",
   "transferHistory": {
     "title": "Transfer and fee history",
@@ -1665,7 +1621,6 @@
       "transfer": "Transfer to wallet"
     }
   },
-
   "_comment_transferModal": "💸 Earnings transfer modal (TransferModal)",
   "transferModal": {
     "title": "Transfer your earnings",
@@ -1701,7 +1656,6 @@
       "processing": "Processing..."
     }
   },
-
   "_comment_coinTransferModal": "🪙 Coin transfer modal (CoinTransferModal)",
   "coinTransferModal": {
     "title": "Transfer Coins",
@@ -1724,7 +1678,6 @@
       "transfer": "Transfer"
     }
   },
-
   "pinVerification": {
     "setupTitle": "Set up your PIN Code",
     "setupDescription": "Create a 4-digit PIN code to secure access to your funds.",
@@ -1773,7 +1726,6 @@
       "securityAlertDescription": "A capture of your face has been taken and sent to the account owner."
     }
   },
-
   "_comment_pinResetRequest": "🔐 PIN reset request (PinResetRequestModal)",
   "pinResetRequest": {
     "step1": {
@@ -1812,7 +1764,6 @@
       "errorDescription": "Unable to send request."
     }
   },
-
   "_comment_withdrawalModal": "💳 Withdrawal modal (WithdrawalModal)",
   "withdrawalModal": {
     "title": "Make a withdrawal",
@@ -1857,7 +1808,6 @@
       "errorDesc": "Request failed."
     }
   },
-
   "communityVerification": {
     "title": "Community Verification",
     "description": "Confirm that the event took place to unlock the organizer's funds.",
@@ -1894,7 +1844,6 @@
       }
     }
   },
-
   "creatorDashboard": {
     "toast": {
       "error": "Error",
@@ -1959,7 +1908,6 @@
       }
     }
   },
-
   "transactionsTab": {
     "transfers": {
       "title": "Transfer and fee history",
@@ -2000,14 +1948,6 @@
       }
     }
   },
-
-  "settings": {
-    "title": "Settings - BonPlanInfos",
-    "description": "Manage your preferences and account settings on BonPlanInfos.",
-    "pageTitle": "Settings",
-    "pageSubtitle": "Customize your experience and manage your account security."
-  },
-
   "profileSettings": {
     "title": "Personal information",
     "fullName": "Full name",
@@ -2019,7 +1959,6 @@
     "updateSuccess": "Profile updated successfully",
     "updateError": "Error updating profile"
   },
-
   "security": {
     "title": "Security",
     "currentPassword": "Current password",
@@ -2029,7 +1968,6 @@
     "updateSuccess": "Password updated successfully",
     "updateError": "Error updating password"
   },
-
   "privacy": {
     "meta_title": "Privacy Policy",
     "meta_description": "Read our privacy policy to understand how we collect, use, and protect your personal data.",
@@ -2081,7 +2019,6 @@
       "email": "support@bonplaninfos.net"
     }
   },
-
   "notificationSettings": {
     "title": "Notification preferences",
     "emailNotifications": "Email notifications",
@@ -2091,7 +2028,6 @@
     "promotionalEmails": "Promotional emails",
     "saveButton": "Save preferences"
   },
-
   "preferencesSettings": {
     "title": "Preferences",
     "language": "Language",

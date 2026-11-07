@@ -11,7 +11,6 @@
     "logout": "Déconnexion",
     "notifications": "Notifications"
   },
-
   "_comment_createEvent": "🎫 Page de création d'événement - Choix du type",
   "createEvent": {
     "title": "Que souhaitez-vous créer ?",
@@ -44,7 +43,6 @@
     },
     "startButton": "Commencer"
   },
-
   "reset_info": {
     "timestamp": "Horodatage",
     "free_reset": "Réinitialisation gratuite",
@@ -52,10 +50,8 @@
     "reset_type": "Type de réinitialisation",
     "earnings_reset": "Réinitialisation des gains"
   },
-
   "Theme": "Thème",
   "Language": "Langue",
-
   "auth": {
     "fetch_error": {
       "title": "Erreur de Connexion",
@@ -101,17 +97,55 @@
     "password": "Mot de passe",
     "referral_code_optional": "Code de parrainage (Optionnel)"
   },
-
   "home": "Accueil",
   "events": "Événements",
   "contests": "events et concours",
   "discover": "Découvrir",
   "login": "Connexion",
   "logout": "Déconnexion",
-  "profile": "Profil",
+  "profile": {
+    "notLoggedIn": {
+      "title": "Connexion requise",
+      "description": "Votre session a expiré ou vous n'êtes pas connecté. Veuillez vous reconnecter pour accéder à votre profil.",
+      "loginButton": "Se connecter"
+    },
+    "balance": {
+      "title": "Mon Solde de Pièces",
+      "coins": "pièces",
+      "approx": "≈ {{balance}} FCFA",
+      "description": "Pièces achetées ou gagnées, utilisables pour événements ou convertibles en gains. Commission de 10% sur les transferts vers gains pour retrait.",
+      "locked": "🔒 Verrouillé",
+      "lockedDescription": "Déverrouillez votre portefeuille pour voir votre solde.",
+      "unlockButton": "Déverrouiller",
+      "transferButton": "Transférer pour retrait"
+    },
+    "pendingEarnings": {
+      "title": "Gains en attente de transfert",
+      "feeLabel": "Frais: {{percent}}%",
+      "totalPending": "Total en attente :",
+      "netReceivable": "Net à recevoir :",
+      "unlockToTransfer": "Déverrouiller pour transférer",
+      "transferButton": "Transférer vers mon portefeuille",
+      "noEarnings": "Aucun gain à transférer",
+      "noEarningsDescription": "Les revenus de vos événements terminés apparaîtront ici."
+    },
+    "toast": {
+      "error": "Erreur",
+      "sessionExpired": "Session expirée",
+      "transferSuccess": "Succès du transfert",
+      "transferDetails": "Brut : {{gross}}π | Frais : {{fee}}π | Net ajouté : {{net}}π"
+    },
+    "helmet": {
+      "title": "Profil"
+    }
+  },
   "wallet": "Portefeuille",
-  "settings": "Paramètres",
-
+  "settings": {
+    "title": "Paramètres - BonPlanInfos",
+    "description": "Gérez vos préférences et paramètres de compte sur BonPlanInfos.",
+    "pageTitle": "Paramètres",
+    "pageSubtitle": "Personnalisez votre expérience et gérez la sécurité de votre compte."
+  },
   "home_page": {
     "sponsored_events": "Événements Sponsorisés",
     "boost_event": "Booster un événement",
@@ -137,7 +171,6 @@
       "description": "Nous n'avons pas pu charger les données nécessaires. Veuillez vérifier votre connexion et réessayer."
     }
   },
-
   "sponsors": {
     "meta_title": "Nos Sponsors et Partenaires",
     "meta_description": "Découvrez les sponsors et partenaires qui soutiennent BonPlanInfos dans sa mission de révolutionner les événements en Afrique",
@@ -170,14 +203,12 @@
       }
     }
   },
-
   "cookie_banner": {
     "message": "Nous utilisons des cookies pour améliorer votre expérience. ",
     "learn_more": "En savoir plus",
     "accept": "Accepter",
     "reject": "Refuser"
   },
-
   "faq": {
     "meta_title": "Questions Fréquentes - BonPlanInfos.net",
     "meta_description": "Trouvez des réponses sur BonPlanInfos.net, la plateforme africaine d'événements, monétisation et profits réels avec seulement 10% de commission",
@@ -260,7 +291,6 @@
       }
     }
   },
-
   "secretary_dashboard": {
     "title": "Tableau de bord Secrétaire",
     "welcome": "Bienvenue, {{name}}",
@@ -311,7 +341,6 @@
       "credit_error_generic": "Une erreur est survenue lors du crédit."
     }
   },
-
   "events_page": {
     "clear_all": "Tout effacer",
     "title": "Explorer les Événements",
@@ -346,7 +375,6 @@
       "success_desc": "Vous pouvez maintenant voir les détails de \"{{title}}\"."
     }
   },
-
   "profile_page": {
     "helmet_title": "Profil de {{name}}",
     "helmet_desc": "Gérez votre profil, vos événements et vos transactions sur BonPlanInfos.",
@@ -358,7 +386,6 @@
     "loading_error_title": "Erreur de Chargement des Données",
     "loading_error_desc": "Nous n'avons pas pu charger toutes les données de votre profil. Certaines informations peuvent être manquantes."
   },
-
   "wallet_page": {
     "title": "Mon Portefeuille",
     "total_balance": "Solde Total de Pièces",
@@ -376,7 +403,6 @@
     "request_withdrawal_button": "Demander un retrait",
     "withdrawal_minimum": "Minimum pour un retrait : {{amount}} pièces."
   },
-
   "admin_dashboard": {
     "unauthorized_title": "Accès non autorisé",
     "unauthorized_desc": "Vous n'avez pas les permissions nécessaires pour accéder à cette page.",
@@ -470,7 +496,6 @@
       "submit": "Soumettre la demande"
     }
   },
-
   "notifications_page": {
     "title": "Notifications",
     "mark_all_read": "marquer lu",
@@ -488,7 +513,6 @@
     "delete": "Supprimer",
     "archive": "Archiver"
   },
-
   "navigation": {
     "home": "Accueil",
     "events": "Événements",
@@ -499,7 +523,6 @@
     "login": "Connexion",
     "register": "Inscription"
   },
-
   "footer": {
     "home": "Accueil",
     "about": "À propos",
@@ -524,7 +547,6 @@
     "reject": "Rejeter",
     "accept": "Accepter"
   },
-
   "data_protection": {
     "meta_title": "Protection des Données Personnelles",
     "meta_description": "Politique de protection des données personnelles de BonPlanInfos. Conforme aux réglementations africaines sur la protection des données.",
@@ -606,7 +628,6 @@
     },
     "last_updated": "Dernière mise à jour : Novembre 2025"
   },
-
   "marketing": {
     "meta_title": "Monétisez Vos Événements - Générez des Revenus à Chaque Interaction",
     "meta_description": "Créez des événements et gagnez de l'argent avec chaque vue, like et partage. Rejoignez les milliers d'organisateurs qui génèrent déjà des revenus sur notre plateforme.",
@@ -686,7 +707,6 @@
       "cta": "Devenir Partenaire Maintenant"
     }
   },
-
   "about": {
     "meta_title": "À propos de BonPlanInfos - La plateforme événementielle africaine",
     "meta_description": "Découvrez BonPlanInfos, la plateforme qui révolutionne l'organisation et la monétisation d'événements en Afrique avec seulement 10% de commission",
@@ -763,7 +783,6 @@
       "available_hours": "Disponible du lundi au vendredi, 8h-18h"
     }
   },
-
   "wallet_info_modal": {
     "title": "À quoi servent les pièces (pièces) ?",
     "intro": "Les pièces sont la monnaie virtuelle de BonPlanInfos. Elles vous permettent d'accéder à des contenus exclusifs et d'interagir avec les événements.",
@@ -778,13 +797,11 @@
     "cta_button": "Acheter des pièces",
     "usage_priority": "Les pièces gratuites sont toujours utilisées en premier pour vos actions !"
   },
-
   "events_title": "Événements à la Une",
   "all_events_button": "Tous les événements",
   "promoted_events": "Événements Sponsorisés",
   "popular_contests": "Concours Populaires",
   "see_all_contests": "Voir tous les concours",
-
   "event_card": {
     "days_remaining": "{{count}} jour restant",
     "days_remaining_plural": "{{count}} jours restants",
@@ -792,7 +809,6 @@
     "event_starting_today": "Commence aujourd'hui",
     "starting_from": "À partir de"
   },
-
   "filters": {
     "all": "Tout",
     "promoted": "Boostés",
@@ -801,7 +817,6 @@
     "this_week": "Cette semaine",
     "free": "Gratuits"
   },
-
   "event_detail": {
     "by_organizer": "Par",
     "share": "Partager",
@@ -824,7 +839,6 @@
     "raffle": "Tombola",
     "stands": "Stands"
   },
-
   "social_interactions": {
     "like": "J'aime",
     "comment": "SMS",
@@ -834,12 +848,10 @@
     "comment_placeholder": "Ajouter un commentaire...",
     "post_comment": "Publier"
   },
-
   "toasts": {
     "copied_to_clipboard": "Copié dans le presse-papiers !",
     "feature_not_implemented": "🚧 Cette fonctionnalité n'est pas encore implémentée—mais ne vous inquiétez pas ! Vous pouvez la demander dans votre prochain prompt ! 🚀"
   },
-
   "partner_signup": {
     "meta_title": "Devenir Partenaire - BonPlanInfos",
     "meta_description": "Devenez partenaire officiel BonPlanInfos et générez des revenus mensuels stables. Programme de concession territoriale avec commission plateforme de 10%.",
@@ -940,7 +952,6 @@
       "submit_to_admin": "Soumettre au Super Admin"
     }
   },
-
   "create_event_page": {
     "meta": {
       "title": "Créer un Événement - Choisir le Type",
@@ -976,7 +987,6 @@
       "button": "Voir le Guide d'Utilisation"
     }
   },
-
   "user_guide_page": {
     "meta": {
       "title": "BonPlanInfos - Plateforme Événementielle 100% Africaine",
@@ -1163,7 +1173,6 @@
       "copyright": "©2025 BonPlanInfos. Tous droits réservés."
     }
   },
-
   "help_center": {
     "meta_title": "Centre d'Aide - BonPlanInfos",
     "meta_description": "Trouvez des réponses à vos questions et contactez notre équipe de support pour toute assistance sur BonPlanInfos",
@@ -1228,7 +1237,6 @@
       }
     }
   },
-
   "admin": {
     "tabs": {
       "analytics": "Analyses",
@@ -1245,10 +1253,8 @@
       "welcome_popup": "Popup Accueil"
     }
   },
-
   "discover_places": "Découvrir des lieux",
   "discover_more_places": "Découvrir plus de lieux",
-
   "discover_page": {
     "title": "Découvrir des Lieux",
     "subtitle": "Trouvez de nouveaux lieux recommandés par la communauté.",
@@ -1259,7 +1265,6 @@
     "add_new_location": "Ajouter un nouveau lieu",
     "add_place": "Ajouter un Lieu"
   },
-
   "add_location": {
     "title": "Ajouter un nouveau lieu",
     "subtitle": "Partagez un super endroit avec la communauté.",
@@ -1275,7 +1280,6 @@
     "success_title": "Lieu soumis !",
     "success_message": "Merci ! Votre lieu a été soumis et sera examiné par notre équipe."
   },
-
   "verify_ticket": {
     "title": "Vérification de Billet",
     "scan_instruction": "Scannez le code QR du billet ou entrez le code du scanner.",
@@ -1300,7 +1304,6 @@
     "verifying_ticket": "Vérification du billet...",
     "enter_scanner_code": "Veuillez entrer un code de scanner valide."
   },
-
   "create_event": {
     "title": "Créer un Événement",
     "subtitle": "Choisissez le type d'événement que vous souhaitez organiser.",
@@ -1315,7 +1318,6 @@
     "stands": "Location de Stands",
     "stands_desc": "Gérez la location de stands pour un salon ou un marché."
   },
-
   "create_ticketing_event": {
     "title": "Créer un Événement avec Billetterie",
     "event_details": "Détails de l'Événement",
@@ -1343,7 +1345,6 @@
     "event_created_success": "Événement créé avec succès !",
     "editing_event": "Modification de l'événement"
   },
-
   "ticketing_interface": {
     "select_ticket_type": "Sélectionnez vos billets",
     "total_cost": "Coût Total :",
@@ -1353,12 +1354,10 @@
     "available": "disponibles",
     "benefits": "Avantages :"
   },
-
   "select_country": "Sélectionner un pays",
   "select_city": "Sélectionner une ville",
   "choose_file": "Choisir un fichier",
   "no_file_chosen": "Aucun fichier choisi",
-
   "pricing": {
     "meta": {
       "title": "Tarifs | BonPlan Infos",
@@ -1414,57 +1413,42 @@
     },
     "error_title": "Erreur",
     "success_title": "Succès",
-
     "confirm": "Confirmer",
     "cancel": "Annuler",
     "close": "Fermer",
     "back": "Retour",
-
     "save": "Enregistrer",
     "edit": "Modifier",
     "delete": "Supprimer",
     "view": "Voir",
-
     "submit": "Valider",
-
     "activate": "Activer",
     "deactivate": "Désactiver",
     "on": "Activé",
     "off": "Désactivé",
-
     "yes": "Oui",
     "no": "Non",
-
     "search": "Rechercher...",
     "filter": "Filtrer",
     "clear": "Effacer",
     "clear_all": "Tout effacer",
-
     "loading": "Chargement...",
     "retry": "Réessayer",
     "error": "Une erreur est survenue",
-
     "share": "Partager",
     "copy_link": "Lien copié",
-
     "credit": "Créditer",
-
     "all": "Tous",
     "none": "Aucun",
-
     "actions": "Actions",
     "details": "Détails",
     "status": "Statut",
-
     "created_at": "Créé le",
     "updated_at": "Mis à jour le",
-
     "next": "Suivant",
     "previous": "Précédent",
-
     "whatsapp_community": "Rejoindre la communauté WhatsApp"
   },
-
   "eventDetail": {
     "notFound": "Événement non trouvé",
     "loading": "Chargement...",
@@ -1539,7 +1523,6 @@
       "loginRequiredDesc": "Veuillez vous connecter pour interagir."
     }
   },
-
   "verificationStats": {
     "title": "Statistiques de validation",
     "description": "État des entrées en temps réel",
@@ -1550,7 +1533,6 @@
     "duplicateScans_other": "{{count}} tentatives de doublons détectées",
     "noData": "Aucune donnée disponible"
   },
-
   "legal_mentions": {
     "meta_title": "Mentions légales",
     "meta_description": "Consultez les mentions légales de BonPlanInfos pour obtenir des informations sur l’éditeur du site, l’hébergement et nos obligations légales.",
@@ -1609,45 +1591,7 @@
       }
     }
   },
-
   "_comment_profile": "👤 Page de profil - Gestion du compte et des gains",
-  "profile": {
-    "notLoggedIn": {
-      "title": "Connexion requise",
-      "description": "Votre session a expiré ou vous n'êtes pas connecté. Veuillez vous reconnecter pour accéder à votre profil.",
-      "loginButton": "Se connecter"
-    },
-    "balance": {
-      "title": "Mon Solde de Pièces",
-      "coins": "pièces",
-      "approx": "≈ {{balance}} FCFA",
-      "description": "Pièces achetées ou gagnées, utilisables pour événements ou convertibles en gains. Commission de 10% sur les transferts vers gains pour retrait.",
-      "locked": "🔒 Verrouillé",
-      "lockedDescription": "Déverrouillez votre portefeuille pour voir votre solde.",
-      "unlockButton": "Déverrouiller",
-      "transferButton": "Transférer pour retrait"
-    },
-    "pendingEarnings": {
-      "title": "Gains en attente de transfert",
-      "feeLabel": "Frais: 5%",
-      "totalPending": "Total en attente :",
-      "netReceivable": "Net à recevoir :",
-      "unlockToTransfer": "Déverrouiller pour transférer",
-      "transferButton": "Transférer vers mon portefeuille",
-      "noEarnings": "Aucun gain à transférer",
-      "noEarningsDescription": "Les revenus de vos événements terminés apparaîtront ici."
-    },
-    "toast": {
-      "error": "Erreur",
-      "sessionExpired": "Session expirée",
-      "transferSuccess": "Succès du transfert",
-      "transferDetails": "Brut : {{gross}}π | Frais : {{fee}}π | Net ajouté : {{net}}π"
-    },
-    "helmet": {
-      "title": "Profil"
-    }
-  },
-
   "_comment_profileStats": "📊 Statistiques du profil (ProfileStats)",
   "profileStats": {
     "balance": "Mon solde",
@@ -1657,7 +1601,6 @@
     "unlockButton": "Déverrouiller les soldes",
     "unlockPrompt": "Déverrouiller pour voir"
   },
-
   "_comment_profileTabs": "📌 Onglets du profil (ProfilePageContent)",
   "profileTabs": {
     "events": "Événements",
@@ -1668,7 +1611,6 @@
     "scanners": "Équipe de scan",
     "withdrawals": "Retraits"
   },
-
   "_comment_transferHistory": "📜 Historique des transferts (TransferHistory)",
   "transferHistory": {
     "title": "Historique des transferts et frais",
@@ -1698,11 +1640,9 @@
       "transfer": "Transfert vers portefeuille"
     }
   },
-
   "_comment_transferModal": "💸 Modal de transfert de gains (TransferModal)",
   "transferModal": {
     "title": "Transférer vos gains",
-
     "description": "Transférez vos gains en attente vers votre solde disponible. Les frais de {{percent}}% sont déjà déduits.",
     "netAmount": "Montant net à transférer",
     "afterFees": "Après déduction des frais",
@@ -1735,7 +1675,6 @@
       "processing": "Traitement..."
     }
   },
-
   "_comment_coinTransferModal": "🪙 Modal de transfert de pièces (CoinTransferModal)",
   "coinTransferModal": {
     "title": "Transférer des Pièces",
@@ -1758,7 +1697,6 @@
       "transfer": "Transférer"
     }
   },
-
   "pinVerification": {
     "setupTitle": "Configurer votre Code PIN",
     "setupDescription": "Créez un code PIN à 4 chiffres pour sécuriser l'accès à vos fonds.",
@@ -1807,7 +1745,6 @@
       "securityAlertDescription": "Une capture de votre visage a été prise et envoyée au propriétaire du compte."
     }
   },
-
   "_comment_pinResetRequest": "🔐 Demande de réinitialisation de PIN (PinResetRequestModal)",
   "pinResetRequest": {
     "step1": {
@@ -1846,7 +1783,6 @@
       "errorDescription": "Impossible d'envoyer la demande."
     }
   },
-
   "_comment_withdrawalModal": "💳 Modal de retrait (WithdrawalModal)",
   "withdrawalModal": {
     "title": "Effectuer un retrait",
@@ -1891,7 +1827,6 @@
       "errorDesc": "Échec de la demande."
     }
   },
-
   "communityVerification": {
     "title": "Vérification Communautaire",
     "description": "Confirmez la tenue de l'événement pour débloquer les fonds de l'organisateur.",
@@ -1928,7 +1863,6 @@
       }
     }
   },
-
   "creatorDashboard": {
     "toast": {
       "error": "Erreur",
@@ -1993,7 +1927,6 @@
       }
     }
   },
-
   "transactionsTab": {
     "transfers": {
       "title": "Historique des transferts et frais",
@@ -2034,14 +1967,6 @@
       }
     }
   },
-
-  "settings": {
-    "title": "Paramètres - BonPlanInfos",
-    "description": "Gérez vos préférences et paramètres de compte sur BonPlanInfos.",
-    "pageTitle": "Paramètres",
-    "pageSubtitle": "Personnalisez votre expérience et gérez la sécurité de votre compte."
-  },
-
   "profileSettings": {
     "title": "Informations personnelles",
     "fullName": "Nom complet",
@@ -2053,7 +1978,6 @@
     "updateSuccess": "Profil mis à jour avec succès",
     "updateError": "Erreur lors de la mise à jour du profil"
   },
-
   "security": {
     "title": "Sécurité",
     "currentPassword": "Mot de passe actuel",
@@ -2114,7 +2038,6 @@
       "email": "support@bonplaninfos.net"
     }
   },
-
   "notificationSettings": {
     "title": "Préférences de notification",
     "emailNotifications": "Notifications par email",
@@ -2124,7 +2047,6 @@
     "promotionalEmails": "Emails promotionnels",
     "saveButton": "Enregistrer les préférences"
   },
-
   "preferencesSettings": {
     "title": "Préférences",
     "language": "Langue",

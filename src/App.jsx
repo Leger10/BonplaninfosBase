@@ -24,6 +24,7 @@ import NewsPage from "@/pages/NewsPage";
 import BoostPage from "@/pages/BoostPage";
 import MarketingPage from "@/pages/MarketingPage";
 import PartnerSignupPage from "@/pages/PartnerSignupPage";
+import BusinessPartnerPage from "@/pages/BusinessPartnerPage";
 import MandatoryVideoPopup from "@/components/video/MandatoryVideoPopup";
 import AboutPage from "@/pages/AboutPage";
 import PrivacyPolicyPage from "@/pages/PrivacyPolicyPage";
@@ -171,10 +172,8 @@ function App() {
                   />
                   <Route path="/boost" element={<BoostPage />} />
                   <Route path="/marketing" element={<MarketingPage />} />
-                  <Route
-                    path="/partner-signup"
-                    element={<PartnerSignupPage />}
-                  />
+                  <Route path="/partner-signup" element={<PartnerSignupPage />} />
+                  <Route path="/partenaire-affaires" element={<BusinessPartnerPage />} />
                   <Route path="/about" element={<AboutPage />} />
                   <Route
                     path="/privacy-policy"

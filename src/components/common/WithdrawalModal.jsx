@@ -9,6 +9,7 @@ import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useTranslation } from 'react-i18next';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { useData } from '@/contexts/DataContext';
 
 const WithdrawalModal = ({ 
     open, 
@@ -19,6 +20,7 @@ const WithdrawalModal = ({
     onSuccess 
 }) => {
     const { t } = useTranslation();
+    const { appSettings } = useData();
     const [amount, setAmount] = useState('');
     const [method, setMethod] = useState('');
     const [details, setDetails] = useState('');
@@ -30,7 +32,7 @@ const WithdrawalModal = ({
     const [withdrawalDates, setWithdrawalDates] = useState([5, 20]);
     
     // Constantes
-    const FEE_PERCENT = 0.05;
+    const FEE_PERCENT = (Number(appSettings?.withdrawal_fee_percentage) > 0 ? Number(appSettings.withdrawal_fee_percentage) : 5) / 100;
     const RATE = 10; // 1 Pi = 10 FCFA
 
     // Valeurs dérivées

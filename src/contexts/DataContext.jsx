@@ -59,6 +59,8 @@ export const normalizeSettings = (settings = {}) => ({
   currency_eur_rate: toPositiveNumber(settings.currency_eur_rate, 650),
   currency_usd_rate: toPositiveNumber(settings.currency_usd_rate, 550),
   platform_fee_percentage: toPositiveNumber(settings.platform_fee_percentage, 5),
+  withdrawal_fee_percentage: toPositiveNumber(settings.withdrawal_fee_percentage, 5),
+  business_partner_commission_percentage: Math.max(0, Number(settings.business_partner_commission_percentage) || 0),
 });
 
 export const DataProvider = ({ children }) => {

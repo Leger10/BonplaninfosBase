@@ -1,0 +1,468 @@
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+.FullName : Le terme «.FullName» n'est pas reconnu comme nom d'applet de commande, fonction, fichier de script ou 
+programme exécutable. Vérifiez l'orthographe du nom, ou si un chemin d'accès existe, vérifiez que le chemin d'accès 
+est correct et réessayez.
+Au caractère Ligne:1 : 58
++ ... hildItem -Recurse -Filter '*push*' | Where-Object { .FullName -notmat ...
++                                                         ~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (.FullName:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 

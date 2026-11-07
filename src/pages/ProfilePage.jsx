@@ -304,6 +304,11 @@ const ProfilePage = () => {
         </Helmet>
         <main className="max-w-7xl mx-auto px-4 py-8">
           <ProfileHeader user={userProfile} />
+          <div className="mt-4 flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => navigate('/partenaire-affaires')} className="gap-2">
+              < HeartHandshake className="h-4 w-4" /> Espace partenaire d'affaires
+            </Button>
+          </div>
           <div className="mt-6">
             <MyTicketsTab isGuestView={false} />
           </div>
@@ -391,7 +396,7 @@ const ProfilePage = () => {
                 <Clock /> {t('profile.pendingEarnings.title')}
               </h2>
               <Badge variant="outline" className="flex items-center gap-1">
-                <Percent className="w-3 h-3" /> {t('profile.pendingEarnings.feeLabel')}
+                <Percent className="w-3 h-3" /> {t('profile.pendingEarnings.feeLabel', { percent: pendingFeePercent })}
               </Badge>
             </div>
 

@@ -66,18 +66,38 @@ function parseValidDates(raw) {
 // app_settings.platform_fee_percentage (onglet Config) : avant, ce réglage
 // n'était lu par aucun calcul et le taux restait figé à 5% quoi qu'il arrive.
 const DEFAULT_PLATFORM_FEE_RATE = 0.05;
+const DEFAULT_WITHDRAWAL_FEE_RATE = 0.05;
 
 async function getAppSettings() {
   try {
     const row = await db().app_settings.findFirst();
     const feePercent = Number(row?.platform_fee_percentage);
+    const withdrawalPercent = Number(row?.withdrawal_fee_percentage);
+    const partnerPercent = Number(row?.business_partner_commission_percentage);
+    const platformFeeRate = Number.isFinite(feePercent) && feePercent > 0 ? feePercent / 100 : DEFAULT_PLATFORM_FEE_RATE;
+    const withdrawalFeeRate = Number.isFinite(withdrawalPercent) && withdrawalPercent > 0 ? withdrawalPercent / 100 : DEFAULT_WITHDRAWAL_FEE_RATE;
+    const businessPartnerCommissionRate = Number.isFinite(partnerPercent) && partnerPercent >= 0 ? partnerPercent / 100 : 0;
     return {
       rate: Number(row?.coin_to_fcfa_rate) || 10,
       minWithdrawalPi: Number(row?.min_withdrawal_pi) || 50,
-      platformFeeRate: Number.isFinite(feePercent) && feePercent > 0 ? feePercent / 100 : DEFAULT_PLATFORM_FEE_RATE,
+      platformFeeRate,
+      withdrawalFeeRate,
+      businessPartnerCommissionRate,
+      platformFeePercentage: Number.isFinite(feePercent) && feePercent > 0 ? feePercent : DEFAULT_PLATFORM_FEE_RATE * 100,
+      withdrawalFeePercentage: Number.isFinite(withdrawalPercent) && withdrawalPercent > 0 ? withdrawalPercent : DEFAULT_WITHDRAWAL_FEE_RATE * 100,
+      businessPartnerCommissionPercentage: Number.isFinite(partnerPercent) && partnerPercent >= 0 ? partnerPercent : 0,
     };
   } catch (e) {
-    return { rate: 10, minWithdrawalPi: 50, platformFeeRate: DEFAULT_PLATFORM_FEE_RATE };
+    return {
+      rate: 10,
+      minWithdrawalPi: 50,
+      platformFeeRate: DEFAULT_PLATFORM_FEE_RATE,
+      withdrawalFeeRate: DEFAULT_WITHDRAWAL_FEE_RATE,
+      businessPartnerCommissionRate: 0,
+      platformFeePercentage: 5,
+      withdrawalFeePercentage: 5,
+      businessPartnerCommissionPercentage: 0,
+    };
   }
 }
 
@@ -87,6 +107,77 @@ async function getPlatformFeeRate() {
 
 async function getMinWithdrawalPi() {
   return (await getAppSettings()).minWithdrawalPi;
+}
+
+// Créditer la commission partenaire d'affaires sur les frais retenus (en pièces).
+// Idempotent via (partner_id, source_type, source_id). Partenaire = profiles.referred_by de l'organisateur.
+async function creditBusinessPartnerFeeCommission({ dbc, organizerId, sourceType, sourceId, grossFeeCoins, metadata }) {
+  try {
+    const client = dbc || db();
+    const feeCoins = Math.max(0, Math.round(Number(grossFeeCoins || 0)));
+    if (!organizerId || !sourceType || !sourceId || feeCoins <= 0) return { credited: false, reason: 'invalid' };
+
+    const org = await client.profiles.findUnique({ where: { id: organizerId }, select: { referred_by: true } });
+    const partnerId = org?.referred_by;
+    if (!partnerId || partnerId === organizerId) return { credited: false, reason: 'no_partner' };
+
+    const settings = await getAppSettings();
+    const rate = Number(settings.businessPartnerCommissionRate || 0);
+    if (!(rate > 0)) return { credited: false, reason: 'disabled' };
+
+    const commissionCoins = Math.max(0, Math.round(feeCoins * rate));
+    if (commissionCoins <= 0) return { credited: false, reason: 'zero' };
+
+    // Idempotence applicative + contrainte unique en base (si migration appliquée)
+    const existing = await client.business_partner_commissions.findFirst({
+      where: { partner_id: partnerId, source_type: sourceType, source_id: String(sourceId) },
+      select: { id: true },
+    }).catch(() => null);
+    if (existing) return { credited: false, reason: 'duplicate', partnerId, commissionCoins };
+
+    const now = new Date();
+    await client.$transaction(async (tx) => {
+      await tx.business_partner_commissions.create({
+        data: {
+          id: uuidv4(),
+          partner_id: partnerId,
+          organizer_id: organizerId,
+          source_type: sourceType,
+          source_id: String(sourceId),
+          gross_fee_coins: feeCoins,
+          commission_percent: Number(settings.businessPartnerCommissionPercentage || 0),
+          commission_coins: commissionCoins,
+          status: 'credited',
+          metadata: metadata ? JSON.stringify(metadata) : null,
+          created_at: now,
+        },
+      });
+      await tx.profiles.update({
+        where: { id: partnerId },
+        data: {
+          available_earnings: { increment: commissionCoins },
+          updated_at: now,
+        },
+      });
+    });
+
+    await client.notifications.create({
+      data: {
+        id: uuidv4(),
+        user_id: partnerId,
+        title: 'Commission partenaire d’affaires',
+        message: `Vous avez reçu ${commissionCoins} pièces (partenaire d’affaires) sur les frais retenus.`,
+        type: 'success',
+        data: JSON.stringify({ source_type: sourceType, source_id: String(sourceId), organizer_id: organizerId, commission_coins: commissionCoins }),
+        created_at: now,
+      },
+    }).catch(() => {});
+
+    return { credited: true, partnerId, commissionCoins };
+  } catch (e) {
+    console.warn('[business_partner] commission non créditée:', e?.message || e);
+    return { credited: false, reason: 'error', error: e?.message };
+  }
 }
 
 async function creditOrganizerEarnings(params = {}) {
@@ -1981,10 +2072,8 @@ const HANDLERS = {
     }
     const gross = pendingRows.reduce((sum, row) => sum + Number(row.earnings_coins || 0), 0);
     const platformFeeRate = await getPlatformFeeRate();
-    const platformFee = pendingRows.reduce(
-      (sum, row) => sum + Number(row.platform_commission ?? Math.floor(Number(row.earnings_coins || 0) * platformFeeRate)),
-      0
-    );
+    const feeForRow = (row) => Number(row.platform_commission ?? Math.floor(Number(row.earnings_coins || 0) * platformFeeRate));
+    const platformFee = pendingRows.reduce((sum, row) => sum + feeForRow(row), 0);
     const net = gross - platformFee;
     const now = new Date();
     await db().organizer_earnings.updateMany({
@@ -1999,7 +2088,103 @@ const HANDLERS = {
         updated_at: now,
       },
     });
+
+    // Les commissions partenaire sur les frais de transfert sont créditées dans les gains
+    // du partenaire après retrait des fonds du filleul (organisateur), avec les frais de retrait.
     return ok({ success: true, message: 'Transfert effectué.', total_gross: gross, platform_fee: platformFee, total_net: net, transferred_count: pendingRows.length });
+  },
+
+  async get_business_partner_dashboard(args) {
+    const { p_user_id } = args || {};
+    if (!p_user_id) return fail('p_user_id requis');
+    const dbc = db();
+    const settings = await getAppSettings();
+    const rate = Number(settings.rate || 10);
+
+    const organizers = await dbc.profiles.findMany({
+      where: { referred_by: p_user_id },
+      select: { id: true, full_name: true, email: true, avatar_url: true, created_at: true, user_type: true },
+      orderBy: { created_at: 'desc' },
+    });
+
+    const rows = [];
+    let totals = { organizers: organizers.length, events: 0, participations: 0, transfer_fees_coins: 0, withdrawal_fees_coins: 0, platform_revenue_coins: 0, partner_commission_coins: 0, withdrawn_coins: 0 };
+
+    for (const org of organizers) {
+      const events = await dbc.events.findMany({ where: { organizer_id: org.id }, select: { id: true } });
+      const eventIds = events.map((e) => e.id);
+
+      let participations = 0;
+      if (eventIds.length) {
+        participations = await dbc.event_participations.count({ where: { event_id: { in: eventIds } } }).catch(() => 0);
+      }
+
+      const earnings = await dbc.organizer_earnings.findMany({
+        where: { organizer_id: org.id },
+        select: { earnings_coins: true, platform_commission: true, status: true },
+      });
+      const transferFeesCoins = earnings
+        .filter((e) => e.status === 'transferred')
+        .reduce((s, e) => s + Number(e.platform_commission ?? Math.floor(Number(e.earnings_coins || 0) * (settings.platformFeeRate || 0.05))), 0);
+      const grossCoins = earnings.reduce((s, e) => s + Number(e.earnings_coins || 0), 0);
+
+      const withdrawals = await dbc.organizer_withdrawal_requests.findMany({
+        where: { organizer_id: org.id, status: { in: ['approved', 'paid'] } },
+        select: { amount_pi: true, amount_fcfa: true, fees: true, net_amount: true, paid_at: true, reviewed_at: true, requested_at: true },
+      });
+      const withdrawnCoins = withdrawals.reduce((s, w) => s + Number(w.amount_pi || 0), 0);
+      const withdrawalFeesCoins = withdrawals.reduce((s, w) => s + Math.max(0, Math.round(Number(w.fees || 0) / rate)), 0);
+
+      const platformRevenueCoins = transferFeesCoins + withdrawalFeesCoins;
+      const commissions = await dbc.business_partner_commissions.findMany({
+        where: { partner_id: p_user_id, organizer_id: org.id },
+        select: { commission_coins: true },
+      }).catch(() => []);
+      const partnerCommissionCoins = commissions.reduce((s, r) => s + Number(r.commission_coins || 0), 0);
+
+      totals.events += eventIds.length;
+      totals.participations += participations;
+      totals.transfer_fees_coins += transferFeesCoins;
+      totals.withdrawal_fees_coins += withdrawalFeesCoins;
+      totals.platform_revenue_coins += platformRevenueCoins;
+      totals.partner_commission_coins += partnerCommissionCoins;
+      totals.withdrawn_coins += withdrawnCoins;
+
+      rows.push({
+        organizer: org,
+        stats: {
+          events_count: eventIds.length,
+          participations_count: participations,
+          gross_coins: grossCoins,
+          transfer_fees_coins: transferFeesCoins,
+          withdrawn_coins: withdrawnCoins,
+          withdrawal_fees_coins: withdrawalFeesCoins,
+          platform_revenue_coins: platformRevenueCoins,
+          partner_commission_coins: partnerCommissionCoins,
+        },
+      });
+    }
+
+    const commissionTotal = await dbc.business_partner_commissions.aggregate({
+      where: { partner_id: p_user_id },
+      _sum: { commission_coins: true, gross_fee_coins: true },
+      _count: { _all: true },
+    }).catch(() => null);
+
+    return ok({
+      partner_id: p_user_id,
+      settings: {
+        platform_fee_percentage: settings.platformFeePercentage,
+        withdrawal_fee_percentage: settings.withdrawalFeePercentage,
+        business_partner_commission_percentage: settings.businessPartnerCommissionPercentage,
+      },
+      totals: {
+        ...totals,
+        ledger_commission_coins: Number(commissionTotal?._sum?.commission_coins || 0),
+        ledger_gross_fee_coins: Number(commissionTotal?._sum?.gross_fee_coins || 0),
+      },
+      organizers: rows,
+    });
   },
 
   async get_zones_stats() {
@@ -2456,7 +2641,7 @@ const HANDLERS = {
     if (amountPi <= 0) return ok({ success: false, message: 'Montant de retrait invalide.' });
 
     const dbc = db();
-    const { rate, minWithdrawalPi, platformFeeRate } = await getAppSettings();
+    const { rate, minWithdrawalPi, withdrawalFeeRate } = await getAppSettings();
     const profile = await dbc.profiles.findUnique({
       where: { id: organizerId },
       select: { available_earnings: true },
@@ -2471,7 +2656,7 @@ const HANDLERS = {
     }
 
     const amountFcfa = amountPi * rate;
-    const feeFcfa = Number(details.fee_amount_fcfa) || Math.ceil(amountFcfa * platformFeeRate);
+    const feeFcfa = Number(details.fee_amount_fcfa) || Math.ceil(amountFcfa * withdrawalFeeRate);
     const netFcfa = Number(details.net_amount_fcfa) || Math.max(0, amountFcfa - feeFcfa);
     const now = new Date();
 
@@ -2565,6 +2750,44 @@ const HANDLERS = {
           updated_at: now,
         },
       });
+    }
+
+    // Commission partenaire d'affaires (créditée dans les gains du partenaire après retrait des fonds du filleul) :
+    // % appliqué sur les frais retenus = frais de transfert (gains transférés) + frais de retrait, le tout sur l'organisateur.
+    // On crédite les frais de retrait de cette demande + les frais de transfert transférés non encore commissionnés (idempotent).
+    if (status === 'approved' || status === 'paid') {
+      const settings = await getAppSettings();
+      const rate = Number(settings.rate || 10);
+      const platformFeeRate = Number(settings.platformFeeRate || 0.05);
+      const feeFcfa = Number(request.fees || 0);
+      const feeCoins = Math.max(0, Math.round(feeFcfa / rate));
+      await creditBusinessPartnerFeeCommission({
+        dbc,
+        organizerId: request.organizer_id,
+        sourceType: 'withdrawal_fee',
+        sourceId: p_request_id,
+        grossFeeCoins: feeCoins,
+        metadata: { withdrawal_request_id: p_request_id, fee_fcfa: feeFcfa, amount_pi: request.amount_pi },
+      });
+
+      // Balayer les frais de transfert déjà retenus (earnings transférés) non commissionnés
+      const transferred = await dbc.organizer_earnings.findMany({
+        where: { organizer_id: request.organizer_id, status: 'transferred' },
+        select: { id: true, earnings_coins: true, platform_commission: true },
+      });
+      for (const row of transferred) {
+        const tf = Number(row.platform_commission ?? Math.floor(Number(row.earnings_coins || 0) * platformFeeRate));
+        if (tf > 0) {
+          await creditBusinessPartnerFeeCommission({
+            dbc,
+            organizerId: request.organizer_id,
+            sourceType: 'transfer_fee',
+            sourceId: row.id,
+            grossFeeCoins: tf,
+            metadata: { organizer_earning_id: row.id, settled_on_withdrawal: p_request_id },
+          });
+        }
+      }
     }
 
     await dbc.notifications

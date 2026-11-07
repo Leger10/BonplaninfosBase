@@ -92,6 +92,8 @@ const ConfigTab = () => {
       coin_to_fcfa_rate: Number(updateData.coin_to_fcfa_rate) || 10,
       min_withdrawal_pi: Number(updateData.min_withdrawal_pi) || 50,
       platform_fee_percentage: Number(updateData.platform_fee_percentage) > 0 ? Number(updateData.platform_fee_percentage) : 5,
+      withdrawal_fee_percentage: Number(updateData.withdrawal_fee_percentage) >= 0 ? Number(updateData.withdrawal_fee_percentage) : 5,
+      business_partner_commission_percentage: Number(updateData.business_partner_commission_percentage) >= 0 ? Number(updateData.business_partner_commission_percentage) : 0,
       // Convention unique : FCFA pour 1 € / 1 $ (lue telle quelle par
       // AdminCreditsTab). Avant, ce formulaire stockait l'inverse (0.0015 EUR
       // pour 1 FCFA), ce qui divisait les conversions par ~430 000.
@@ -188,8 +190,17 @@ const ConfigTab = () => {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="platformFee">Frais de plateforme sur les transactions (%)</Label>
-              <Input id="platformFee" type="number" value={configForm?.platform_fee_percentage || 5} onChange={(e) => handleInputChange('platform_fee_percentage', e.target.value)} />
+              <Label htmlFor="platformFee">Frais de plateforme / transfert vers portefeuille (%)</Label>
+              <Input id="platformFee" type="number" min="0" step="0.1" value={configForm?.platform_fee_percentage ?? 5} onChange={(e) => handleInputChange('platform_fee_percentage', e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="withdrawalFee">Frais de retrait (%)</Label>
+              <Input id="withdrawalFee" type="number" min="0" step="0.1" value={configForm?.withdrawal_fee_percentage ?? 5} onChange={(e) => handleInputChange('withdrawal_fee_percentage', e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bpCommission">Commission partenaire d'affaires (% des frais retenus)</Label>
+              <Input id="bpCommission" type="number" min="0" max="100" step="0.1" value={configForm?.business_partner_commission_percentage ?? 0} onChange={(e) => handleInputChange('business_partner_commission_percentage', e.target.value)} />
+              <p className="text-xs text-muted-foreground">Appliquée aux frais de transfert + frais de retrait des organisateurs parrainés (profiles.referred_by), créditée dans les gains du partenaire.</p>
             </div>
           </div>
 
