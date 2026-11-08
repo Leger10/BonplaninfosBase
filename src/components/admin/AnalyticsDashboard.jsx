@@ -28,7 +28,7 @@ import {
   EyeOff,
   Smartphone,
   Calendar,
-  BarChart,
+  BarChart as BarChartIcon,
   FileText,
   UserCheck,
   Globe,
@@ -140,84 +140,107 @@ const AnalyticsDashboard = () => {
       setCountryStats({
         countries: Array.isArray(data?.countries) ? data.countries : [],
         generated_at: data?.generated_at || null,
-        total_general_platform_ca_fcfa: Number(data?.total_general_platform_ca_fcfa || 0),
-        monthly_platform_ca: Array.isArray(data?.monthly_platform_ca) ? data.monthly_platform_ca : [],
+        total_general_platform_ca_fcfa: Number(
+          data?.total_general_platform_ca_fcfa || 0,
+        ),
+        monthly_platform_ca: Array.isArray(data?.monthly_platform_ca)
+          ? data.monthly_platform_ca
+          : [],
       });
     } catch (err) {
       console.warn("Country/organizer stats:", err?.message || err);
-      setCountryStats({ countries: [], generated_at: null, total_general_platform_ca_fcfa: 0, monthly_platform_ca: [] });
+      setCountryStats({
+        countries: [],
+        generated_at: null,
+        total_general_platform_ca_fcfa: 0,
+        monthly_platform_ca: [],
+      });
     } finally {
       setCountryStatsLoading(false);
     }
   };
 
   // ========== RÉCUPÉRATION DES ACCEPTATIONS DE CONTRAT ==========
-// ========== RÉCUPÉRATION DES ACCEPTATIONS DE CONTRAT ==========
-const fetchContractAcceptances = async () => {
-  try {
-    // Récupérer toutes les acceptations
-    const { data, error } = await supabase
-      .from("user_contract_acceptances")
-      .select("id, user_id, event_id, contract_type, accepted_at, contract_version, created_at")
-      .order("accepted_at", { ascending: false });
+  // ========== RÉCUPÉRATION DES ACCEPTATIONS DE CONTRAT ==========
+  const fetchContractAcceptances = async () => {
+    try {
+      // Récupérer toutes les acceptations
+      const { data, error } = await supabase
+        .from("user_contract_acceptances")
+        .select(
+          "id, user_id, event_id, contract_type, accepted_at, contract_version, created_at",
+        )
+        .order("accepted_at", { ascending: false });
 
-    if (error) {
-      if (error.code === "PGRST204" || error.message?.includes("does not exist")) {
-        console.warn("⚠️ Table user_contract_acceptances n'existe pas encore");
+      if (error) {
+        if (
+          error.code === "PGRST204" ||
+          error.message?.includes("does not exist")
+        ) {
+          console.warn(
+            "⚠️ Table user_contract_acceptances n'existe pas encore",
+          );
+          setContractAcceptances([]);
+          setTotalContractAcceptances(0);
+          return;
+        }
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
         setContractAcceptances([]);
         setTotalContractAcceptances(0);
         return;
       }
-      throw error;
-    }
 
-    if (!data || data.length === 0) {
+      // Récupérer les infos utilisateur
+      const userIds = [
+        ...new Set(data.map((item) => item.user_id).filter(Boolean)),
+      ];
+      let usersMap = {};
+      if (userIds.length > 0) {
+        const { data: usersData, error: usersError } = await supabase
+          .from("profiles")
+          .select("id, full_name, email, phone")
+          .in("id", userIds);
+        if (!usersError && usersData) {
+          usersMap = usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {});
+        }
+      }
+
+      // Récupérer les événements
+      const eventIds = [
+        ...new Set(data.map((item) => item.event_id).filter(Boolean)),
+      ];
+      let eventsMap = {};
+      if (eventIds.length > 0) {
+        const { data: eventsData, error: eventsError } = await supabase
+          .from("events")
+          .select("id, title, event_start_at, event_end_at, city")
+          .in("id", eventIds);
+        if (!eventsError && eventsData) {
+          eventsMap = eventsData.reduce(
+            (acc, e) => ({ ...acc, [e.id]: e }),
+            {},
+          );
+        }
+      }
+
+      // Enrichir les données
+      const enrichedData = data.map((item) => ({
+        ...item,
+        user: usersMap[item.user_id] || null,
+        event: eventsMap[item.event_id] || null,
+      }));
+
+      setContractAcceptances(enrichedData);
+      setTotalContractAcceptances(enrichedData.length);
+    } catch (err) {
+      console.error("❌ Erreur chargement acceptations contrat:", err);
       setContractAcceptances([]);
       setTotalContractAcceptances(0);
-      return;
     }
-
-    // Récupérer les infos utilisateur
-    const userIds = [...new Set(data.map(item => item.user_id).filter(Boolean))];
-    let usersMap = {};
-    if (userIds.length > 0) {
-      const { data: usersData, error: usersError } = await supabase
-        .from("profiles")
-        .select("id, full_name, email, phone")
-        .in("id", userIds);
-      if (!usersError && usersData) {
-        usersMap = usersData.reduce((acc, u) => ({ ...acc, [u.id]: u }), {});
-      }
-    }
-
-    // Récupérer les événements
-    const eventIds = [...new Set(data.map(item => item.event_id).filter(Boolean))];
-    let eventsMap = {};
-    if (eventIds.length > 0) {
-      const { data: eventsData, error: eventsError } = await supabase
-        .from("events")
-        .select("id, title, event_start_at, event_end_at, city")
-        .in("id", eventIds);
-      if (!eventsError && eventsData) {
-        eventsMap = eventsData.reduce((acc, e) => ({ ...acc, [e.id]: e }), {});
-      }
-    }
-
-    // Enrichir les données
-    const enrichedData = data.map(item => ({
-      ...item,
-      user: usersMap[item.user_id] || null,
-      event: eventsMap[item.event_id] || null
-    }));
-
-    setContractAcceptances(enrichedData);
-    setTotalContractAcceptances(enrichedData.length);
-  } catch (err) {
-    console.error("❌ Erreur chargement acceptations contrat:", err);
-    setContractAcceptances([]);
-    setTotalContractAcceptances(0);
-  }
-};
+  };
 
   const fetchPwaInstalls = async () => {
     try {
@@ -981,10 +1004,14 @@ const fetchContractAcceptances = async () => {
                                 {coupon.usage_count}
                               </td>
                               <td className="py-2 text-right whitespace-nowrap">
-                                {formatCurrency(Number(coupon.total_amount) || 0)}
+                                {formatCurrency(
+                                  Number(coupon.total_amount) || 0,
+                                )}
                               </td>
                               <td className="py-2 text-right text-green-400 whitespace-nowrap">
-                                {formatCurrency(Number(coupon.commission_earned) || 0)}
+                                {formatCurrency(
+                                  Number(coupon.commission_earned) || 0,
+                                )}
                               </td>
                               <td className="py-2 whitespace-nowrap">
                                 {coupon.last_used_at
@@ -1089,7 +1116,7 @@ const fetchContractAcceptances = async () => {
                     title="Plateformes"
                     value={`${pwaInstalls.filter((i) => i.platform === "android").length} Android / ${pwaInstalls.filter((i) => i.platform === "ios").length} iOS`}
                     subtext="Répartition"
-                    icon={BarChart}
+                    icon={BarChartIcon} // ← renamed here
                     colorClass="text-green-500"
                   />
                 </div>
@@ -1168,7 +1195,7 @@ const fetchContractAcceptances = async () => {
                 Acceptations de contrat
               </CardTitle>
               <CardDescription>
-                Historique des acceptations de contrat organisateur. Permet de 
+                Historique des acceptations de contrat organisateur. Permet de
                 vérifier qui a accepté le contrat avant de créer un événement.
               </CardDescription>
             </CardHeader>
@@ -1221,7 +1248,7 @@ const fetchContractAcceptances = async () => {
                       <FileText className="w-12 h-12 mx-auto mb-3 text-muted-foreground/50" />
                       <p>Aucune acceptation de contrat enregistrée.</p>
                       <p className="text-sm mt-1">
-                        Les acceptations apparaîtront ici lorsque des 
+                        Les acceptations apparaîtront ici lorsque des
                         organisateurs accepteront le contrat.
                       </p>
                     </div>
@@ -1249,7 +1276,8 @@ const fetchContractAcceptances = async () => {
                                 {index + 1}
                               </td>
                               <td className="py-3 font-medium">
-                                {acceptance.user?.full_name || "Utilisateur inconnu"}
+                                {acceptance.user?.full_name ||
+                                  "Utilisateur inconnu"}
                                 <div className="text-xs text-muted-foreground">
                                   ID: {acceptance.user_id?.slice(0, 8)}...
                                 </div>
@@ -1267,14 +1295,15 @@ const fetchContractAcceptances = async () => {
                                       {acceptance.event.title || "Événement"}
                                     </div>
                                     <div className="text-xs text-muted-foreground">
-                                      {acceptance.event.city || "Lieu"} • 
-                                      {acceptance.event.event_start_at && (
+                                      {acceptance.event.city || "Lieu"} •
+                                      {acceptance.event.event_start_at &&
                                         format(
-                                          new Date(acceptance.event.event_start_at),
+                                          new Date(
+                                            acceptance.event.event_start_at,
+                                          ),
                                           "dd MMM yyyy",
-                                          { locale: fr }
-                                        )
-                                      )}
+                                          { locale: fr },
+                                        )}
                                     </div>
                                     <div className="text-xs text-muted-foreground">
                                       ID: {acceptance.event_id?.slice(0, 8)}...
@@ -1282,7 +1311,8 @@ const fetchContractAcceptances = async () => {
                                   </div>
                                 ) : (
                                   <span className="text-muted-foreground text-xs">
-                                    Événement {acceptance.event_id?.slice(0, 8)}...
+                                    Événement {acceptance.event_id?.slice(0, 8)}
+                                    ...
                                   </span>
                                 )}
                               </td>
@@ -1290,7 +1320,7 @@ const fetchContractAcceptances = async () => {
                                 {format(
                                   new Date(acceptance.accepted_at),
                                   "dd MMM yyyy HH:mm",
-                                  { locale: fr }
+                                  { locale: fr },
                                 )}
                               </td>
                               <td className="py-3 whitespace-nowrap">
@@ -1310,8 +1340,6 @@ const fetchContractAcceptances = async () => {
                     </div>
                   )}
                 </div>
-
-              
               </div>
             </CardContent>
           </Card>
@@ -1326,13 +1354,16 @@ const fetchContractAcceptances = async () => {
                 Pays & Organisateurs
               </CardTitle>
               <CardDescription>
-                Vue par pays : nombre d&apos;organisateurs, chiffres d&apos;affaires (CA plateforme/frais et gains organisateurs) par organisateur et par pays.
+                Vue par pays : nombre d&apos;organisateurs, chiffres
+                d&apos;affaires (CA plateforme/frais et gains organisateurs) par
+                organisateur et par pays.
               </CardDescription>
             </CardHeader>
             <CardContent>
               {countryStatsLoading ? (
                 <div className="flex items-center justify-center py-12 text-muted-foreground">
-                  <RefreshCw className="w-5 h-5 mr-2 animate-spin" /> Chargement...
+                  <RefreshCw className="w-5 h-5 mr-2 animate-spin" />{" "}
+                  Chargement...
                 </div>
               ) : !countryStats.countries?.length ? (
                 <div className="text-center py-10 text-muted-foreground border rounded-lg bg-card/30">
@@ -1345,31 +1376,76 @@ const fetchContractAcceptances = async () => {
                   <div className="grid gap-4 md:grid-cols-3">
                     <Card className="border-muted bg-emerald-500/5 md:col-span-1">
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium text-muted-foreground">Chiffre d&apos;affaires Général</CardTitle>
-                        <CardDescription>= somme CA plateforme/frais de tous les pays</CardDescription>
+                        <CardTitle className="text-sm font-medium text-muted-foreground">
+                          Chiffre d&apos;affaires Général
+                        </CardTitle>
+                        <CardDescription>
+                          = somme CA plateforme/frais de tous les pays
+                        </CardDescription>
                       </CardHeader>
                       <CardContent>
                         <div className="text-2xl font-bold text-emerald-600">
-                          {formatCurrency(Number(countryStats.total_general_platform_ca_fcfa || 0))}
+                          {formatCurrency(
+                            Number(
+                              countryStats.total_general_platform_ca_fcfa || 0,
+                            ),
+                          )}
                         </div>
                       </CardContent>
                     </Card>
                     <Card className="border-muted md:col-span-2">
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-sm font-medium">CA plateforme/frais (12 mois)</CardTitle>
-                        <CardDescription>Évolution mensuelle, tous pays confondus</CardDescription>
+                        <CardTitle className="text-sm font-medium">
+                          CA plateforme/frais (12 mois)
+                        </CardTitle>
+                        <CardDescription>
+                          Évolution mensuelle, tous pays confondus
+                        </CardDescription>
                       </CardHeader>
                       <CardContent className="pl-0">
                         <ResponsiveContainer width="100%" height={220}>
-                          <BarChart data={countryStats.monthly_platform_ca || []} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                            <XAxis dataKey="label" stroke="#888888" fontSize={11} tickLine={false} axisLine={false} />
-                            <YAxis stroke="#888888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : `${v}`)} />
-                            <RechartsTooltip
-                              formatter={(value) => [formatCurrency(Number(value || 0)), "CA plateforme"]}
-                              contentStyle={{ backgroundColor: "hsl(var(--popover))", borderColor: "hsl(var(--border))", borderRadius: "8px", color: "hsl(var(--popover-foreground))" }}
+                          <BarChart
+                            data={countryStats.monthly_platform_ca || []}
+                            margin={{ top: 8, right: 16, left: 0, bottom: 0 }}
+                          >
+                            <CartesianGrid
+                              strokeDasharray="3 3"
+                              vertical={false}
+                              stroke="hsl(var(--border))"
                             />
-                            <Bar dataKey="platform_ca_fcfa" fill="#10b981" radius={[4, 4, 0, 0]} />
+                            <XAxis
+                              dataKey="label"
+                              stroke="#888888"
+                              fontSize={11}
+                              tickLine={false}
+                              axisLine={false}
+                            />
+                            <YAxis
+                              stroke="#888888"
+                              fontSize={11}
+                              tickLine={false}
+                              axisLine={false}
+                              tickFormatter={(v) =>
+                                v >= 1000 ? `${Math.round(v / 1000)}k` : `${v}`
+                              }
+                            />
+                            <RechartsTooltip
+                              formatter={(value) => [
+                                formatCurrency(Number(value || 0)),
+                                "CA plateforme",
+                              ]}
+                              contentStyle={{
+                                backgroundColor: "hsl(var(--popover))",
+                                borderColor: "hsl(var(--border))",
+                                borderRadius: "8px",
+                                color: "hsl(var(--popover-foreground))",
+                              }}
+                            />
+                            <Bar
+                              dataKey="platform_ca_fcfa"
+                              fill="#10b981"
+                              radius={[4, 4, 0, 0]}
+                            />
                           </BarChart>
                         </ResponsiveContainer>
                       </CardContent>
@@ -1380,29 +1456,55 @@ const fetchContractAcceptances = async () => {
                     {countryStats.countries.map((c) => {
                       const isOpen = expandedCountry === c.country;
                       return (
-                        <div key={c.country} className="border rounded-xl bg-card overflow-hidden">
+                        <div
+                          key={c.country}
+                          className="border rounded-xl bg-card overflow-hidden"
+                        >
                           <button
                             type="button"
-                            onClick={() => setExpandedCountry(isOpen ? null : c.country)}
+                            onClick={() =>
+                              setExpandedCountry(isOpen ? null : c.country)
+                            }
                             className="w-full text-left p-4 hover:bg-accent/40 transition-colors"
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div>
-                                <div className="font-semibold text-base">{c.country}</div>
+                                <div className="font-semibold text-base">
+                                  {c.country}
+                                </div>
                                 <div className="text-xs text-muted-foreground mt-1">
-                                  {c.organizer_count} organisateur{c.organizer_count > 1 ? "s" : ""}
+                                  {c.organizer_count} organisateur
+                                  {c.organizer_count > 1 ? "s" : ""}
                                 </div>
                               </div>
-                              {isOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
+                              {isOpen ? (
+                                <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" />
+                              ) : (
+                                <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                              )}
                             </div>
                             <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
                               <div className="rounded-md bg-emerald-500/10 p-2">
-                                <div className="text-[11px] text-muted-foreground">CA plateforme (frais)</div>
-                                <div className="font-semibold text-emerald-600">{formatCurrency(Number(c.total_platform_ca_fcfa || 0))}</div>
+                                <div className="text-[11px] text-muted-foreground">
+                                  CA plateforme (frais)
+                                </div>
+                                <div className="font-semibold text-emerald-600">
+                                  {formatCurrency(
+                                    Number(c.total_platform_ca_fcfa || 0),
+                                  )}
+                                </div>
                               </div>
                               <div className="rounded-md bg-blue-500/10 p-2">
-                                <div className="text-[11px] text-muted-foreground">Gains organisateurs</div>
-                                <div className="font-semibold text-blue-600">{formatCurrency(Number(c.total_organizer_earnings_fcfa || 0))}</div>
+                                <div className="text-[11px] text-muted-foreground">
+                                  Gains organisateurs
+                                </div>
+                                <div className="font-semibold text-blue-600">
+                                  {formatCurrency(
+                                    Number(
+                                      c.total_organizer_earnings_fcfa || 0,
+                                    ),
+                                  )}
+                                </div>
                               </div>
                             </div>
                           </button>
@@ -1412,27 +1514,67 @@ const fetchContractAcceptances = async () => {
                                 <table className="w-full text-sm">
                                   <thead className="border-b border-gray-700">
                                     <tr className="text-left text-muted-foreground">
-                                      <th className="pb-2 pr-2 font-medium">Organisateur</th>
-                                      <th className="pb-2 pr-2 font-medium text-right">Transactions</th>
-                                      <th className="pb-2 pr-2 font-medium text-right">CA plateforme</th>
-                                      <th className="pb-2 font-medium text-right">Gains organisateur</th>
+                                      <th className="pb-2 pr-2 font-medium">
+                                        Organisateur
+                                      </th>
+                                      <th className="pb-2 pr-2 font-medium text-right">
+                                        Transactions
+                                      </th>
+                                      <th className="pb-2 pr-2 font-medium text-right">
+                                        CA plateforme
+                                      </th>
+                                      <th className="pb-2 font-medium text-right">
+                                        Gains organisateur
+                                      </th>
                                     </tr>
                                   </thead>
                                   <tbody>
                                     {(c.organizers || []).length === 0 ? (
-                                      <tr><td colSpan={4} className="py-4 text-center text-muted-foreground">Aucun organisateur</td></tr>
-                                    ) : (c.organizers || []).map((o) => (
-                                      <tr key={o.id} className="border-b border-gray-800/70">
-                                        <td className="py-2 pr-2">
-                                          <div className="font-medium">{o.full_name || "—"}</div>
-                                          <div className="text-xs text-muted-foreground">{o.email || o.id?.slice(0, 8)}</div>
-                                          {o.city ? <div className="text-xs text-muted-foreground">{o.city}</div> : null}
+                                      <tr>
+                                        <td
+                                          colSpan={4}
+                                          className="py-4 text-center text-muted-foreground"
+                                        >
+                                          Aucun organisateur
                                         </td>
-                                        <td className="py-2 pr-2 text-right">{o.transactions_count || 0}</td>
-                                        <td className="py-2 pr-2 text-right text-emerald-600">{formatCurrency(Number(o.platform_ca_fcfa || 0))}</td>
-                                        <td className="py-2 text-right text-blue-600">{formatCurrency(Number(o.organizer_earnings_fcfa || 0))}</td>
                                       </tr>
-                                    ))}
+                                    ) : (
+                                      (c.organizers || []).map((o) => (
+                                        <tr
+                                          key={o.id}
+                                          className="border-b border-gray-800/70"
+                                        >
+                                          <td className="py-2 pr-2">
+                                            <div className="font-medium">
+                                              {o.full_name || "—"}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground">
+                                              {o.email || o.id?.slice(0, 8)}
+                                            </div>
+                                            {o.city ? (
+                                              <div className="text-xs text-muted-foreground">
+                                                {o.city}
+                                              </div>
+                                            ) : null}
+                                          </td>
+                                          <td className="py-2 pr-2 text-right">
+                                            {o.transactions_count || 0}
+                                          </td>
+                                          <td className="py-2 pr-2 text-right text-emerald-600">
+                                            {formatCurrency(
+                                              Number(o.platform_ca_fcfa || 0),
+                                            )}
+                                          </td>
+                                          <td className="py-2 text-right text-blue-600">
+                                            {formatCurrency(
+                                              Number(
+                                                o.organizer_earnings_fcfa || 0,
+                                              ),
+                                            )}
+                                          </td>
+                                        </tr>
+                                      ))
+                                    )}
                                   </tbody>
                                 </table>
                               </div>
@@ -1443,7 +1585,14 @@ const fetchContractAcceptances = async () => {
                     })}
                   </div>
                   {countryStats.generated_at ? (
-                    <p className="text-xs text-muted-foreground">Données générées : {format(new Date(countryStats.generated_at), "dd/MM/yyyy HH:mm", { locale: fr })}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Données générées :{" "}
+                      {format(
+                        new Date(countryStats.generated_at),
+                        "dd/MM/yyyy HH:mm",
+                        { locale: fr },
+                      )}
+                    </p>
                   ) : null}
                 </div>
               )}
