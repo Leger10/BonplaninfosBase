@@ -409,12 +409,11 @@ const SocialInteractions = ({ event, onInteraction, variant = 'horizontal' }) =>
             
             <div className="mt-4 pt-4 border-t flex gap-2">
               <Textarea 
-                placeholder="Votre commentaire..." 
                 value={newComment} 
                 onChange={(e) => setNewComment(e.target.value)} 
                 className="min-h-[40px] resize-none" 
                 disabled={!user}
-                placeholder={!user ? t('common.limits.loginRequired') : undefined}
+                placeholder={!user ? t('common.limits.loginRequired') : "Votre commentaire..."}
                 title={!user ? t('common.limits.loginRequired') : undefined}
               />
               <Button 

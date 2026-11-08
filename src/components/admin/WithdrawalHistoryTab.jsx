@@ -29,13 +29,14 @@ const WithdrawalHistoryTab = ({ actorId }) => {
           reviewed_at,
           paid_at,
           organizer:organizer_id (full_name, email),
-          reviewer:reviewed_by_admin (full_name)
+          reviewer:reviewed_by_admin (full_name),
+          super_reviewer:reviewed_by_superadmin (full_name)
         `)
                 .neq('status', 'pending') // Exclure les demandes en attente
                 .order('requested_at', { ascending: false });
 
             if (actorId) {
-                query = query.eq('reviewed_by_admin', actorId);
+                query = query.or(`reviewed_by_admin.eq.${actorId},reviewed_by_superadmin.eq.${actorId}`);
             }
 
             if (searchTerm) {
@@ -46,7 +47,7 @@ const WithdrawalHistoryTab = ({ actorId }) => {
             if (error) throw error;
 
             // Transformer les données pour correspondre à l'interface attendue
-            const transformedLogs = data.map(request => ({
+            const transformedLogs = (data || []).map(request => ({
                 id: request.id,
                 created_at: request.reviewed_at || request.requested_at,
                 action_type: `withdrawal_${request.status}`,
@@ -57,7 +58,7 @@ const WithdrawalHistoryTab = ({ actorId }) => {
                     status: request.status
                 },
                 target_user: request.organizer,
-                actor: request.reviewer
+                actor: request.reviewer || request.super_reviewer
             }));
 
             setLogs(transformedLogs);

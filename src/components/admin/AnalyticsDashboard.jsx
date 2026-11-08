@@ -31,10 +31,15 @@ import {
   BarChart,
   FileText,
   UserCheck,
+  Globe,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   AreaChart,
   Area,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -114,6 +119,37 @@ const AnalyticsDashboard = () => {
   const [couponUsages, setCouponUsages] = useState([]);
   const [couponOwnerMap, setCouponOwnerMap] = useState({});
   const [actionLoading, setActionLoading] = useState(null);
+
+  // Super admin: CA / organisateurs par pays
+  const [countryStats, setCountryStats] = useState({
+    countries: [],
+    generated_at: null,
+    total_general_platform_ca_fcfa: 0,
+    monthly_platform_ca: [],
+  });
+  const [countryStatsLoading, setCountryStatsLoading] = useState(false);
+  const [expandedCountry, setExpandedCountry] = useState(null);
+
+  const fetchCountryOrganizerStats = async () => {
+    setCountryStatsLoading(true);
+    try {
+      const { data, error } = await retrySupabaseRequest(() =>
+        supabase.rpc("get_super_admin_country_organizer_stats"),
+      );
+      if (error) throw error;
+      setCountryStats({
+        countries: Array.isArray(data?.countries) ? data.countries : [],
+        generated_at: data?.generated_at || null,
+        total_general_platform_ca_fcfa: Number(data?.total_general_platform_ca_fcfa || 0),
+        monthly_platform_ca: Array.isArray(data?.monthly_platform_ca) ? data.monthly_platform_ca : [],
+      });
+    } catch (err) {
+      console.warn("Country/organizer stats:", err?.message || err);
+      setCountryStats({ countries: [], generated_at: null, total_general_platform_ca_fcfa: 0, monthly_platform_ca: [] });
+    } finally {
+      setCountryStatsLoading(false);
+    }
+  };
 
   // ========== RÉCUPÉRATION DES ACCEPTATIONS DE CONTRAT ==========
 // ========== RÉCUPÉRATION DES ACCEPTATIONS DE CONTRAT ==========
@@ -396,6 +432,7 @@ const fetchContractAcceptances = async () => {
         fetchCoupons(),
         fetchPwaInstalls(),
         fetchContractAcceptances(),
+        fetchCountryOrganizerStats().catch(() => {}),
       ]);
     } catch (err) {
       console.error("Dashboard fetch error:", err);
@@ -721,6 +758,9 @@ const fetchContractAcceptances = async () => {
           <TabsTrigger value="coupons">Coupons & Parrainage</TabsTrigger>
           <TabsTrigger value="pwa_installs">Installations PWA</TabsTrigger>
           <TabsTrigger value="contracts">📝 Acceptations Contrat</TabsTrigger>
+          <TabsTrigger value="countries" className="flex items-center gap-1">
+            <Globe className="w-4 h-4" /> Pays & Organisateurs
+          </TabsTrigger>
         </TabsList>
 
         {/* Onglet Transactions récentes */}
@@ -1273,6 +1313,140 @@ const fetchContractAcceptances = async () => {
 
               
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Super admin: vue par pays (organisateurs + chiffres d'affaires) */}
+        <TabsContent value="countries">
+          <Card className="shadow-sm border-muted">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Globe className="w-5 h-5 text-primary" />
+                Pays & Organisateurs
+              </CardTitle>
+              <CardDescription>
+                Vue par pays : nombre d&apos;organisateurs, chiffres d&apos;affaires (CA plateforme/frais et gains organisateurs) par organisateur et par pays.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {countryStatsLoading ? (
+                <div className="flex items-center justify-center py-12 text-muted-foreground">
+                  <RefreshCw className="w-5 h-5 mr-2 animate-spin" /> Chargement...
+                </div>
+              ) : !countryStats.countries?.length ? (
+                <div className="text-center py-10 text-muted-foreground border rounded-lg bg-card/30">
+                  <Globe className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                  <p>Aucune donnée pays/organisateur disponible.</p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* CA général (somme CA plateforme/frais de tous les pays) */}
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <Card className="border-muted bg-emerald-500/5 md:col-span-1">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Chiffre d&apos;affaires Général</CardTitle>
+                        <CardDescription>= somme CA plateforme/frais de tous les pays</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="text-2xl font-bold text-emerald-600">
+                          {formatCurrency(Number(countryStats.total_general_platform_ca_fcfa || 0))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-muted md:col-span-2">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-sm font-medium">CA plateforme/frais (12 mois)</CardTitle>
+                        <CardDescription>Évolution mensuelle, tous pays confondus</CardDescription>
+                      </CardHeader>
+                      <CardContent className="pl-0">
+                        <ResponsiveContainer width="100%" height={220}>
+                          <BarChart data={countryStats.monthly_platform_ca || []} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+                            <XAxis dataKey="label" stroke="#888888" fontSize={11} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#888888" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => (v >= 1000 ? `${Math.round(v / 1000)}k` : `${v}`)} />
+                            <RechartsTooltip
+                              formatter={(value) => [formatCurrency(Number(value || 0)), "CA plateforme"]}
+                              contentStyle={{ backgroundColor: "hsl(var(--popover))", borderColor: "hsl(var(--border))", borderRadius: "8px", color: "hsl(var(--popover-foreground))" }}
+                            />
+                            <Bar dataKey="platform_ca_fcfa" fill="#10b981" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                    {countryStats.countries.map((c) => {
+                      const isOpen = expandedCountry === c.country;
+                      return (
+                        <div key={c.country} className="border rounded-xl bg-card overflow-hidden">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedCountry(isOpen ? null : c.country)}
+                            className="w-full text-left p-4 hover:bg-accent/40 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="font-semibold text-base">{c.country}</div>
+                                <div className="text-xs text-muted-foreground mt-1">
+                                  {c.organizer_count} organisateur{c.organizer_count > 1 ? "s" : ""}
+                                </div>
+                              </div>
+                              {isOpen ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />}
+                            </div>
+                            <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                              <div className="rounded-md bg-emerald-500/10 p-2">
+                                <div className="text-[11px] text-muted-foreground">CA plateforme (frais)</div>
+                                <div className="font-semibold text-emerald-600">{formatCurrency(Number(c.total_platform_ca_fcfa || 0))}</div>
+                              </div>
+                              <div className="rounded-md bg-blue-500/10 p-2">
+                                <div className="text-[11px] text-muted-foreground">Gains organisateurs</div>
+                                <div className="font-semibold text-blue-600">{formatCurrency(Number(c.total_organizer_earnings_fcfa || 0))}</div>
+                              </div>
+                            </div>
+                          </button>
+                          {isOpen && (
+                            <div className="border-t px-4 pb-4">
+                              <div className="overflow-x-auto mt-3">
+                                <table className="w-full text-sm">
+                                  <thead className="border-b border-gray-700">
+                                    <tr className="text-left text-muted-foreground">
+                                      <th className="pb-2 pr-2 font-medium">Organisateur</th>
+                                      <th className="pb-2 pr-2 font-medium text-right">Transactions</th>
+                                      <th className="pb-2 pr-2 font-medium text-right">CA plateforme</th>
+                                      <th className="pb-2 font-medium text-right">Gains organisateur</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {(c.organizers || []).length === 0 ? (
+                                      <tr><td colSpan={4} className="py-4 text-center text-muted-foreground">Aucun organisateur</td></tr>
+                                    ) : (c.organizers || []).map((o) => (
+                                      <tr key={o.id} className="border-b border-gray-800/70">
+                                        <td className="py-2 pr-2">
+                                          <div className="font-medium">{o.full_name || "—"}</div>
+                                          <div className="text-xs text-muted-foreground">{o.email || o.id?.slice(0, 8)}</div>
+                                          {o.city ? <div className="text-xs text-muted-foreground">{o.city}</div> : null}
+                                        </td>
+                                        <td className="py-2 pr-2 text-right">{o.transactions_count || 0}</td>
+                                        <td className="py-2 pr-2 text-right text-emerald-600">{formatCurrency(Number(o.platform_ca_fcfa || 0))}</td>
+                                        <td className="py-2 text-right text-blue-600">{formatCurrency(Number(o.organizer_earnings_fcfa || 0))}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {countryStats.generated_at ? (
+                    <p className="text-xs text-muted-foreground">Données générées : {format(new Date(countryStats.generated_at), "dd/MM/yyyy HH:mm", { locale: fr })}</p>
+                  ) : null}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

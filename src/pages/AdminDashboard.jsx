@@ -72,26 +72,68 @@ const AdminStats = ({ userProfile, partnerZone }) => {
     try {
       const today = new Date();
       const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
 
-      let query = supabase
-        .from("transactions")
-        .select(`
-          amount_pi,
-          amount_fcfa,
-          user:user_id!inner(country, city)
-        `)
-        .eq("transaction_type", "platform_fee")
-        .gte("created_at", firstDayOfMonth.toISOString())
-        .lte("created_at", lastDayOfMonth.toISOString())
-        .eq("user.country", country);
-      if (city) query = query.eq("user.city", city);
+      const [txRes, settingsRes, zoneProfilesRes] = await Promise.all([
+        retrySupabaseRequest(() => {
+          let query = supabase
+            .from("transactions")
+            .select(`
+              amount_pi,
+              amount_fcfa,
+              user:user_id!inner(country, city)
+            `)
+            .eq("transaction_type", "platform_fee")
+            .gte("created_at", firstDayOfMonth.toISOString())
+            .lte("created_at", lastDayOfMonth.toISOString())
+            .eq("user.country", country);
+          if (city) query = query.eq("user.city", city);
+          return query;
+        }),
+        retrySupabaseRequest(() =>
+          supabase.from("app_settings").select("key, value").in("key", ["coin_to_fcfa_rate", "platform_fee_percentage"])
+        ),
+        retrySupabaseRequest(() => {
+          let q = supabase.from("profiles").select("id").eq("country", country);
+          if (city) q = q.eq("city", city);
+          return q;
+        }),
+      ]);
 
-      const { data: feesData, error: feesError } = await retrySupabaseRequest(() => query);
-      if (feesError) throw feesError;
+      if (txRes.error) throw txRes.error;
+      const feesData = txRes.data || [];
+      const settingsMap = Object.fromEntries(
+        (settingsRes?.data || []).map((r) => [r.key, Number(r.value)])
+      );
+      const coinToFcfaRate = Number(settingsMap.coin_to_fcfa_rate || 10);
+      const platformFeeRate = Number(settingsMap.platform_fee_percentage || 5) / 100;
 
-      const totalRevenueFcfa = feesData.reduce((sum, item) => sum + Math.abs(item.amount_fcfa || 0), 0);
-      const totalCommissionPi = feesData.reduce((sum, item) => sum + Math.abs(item.amount_pi || 0), 0);
+      let transferFeeCoins = 0;
+      let transferFeeFcfa = 0;
+      const zoneOrganizerIds = (zoneProfilesRes?.data || []).map((p) => p.id).filter(Boolean);
+      if (zoneOrganizerIds.length) {
+        const { data: transferred } = await retrySupabaseRequest(() =>
+          supabase
+            .from("organizer_earnings")
+            .select("earnings_coins, platform_commission, transferred_at, paid_at, updated_at, created_at, status")
+            .eq("status", "transferred")
+            .in("organizer_id", zoneOrganizerIds)
+        );
+        (transferred || []).forEach((row) => {
+          const d = new Date(row.transferred_at || row.paid_at || row.updated_at || row.created_at || 0);
+          if (d < firstDayOfMonth || d > lastDayOfMonth) return;
+          const coins = Number(
+            row.platform_commission ?? Math.floor(Number(row.earnings_coins || 0) * platformFeeRate)
+          );
+          transferFeeCoins += coins;
+          transferFeeFcfa += coins * coinToFcfaRate;
+        });
+      }
+
+      const txRevenueFcfa = feesData.reduce((sum, item) => sum + Math.abs(item.amount_fcfa || 0), 0);
+      const txCommissionPi = feesData.reduce((sum, item) => sum + Math.abs(item.amount_pi || 0), 0);
+      const totalRevenueFcfa = txRevenueFcfa + transferFeeFcfa;
+      const totalCommissionPi = txCommissionPi + transferFeeCoins;
 
       let usersQuery = supabase
         .from("profiles")
@@ -256,7 +298,7 @@ const LicenseStatus = ({ user }) => {
             <p className="font-bold text-lg">{t("admin_dashboard.license.status_title")}:<span className={`ml-2 px-2 py-1 rounded-md ${daysRemaining > 30 ? "bg-green-500 text-white" : daysRemaining > 7 ? "bg-yellow-500 text-white" : daysRemaining > 0 ? "bg-orange-500 text-white" : "bg-red-500 text-white"}`}>{partner.license?.name || "Licence"} - {statusText}</span></p>
             <div className="text-xs mt-2 space-y-1 text-gray-300">
               <p>{t("admin_dashboard.license.activated_on")}: {activationDate.toLocaleDateString("fr-FR")}</p>
-               {/* <p>{t("admin_dashboard.license.expires_on")}: {expirationDate.toLocaleDateString("fr-FR")}</p> */}
+              <p>Date de fin de la licence : <strong>{expirationDate.toLocaleDateString("fr-FR")}</strong></p>
               {partner.license?.commission_rate && (<p>Taux de commission: <strong>{partner.license.commission_rate}%</strong></p>)}
             </div>
           </div>

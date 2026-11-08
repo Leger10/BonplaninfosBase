@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/lib/customSupabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { X, ChevronLeft, ChevronRight, Pause, Play } from 'lucide-react';
@@ -119,6 +119,7 @@ const WelcomePopup = () => {
     return (
         <Dialog open={isOpen} onOpenChange={handleClose}>
             <DialogContent className="p-0 border-0 max-w-lg bg-transparent shadow-none overflow-visible">
+                <DialogTitle className="sr-only">Annonce</DialogTitle>
                 <div className="relative w-full aspect-[4/5] sm:aspect-video flex items-center justify-center">
                     <AnimatePresence initial={false} custom={direction}>
                         <motion.img

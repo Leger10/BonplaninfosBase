@@ -27,12 +27,9 @@ const AdminCreditsGlobalTab = () => {
   const [allEntries, setAllEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  // Ce qui suit les chiffres d'affaires : les packs achetés par mobile money
-  // (USSD) et les pièces versées directement par l'équipe (super admin,
-  // secrétaire, admin). Les retraits ne sont PAS comptés ici : ils sortent de
-  // l'argent, ce sont des dépenses, pas des crédits distribués.
-  // MoneyFusion est conservé à part, étiqueté « historique », car il reste un
-  // canal de paiement actif dans CoinPacksPage.
+  // Distribution de pièces réellement créditées : packs achetés par USSD
+  // (virés sur le compte) + versements directs de l'équipe (super admin,
+  // secrétaire). Les retraits et les packs pas encore crédités ne figurent pas ici.
   const [totals, setTotals] = useState({
     credited: 0,
     creditedFCFA: 0,
@@ -43,9 +40,9 @@ const AdminCreditsGlobalTab = () => {
     ussdUncredited: 0,
     ussdPending: 0,
     manual: 0,
-    moneyfusion: 0,
-    moneyfusionFcfa: 0,
+    manualFcfa: 0,
     spent: 0,
+    spentFcfa: 0,
     uniqueUsers: 0,
   });
   const [countryTotals, setCountryTotals] = useState([]);
@@ -92,13 +89,9 @@ const AdminCreditsGlobalTab = () => {
         return TEAM_CREDIT_ROLES.includes(log.actor?.user_type);
       });
 
-      // 2. Packs achetés (USSD ET MoneyFusion). On lit toutes les lignes puis on
-      // ne retient que celles dont `credits_added` est vrai et dont le paiement
-      // n'est pas annulé. C'est le seul signal qui prouve que les pièces sont
-      // arrivées sur le compte : se fier à status = 'completed' compterait 160
-      // pièces jamais virées, et garderait 30 pièces d'un paiement annulé.
-      // Avant, seuls les MoneyFusion étaient lus, ce qui cachait tout le parc
-      // USSD. On garde payment_method pour ventiler par origine.
+      // 2. Packs achetés par USSD (canal de distribution actuel). On ne retient
+      // que les lignes dont `credits_added` est vrai et dont le paiement n'est pas
+      // annulé : preuve que les pièces sont arrivées sur le compte.
       const { data: packPayments, error: paymentsError } = await supabase
         .from("payments")
         .select(`
@@ -114,7 +107,7 @@ const AdminCreditsGlobalTab = () => {
           pack_id,
           profiles!payments_user_id_fkey (full_name, email, country, city)
         `)
-        .in('payment_method', ['ussd', 'moneyfusion'])
+        .eq('payment_method', 'ussd')
         .order('created_at', { ascending: false });
 
       if (paymentsError) throw paymentsError;
@@ -138,8 +131,8 @@ const AdminCreditsGlobalTab = () => {
         .reduce((s, p) => s + (p.coins_amount || 0), 0);
 
       // 3. Pièces DÉBITÉES : ce que les votants ont consommé. payment_method
-      // = 'coins' marque les votes payés en pièces (les achats de packs sont
-      // 'ussd'/'moneyfusion', donc pas de double comptage).
+      // = 'coins' marque les votes payés en pièces (les achats de packs USSD
+      // sont 'ussd', donc pas de double comptage).
       const { data: spentPayments, error: spentError } = await supabase
         .from("payments")
         .select("coins_amount, user_id, profiles!payments_user_id_fkey (country)")
@@ -152,11 +145,10 @@ const AdminCreditsGlobalTab = () => {
         created_at: tx.created_at,
         details: {
           amount: tx.coins_amount || 0,
-          // amount_fcfa est le montant réellement payé. On ne le recalcule
-          // pas au taux affiché : un pack à remise ne vaut pas 10 × pièces.
+          // amount_fcfa est le montant réellement payé.
           amount_fcfa: Number(tx.amount_fcfa || 0),
         },
-        source: tx.payment_method === 'ussd' ? 'ussd' : 'moneyfusion',
+        source: 'ussd',
         actor: { full_name: null, user_type: "system" },
         target_user: {
           full_name: tx.profiles?.full_name || "Utilisateur inconnu",
@@ -186,10 +178,10 @@ const AdminCreditsGlobalTab = () => {
 
       setAllEntries(combined);
 
-      // Répartition par origine et par pays. Le FCFA suit le montant
-      // réellement payé pour les packs, et le taux de référence pour les
-      // versements manuels (aucun encaissement associé).
-      let manual = 0, ussd = 0, moneyfusion = 0, ussdFcfa = 0, moneyfusionFcfa = 0;
+      // Répartition par origine et par pays (USSD + versements équipe). Le FCFA
+      // suit le montant réellement payé pour les packs USSD, et le taux de
+      // référence pour les versements manuels.
+      let manual = 0, ussd = 0, ussdFcfa = 0;
       let spent = 0;
       const creditedUsers = new Set();
       const countryMap = new Map();
@@ -200,77 +192,71 @@ const AdminCreditsGlobalTab = () => {
         totalCoins: 0,
         manual: 0,
         ussd: 0,
-        moneyfusion: 0,
         spent: 0,
         ussdFcfa: 0,
-        moneyfusionFcfa: 0,
+        manualFcfa: 0,
+        spentFcfa: 0,
       });
 
       combined.forEach((entry) => {
-        const amount = entry.details?.amount || 0;
-        const amountFcfa = entry.details?.amount_fcfa || 0;
+        const amount = Number(entry.details?.amount || 0);
+        const amountFcfa = Number(entry.details?.amount_fcfa || 0);
         const country = entry.target_user?.country || "Inconnu";
         const isManual = entry.source === "admin";
 
         if (isManual) {
           manual += amount;
-        } else if (entry.source === "ussd") {
+        } else {
           ussd += amount;
           ussdFcfa += amountFcfa;
-        } else {
-          moneyfusion += amount;
-          moneyfusionFcfa += amountFcfa;
         }
 
         if (entry.user_id) creditedUsers.add(entry.user_id);
 
         if (!countryMap.has(country)) countryMap.set(country, emptyCountry(country));
         const c = countryMap.get(country);
-        // Le total du pays suit le même périmètre que la carte « Pièces
-        // créditées » : USSD + versements. MoneyFusion est à part, sinon la
-        // colonne ne corresponde pas au chiffre du dessus. `count` suit la même
-        // règle : compter des lignes MoneyFusion ici donnerait un nombre de
-        // crédits sans rapport avec le total affiché à côté.
         if (isManual) {
           c.manual += amount;
+          c.manualFcfa += amount * coinToFcfaRate;
           c.totalCoins += amount;
           c.count += 1;
-        } else if (entry.source === "ussd") {
+        } else {
           c.ussd += amount;
           c.ussdFcfa += amountFcfa;
           c.totalCoins += amount;
           c.count += 1;
-        } else {
-          c.moneyfusion += amount;
-          c.moneyfusionFcfa += amountFcfa;
         }
       });
 
-      // Les pièces dépensées se ventilent aussi par pays : c'est ce qui
-      // indique quels marchés consomment réellement des crédits.
+      // Les pièces dépensées se ventilent aussi par pays (valeur FCFA au taux de référence).
       (spentPayments || []).forEach((p) => {
-        spent += p.coins_amount || 0;
+        const amt = Number(p.coins_amount || 0);
+        spent += amt;
         const country = p.profiles?.country || "Inconnu";
         if (!countryMap.has(country)) countryMap.set(country, emptyCountry(country));
-        countryMap.get(country).spent += p.coins_amount || 0;
+        const c = countryMap.get(country);
+        c.spent += amt;
+        c.spentFcfa += amt * coinToFcfaRate;
       });
 
       const countryArray = Array.from(countryMap.values()).sort(
         (a, b) => b.totalCoins - a.totalCoins
       );
+      const manualFcfa = manual * coinToFcfaRate;
+      const spentFcfa = spent * coinToFcfaRate;
 
       setCountryTotals(countryArray);
       setTotals({
         credited: ussd + manual,
-        creditedFCFA: ussdFcfa + manual * coinToFcfaRate,
+        creditedFCFA: ussdFcfa + manualFcfa,
         ussd,
         ussdFcfa,
         ussdUncredited,
         ussdPending,
         manual,
-        moneyfusion,
-        moneyfusionFcfa,
+        manualFcfa,
         spent,
+        spentFcfa,
         uniqueUsers: creditedUsers.size,
       });
     } catch (error) {
@@ -299,8 +285,7 @@ const AdminCreditsGlobalTab = () => {
   const SOURCE_FILTERS = [
     { key: "all", label: "Tous" },
     { key: "ussd", label: "USSD" },
-    { key: "admin", label: "Versements équipe" },
-    { key: "moneyfusion", label: "MoneyFusion" },
+    { key: "admin", label: "Versements équipe (Super admin / Secrétaire)" },
   ];
 
   useEffect(() => {
@@ -462,7 +447,7 @@ const AdminCreditsGlobalTab = () => {
                 Pièces réellement créditées aux utilisateurs : packs USSD virés
                 sur le compte + versements des super admins et secrétaires.
                 Ventilation par pays. Les retraits et les packs pas encore
-                crédités ne figurent pas ici.
+                crédités ne figurent pas ici. Valeurs affichées en francs CFA.
               </CardDescription>
             </div>
             <div className="flex gap-2">
@@ -511,10 +496,13 @@ const AdminCreditsGlobalTab = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-blue-800">
-                      Pièces créditées
+                      Total crédité
                     </p>
                     <p className="text-2xl font-bold text-blue-900">
-                      {totals.credited.toLocaleString("fr-FR")}
+                      {formatCurrency(totals.creditedFCFA || 0)}
+                    </p>
+                    <p className="text-xs text-blue-700 mt-1">
+                      {Number(totals.credited || 0).toLocaleString("fr-FR")} pièces
                     </p>
                     <p className="text-xs text-blue-600 mt-1">
                       {totals.uniqueUsers} utilisateur
@@ -527,16 +515,16 @@ const AdminCreditsGlobalTab = () => {
                   </div>
                 </div>
                 <div className="mt-3 pt-2 border-t border-blue-200 space-y-1 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-blue-700">Packs achetés par USSD</span>
-                    <span className="font-semibold text-blue-900">
-                      {totals.ussd.toLocaleString("fr-FR")}
+                  <div className="flex justify-between gap-2">
+                    <span className="text-blue-700">Packs USSD</span>
+                    <span className="font-semibold text-blue-900 text-right">
+                      {formatCurrency(totals.ussdFcfa || 0)} ({Number(totals.ussd || 0).toLocaleString("fr-FR")} pièces)
                     </span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-blue-700">Versements par l'équipe</span>
-                    <span className="font-semibold text-blue-900">
-                      {totals.manual.toLocaleString("fr-FR")}
+                  <div className="flex justify-between gap-2">
+                    <span className="text-blue-700">Versements équipe</span>
+                    <span className="font-semibold text-blue-900 text-right">
+                      {formatCurrency(totals.manualFcfa || 0)} ({Number(totals.manual || 0).toLocaleString("fr-FR")} pièces)
                     </span>
                   </div>
                 </div>
@@ -590,13 +578,16 @@ const AdminCreditsGlobalTab = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-amber-800">
-                      Pièces dépensées
+                      Dépenses participations (événements)
                     </p>
                     <p className="text-2xl font-bold text-amber-900">
-                      {totals.spent.toLocaleString("fr-FR")}
+                      {formatCurrency(totals.spentFcfa || 0)}
                     </p>
                     <p className="text-xs text-amber-700 mt-1">
-                      consommées par les votants
+                      {Number(totals.spent || 0).toLocaleString("fr-FR")} pièces débitées
+                    </p>
+                    <p className="text-[11px] text-amber-700/90 mt-1">
+                      Votes, location de stands, tombola et achats de billets
                     </p>
                   </div>
                   <div className="p-2 bg-amber-500 rounded-full">
@@ -607,34 +598,32 @@ const AdminCreditsGlobalTab = () => {
             </Card>
           </div>
 
-          {/* Detail par canal de paiement */}
+          {/* Détail par canal de distribution */}
           <Card className="mb-6 border-amber-500/20">
             <CardHeader className="bg-amber-500/5 rounded-t-xl py-3">
               <CardTitle className="text-base text-amber-700 dark:text-amber-400">
-                Pièces créditées par canal
+                Crédits distribués par canal (FCFA)
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-4 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50">
                   <p className="text-sm font-medium text-amber-800">
                     Packs achetés par USSD
                   </p>
                   <p className="text-xl font-bold text-amber-900">
-                    {totals.ussd.toLocaleString("fr-FR")} pièces
+                    {formatCurrency(totals.ussdFcfa || 0)}
                   </p>
-                  <p className="text-sm font-semibold text-amber-700">
-                    {formatCurrency(totals.ussdFcfa)}
+                  <p className="text-sm text-amber-700">
+                    {Number(totals.ussd || 0).toLocaleString("fr-FR")} pièces
                   </p>
                   <p className="text-xs text-amber-700 mt-1">
-                    Mobile money (Orange Money, Moov, Wave)
+                    Mobile money (USSD)
                   </p>
-                  {totals.ussdUncredited > 0 && (
+                  {Number(totals.ussdUncredited || 0) > 0 && (
                     <p className="text-xs text-amber-600 mt-1">
-                      + {totals.ussdUncredited.toLocaleString("fr-FR")} pièces
-                      payées mais pas encore virées (dont{" "}
-                      {totals.ussdPending.toLocaleString("fr-FR")} en attente), non
-                      comptées
+                      + {formatCurrency(Number(totals.ussdUncredited || 0) * coinToFcfaRate)} ({Number(totals.ussdUncredited || 0).toLocaleString("fr-FR")} pièces) payés mais pas encore virés (dont{" "}
+                      {formatCurrency(Number(totals.ussdPending || 0) * coinToFcfaRate)} / {Number(totals.ussdPending || 0).toLocaleString("fr-FR")} pièces en attente), non comptés
                     </p>
                   )}
                 </div>
@@ -643,27 +632,13 @@ const AdminCreditsGlobalTab = () => {
                     Versements par l'équipe
                   </p>
                   <p className="text-xl font-bold text-blue-900">
-                    {totals.manual.toLocaleString("fr-FR")} pièces
+                    {formatCurrency(totals.manualFcfa || 0)}
                   </p>
-                  <p className="text-sm font-semibold text-blue-700">
-                    {formatCurrency(totals.manual * coinToFcfaRate)}
+                  <p className="text-sm text-blue-700">
+                    {Number(totals.manual || 0).toLocaleString("fr-FR")} pièces
                   </p>
                   <p className="text-xs text-blue-700 mt-1">
                     Super admin et secrétaire
-                  </p>
-                </div>
-                <div className="p-4 rounded-lg bg-gray-50 dark:bg-gray-950/30 border border-gray-200 dark:border-gray-700">
-                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Packs via MoneyFusion (historique)
-                  </p>
-                  <p className="text-xl font-bold text-gray-800 dark:text-gray-200">
-                    {totals.moneyfusion.toLocaleString("fr-FR")} pièces
-                  </p>
-                  <p className="text-sm font-semibold text-gray-600 dark:text-gray-400">
-                    {formatCurrency(totals.moneyfusionFcfa)}
-                  </p>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
-                    Non compté dans « Pièces créditées », payé hors USSD
                   </p>
                 </div>
               </div>
@@ -681,63 +656,65 @@ const AdminCreditsGlobalTab = () => {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Pays</TableHead>
-                      <TableHead className="text-right">
-                        Nombre de crédits
-                      </TableHead>
-                      <TableHead className="text-right">
-                        Total pièces créditées
-                      </TableHead>
-                      <TableHead className="text-right">USSD</TableHead>
-                      <TableHead className="text-right">
-                        Versements équipe
-                      </TableHead>
-                      <TableHead className="text-right">Dépensées</TableHead>
-                      <TableHead className="text-right">Valeur FCFA</TableHead>
-                      <TableHead className="text-center">
-                        Actions
-                      </TableHead>
+                      <TableHead className="text-right">Nb crédits</TableHead>
+                      <TableHead className="text-right">Total crédité (FCFA)</TableHead>
+                      <TableHead className="text-right">USSD (FCFA)</TableHead>
+                      <TableHead className="text-right">Versements équipe (FCFA)</TableHead>
+                      <TableHead className="text-right">Dépensées (FCFA)</TableHead>
+                      <TableHead className="text-center">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {countryTotals.map((country) => (
-                      <TableRow key={country.country}>
-                        <TableCell className="font-medium">
-                          {country.country}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {country.count}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {country.totalCoins.toLocaleString("fr-FR")}
-                        </TableCell>
-                        <TableCell className="text-right text-amber-700">
-                          {country.ussd.toLocaleString("fr-FR")}
-                        </TableCell>
-                        <TableCell className="text-right text-blue-700">
-                          {country.manual.toLocaleString("fr-FR")}
-                        </TableCell>
-                        <TableCell className="text-right text-purple-700">
-                          {country.spent.toLocaleString("fr-FR")}
-                        </TableCell>
-                        <TableCell className="text-right text-green-600 font-semibold">
-                          {formatCurrency(
-                            country.ussdFcfa + country.manual * coinToFcfaRate
-                          )}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleResetCountry(country.country)}
-                            className="text-orange-600 hover:text-orange-700 hover:bg-orange-100"
-                            disabled={resetting}
-                          >
-                            <Eraser className="w-4 h-4 mr-1" />
-                            Réinitialiser
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {countryTotals.map((country) => {
+                      const totalFcfa = Number(country.ussdFcfa || 0) + Number(country.manualFcfa ?? Number(country.manual || 0) * coinToFcfaRate);
+                      const spentFcfa = Number(country.spentFcfa ?? Number(country.spent || 0) * coinToFcfaRate);
+                      return (
+                        <TableRow key={country.country}>
+                          <TableCell className="font-medium">
+                            {country.country}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {Number(country.count || 0)}
+                          </TableCell>
+                          <TableCell className="text-right font-semibold text-green-700">
+                            <div>{formatCurrency(totalFcfa)}</div>
+                            <div className="text-xs font-normal text-muted-foreground">
+                              {Number(country.totalCoins || 0).toLocaleString("fr-FR")} pièces
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right text-amber-700">
+                            <div>{formatCurrency(Number(country.ussdFcfa || 0))}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {Number(country.ussd || 0).toLocaleString("fr-FR")} pièces
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right text-blue-700">
+                            <div>{formatCurrency(Number(country.manualFcfa ?? Number(country.manual || 0) * coinToFcfaRate))}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {Number(country.manual || 0).toLocaleString("fr-FR")} pièces
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right text-purple-700">
+                            <div>{formatCurrency(spentFcfa)}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {Number(country.spent || 0).toLocaleString("fr-FR")} pièces
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleResetCountry(country.country)}
+                              className="text-orange-600 hover:text-orange-700 hover:bg-orange-100"
+                              disabled={resetting}
+                            >
+                              <Eraser className="w-4 h-4 mr-1" />
+                              Réinitialiser
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -841,16 +818,12 @@ const AdminCreditsGlobalTab = () => {
                       }`;
                       const sourceLabel =
                         entry.source === "admin"
-                          ? "Versement admin"
-                          : entry.source === "ussd"
-                            ? "USSD"
-                            : "MoneyFusion";
+                          ? "Versement équipe (Super admin / Secrétaire)"
+                          : "USSD";
                       const sourceClass =
                         entry.source === "admin"
                           ? "bg-blue-600 hover:bg-blue-700"
-                          : entry.source === "ussd"
-                            ? "bg-amber-600 hover:bg-amber-700"
-                            : "bg-purple-600 hover:bg-purple-700";
+                          : "bg-amber-600 hover:bg-amber-700";
 
                       return (
                         <TableRow
@@ -869,16 +842,15 @@ const AdminCreditsGlobalTab = () => {
                           <TableCell>
                             <p className="text-sm">{userLocation}</p>
                           </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-1 font-bold text-amber-600">
-                              <span>
-                                {coinAmount.toLocaleString("fr-FR")}
-                              </span>
-                              <Coins className="w-4 h-4 flex-shrink-0" />
-                            </div>
-                          </TableCell>
                           <TableCell className="text-green-600 font-semibold whitespace-nowrap">
                             {formatCurrency(fcfaValue)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1 text-amber-700">
+                              <span>{Number(coinAmount || 0).toLocaleString("fr-FR")}</span>
+                              <Coins className="w-4 h-4 flex-shrink-0" />
+                              <span className="text-xs text-muted-foreground">pièces</span>
+                            </div>
                           </TableCell>
                           <TableCell>
                             <Badge
@@ -891,20 +863,21 @@ const AdminCreditsGlobalTab = () => {
                           <TableCell>
                             {entry.source === "admin" ? (
                               <>
-                                <p className="font-medium">{entry.actor?.full_name}</p>
+                                <p className="font-medium">{entry.actor?.full_name || "Équipe"}</p>
                                 <Badge
                                   variant="outline"
                                   className="text-xs capitalize mt-1"
                                 >
-                                  {entry.actor?.user_type?.replace("_", " ") ||
-                                    "Admin"}
+                                  {entry.actor?.user_type === "super_admin"
+                                    ? "Super admin"
+                                    : entry.actor?.user_type === "secretary"
+                                      ? "Secrétaire"
+                                      : entry.actor?.user_type?.replace("_", " ") || "Équipe"}
                                 </Badge>
                               </>
                             ) : (
                               <span className="text-sm text-muted-foreground">
-                                {entry.source === "ussd"
-                                  ? "Mobile money"
-                                  : "MoneyFusion"}
+                                Mobile money (USSD)
                               </span>
                             )}
                           </TableCell>
@@ -953,8 +926,8 @@ const AdminCreditsGlobalTab = () => {
             <AlertDialogTitle>Confirmation de réinitialisation</AlertDialogTitle>
             <AlertDialogDescription>
               Cette action efface les statistiques de performance de votre
-              compte administrateur. Elle ne supprime ni les crédits distribués,
-              ni les paiements USSD / MoneyFusion, ni les retraits. Voulez-vous
+              compte administrateur. Elle ne supprime ni les crédits distribués
+              (USSD et versements équipe), ni les retraits. Voulez-vous
               continuer ?
             </AlertDialogDescription>
           </AlertDialogHeader>

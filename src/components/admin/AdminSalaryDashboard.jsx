@@ -37,7 +37,9 @@ const AdminSalaryDashboard = () => {
   const [salaryStats, setSalaryStats] = useState(null);
   const [withdrawalConfig, setWithdrawalConfig] = useState({
     withdrawal_dates: [5],
+    withdrawal_available_date: 5,
   });
+  const [salaryWithdrawalDays, setSalaryWithdrawalDays] = useState([5]);
   const [isWithdrawalModalOpen, setIsWithdrawalModalOpen] = useState(false);
   const [withdrawalHistory, setWithdrawalHistory] = useState([]);
   const [nextWithdrawalDate, setNextWithdrawalDate] = useState(null);
@@ -53,11 +55,16 @@ const AdminSalaryDashboard = () => {
         .select("*")
         .limit(1)
         .maybeSingle();
-      const config = configData || { withdrawal_dates: [5] };
+      const config = configData || { withdrawal_dates: [5], withdrawal_available_date: 5 };
       setWithdrawalConfig(config);
-      setNextWithdrawalDate(
-        getNextWithdrawalDate(config.withdrawal_dates || [5]),
-      );
+      // Retraits salaires admin : priorité au jour configuré dans "Gestion des Retraits Salaires"
+      const salaryDay = Number(config.withdrawal_available_date);
+      const fallbackDays = Array.isArray(config.withdrawal_dates)
+        ? config.withdrawal_dates.map(Number).filter(Boolean)
+        : [5];
+      const days = salaryDay >= 1 && salaryDay <= 31 ? [salaryDay] : (fallbackDays.length ? fallbackDays : [5]);
+      setSalaryWithdrawalDays(days);
+      setNextWithdrawalDate(getNextWithdrawalDate(days));
 
       const { data: stats, error: statsError } = await supabase.rpc(
         "get_admin_salary_stats",
@@ -73,7 +80,7 @@ const AdminSalaryDashboard = () => {
         .order("requested_at", { ascending: false });
       setWithdrawalHistory(history || []);
 
-      setCanWithdraw(isWithdrawalOpen(config.withdrawal_dates || [5]));
+      setCanWithdraw(isWithdrawalOpen(days));
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
     } finally {
@@ -142,10 +149,10 @@ const AdminSalaryDashboard = () => {
 
       await generateSalarySlip({
         adminName: adminProfile?.full_name || "Administrateur",
-        zone: `${salaryStats.country || ""}${salaryStats.city ? `, ${salaryStats.city}` : ""}`,
+        zone: `${salaryStats.country || adminProfile?.country || ""}${(salaryStats.city || adminProfile?.city) ? `, ${salaryStats.city || adminProfile?.city}` : ""}`,
         period: format(new Date(), "MMMM yyyy", { locale: fr }),
         volumeZone: salaryStats.total_volume_fcfa || 0,
-        commissionBase: salaryStats.platform_revenue_fcfa || 0,
+        commissionBase: salaryStats.zone_revenue_fcfa ?? salaryStats.platform_revenue_fcfa ?? 0,
         licenseRate: salaryStats.license_commission_rate || 0,
         personalScore: salaryStats.personal_score || 1.0,
         netSalary: salaryStats.total_salary_fcfa || 0,
@@ -175,11 +182,18 @@ const AdminSalaryDashboard = () => {
       </div>
     );
 
-  const commissionRate = salaryStats?.license_commission_rate || 0;
-  const personalScore = salaryStats?.personal_score || 1.0;
-  const zoneVolume = salaryStats?.total_volume_fcfa || 0;
-  const platformFees = salaryStats?.platform_revenue_fcfa || 0;
-  const estimatedSalary = salaryStats?.total_salary_fcfa || 0;
+  const commissionRate = Number(salaryStats?.license_commission_rate || 0);
+  const personalScore = Number(salaryStats?.personal_score || 1.0);
+  const zoneVolume = Number(salaryStats?.total_volume_fcfa || 0); // volume brut transféré (zone)
+  const zoneRevenue = Number(
+    salaryStats?.zone_revenue_fcfa ?? salaryStats?.platform_revenue_fcfa ?? 0,
+  ); // CA zone (harmonisé, cumul)
+  const monthlyZoneRevenue = Number(salaryStats?.monthly_zone_revenue_fcfa || 0);
+  const salaryBase = Number(
+    salaryStats?.salary_base_fcfa ?? salaryStats?.zone_transfer_fees_fcfa ?? zoneRevenue,
+  ); // base salaire = frais de transfert vers compte gains
+  const estimatedSalary = Number(salaryStats?.total_salary_fcfa || 0);
+  const licenseName = salaryStats?.license_name || "Standard";
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -191,10 +205,8 @@ const AdminSalaryDashboard = () => {
           </h2>
           <p className="text-gray-400">
             Licence :{" "}
-            <Badge className="bg-gray-800 text-gray-200">
-              {salaryStats?.license_name || "Standard"}
-            </Badge>{" "}
-            ({commissionRate}%)
+            <Badge className="bg-gray-800 text-gray-200">{licenseName}</Badge>{" "}
+            — Taux de commission : <strong className="text-white">{commissionRate}%</strong>
           </p>
         </div>
         <div className="bg-gray-800 px-4 py-2 rounded-lg border border-gray-700 flex items-center gap-3">
@@ -213,27 +225,17 @@ const AdminSalaryDashboard = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="bg-gray-800 border-gray-700">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-gray-400">Volume Zone</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-white">
-              {zoneVolume.toLocaleString()} F
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-gray-800 border-gray-700">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-gray-400">
-              Commission (10%)
-            </CardTitle>
+            <CardTitle className="text-sm text-gray-400">CA Plateforme (mois en cours)</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-blue-400">
-              {platformFees.toLocaleString()} F
+              {monthlyZoneRevenue.toLocaleString("fr-FR")} F CFA
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              Base de calcul du salaire (zone)
             </p>
           </CardContent>
         </Card>
@@ -241,28 +243,60 @@ const AdminSalaryDashboard = () => {
         <Card className="bg-gray-800 border-gray-700">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-gray-400">
-              Votre Part ({commissionRate}%)
+              Salaire estimé (base CA)
             </CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-emerald-400">
-              {estimatedSalary.toLocaleString()} F
+              {estimatedSalary.toLocaleString("fr-FR")} F CFA
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {commissionRate}% (licence) × score {personalScore}
             </p>
           </CardContent>
         </Card>
 
         <Card className="bg-gray-800 border-gray-700">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm text-gray-400">Score</CardTitle>
+            <CardTitle className="text-sm text-gray-400">Score personnel</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-indigo-400">
               {personalScore}
             </p>
-            <Progress value={personalScore * 100} className="h-1 mt-2" />
+            <Progress value={Math.min(100, Math.max(0, personalScore * 100))} className="h-1 mt-2" />
           </CardContent>
         </Card>
       </div>
+
+      {/* Explication calcul salaire */}
+      <Card className="bg-gray-900/60 border-gray-700">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base text-white">Comment votre salaire est calculé</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-gray-300 space-y-2">
+          <p>
+            <span className="text-gray-400">Base de calcul :</span>{" "}
+            <strong>Chiffres d’affaires de la Plateforme du mois en cours</strong> (zone), harmonisés avec le tableau de bord.
+          </p>
+          <p>
+            <span className="text-gray-400">Formule :</span>{" "}
+            <strong>Salaire admin = CA Plateforme (mois en cours) × Taux de licence × Score personnel</strong>
+          </p>
+          <div className="rounded-md bg-gray-800 border border-gray-700 p-3 text-gray-200">
+            <div>CA Plateforme du mois en cours = <strong>{salaryBase.toLocaleString("fr-FR")} F CFA</strong></div>
+            <div>Taux de licence = <strong>{commissionRate}%</strong></div>
+            <div>Score personnel = <strong>{personalScore}</strong></div>
+            <div className="mt-1 pt-1 border-t border-gray-700">
+              Salaire estimé = {salaryBase.toLocaleString("fr-FR")} × {commissionRate}% × {personalScore} ={" "}
+              <strong className="text-emerald-400">{estimatedSalary.toLocaleString("fr-FR")} F CFA</strong>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500">
+            Le CA du mois reprend les chiffres d’affaires plateforme de la zone (frais plateforme/transactions et frais de transfert du mois).
+          </p>
+        </CardContent>
+      </Card>
 
       {/* Actions */}
       <Card className="bg-gray-900 border-gray-800">
@@ -322,8 +356,8 @@ const AdminSalaryDashboard = () => {
           </div>
 
           <p className="text-xs text-gray-500 mt-4 text-center">
-            Retraits disponibles les :{" "}
-            {withdrawalConfig.withdrawal_dates?.join(", ")} du mois
+            Retraits salaires disponibles le :{" "}
+            {salaryWithdrawalDays.join(", ")} du mois
           </p>
         </CardContent>
       </Card>

@@ -1958,16 +1958,150 @@ const HANDLERS = {
   async get_admin_salary_stats(args) {
     const { p_admin_id } = args;
     if (!p_admin_id) return fail('p_admin_id requis');
-    const rows = await db().admin_salaries.findMany({ where: { admin_id: p_admin_id }, orderBy: { created_at: 'desc' }, take: 50 });
-    const totalSalaryFcfa = rows.reduce((s, r) => s + Number(r.total_salary || 0), 0);
-    const totalVolumeFcfa = rows.reduce((s, r) => s + Number(r.country_revenue || 0), 0);
+    const dbc = db();
+    const admin = await dbc.profiles.findUnique({
+      where: { id: p_admin_id },
+      select: { id: true, country: true, city: true, user_type: true },
+    });
+    if (!admin) return fail('Admin introuvable', 'NOT_FOUND');
+
+    const rows = await dbc.admin_salaries.findMany({
+      where: { admin_id: p_admin_id },
+      orderBy: { created_at: 'desc' },
+      take: 50,
+    });
     const latest = rows[0] || null;
+    const settings = await getAppSettings();
+    const rate = Number(settings.rate || 10);
+    const platformFeeRate = Number(settings.platformFeeRate || 0.05);
+    let licenseCommissionRate = Number(latest?.license_rate || 0);
+    let licenseName = null;
+    const personalScore = Number(latest?.personal_score || 1);
+
+    // Zone de compétence : partenaire (coverage_zone) en priorité, sinon profil admin
+    let zoneCountry = admin.country || null;
+    let zoneCities = null;
+    try {
+      const partner = await dbc.partners.findFirst({
+        where: { user_id: p_admin_id },
+        orderBy: { created_at: 'desc' },
+        select: { coverage_zone: true, license_id: true, status: true, activation_date: true, expiration_date: true },
+      });
+      if (partner?.coverage_zone) {
+        const cz = typeof partner.coverage_zone === 'string' ? JSON.parse(partner.coverage_zone) : partner.coverage_zone;
+        if (cz?.country) zoneCountry = cz.country;
+        if (Array.isArray(cz?.cities) && cz.cities.length) zoneCities = cz.cities;
+      }
+      if (partner?.license_id) {
+        const lic = await dbc.partner_licenses.findUnique({
+          where: { id: partner.license_id },
+          select: { commission_rate: true, name: true },
+        }).catch(() => null);
+        if (lic) {
+          licenseName = lic.name || null;
+          if (!licenseCommissionRate) licenseCommissionRate = Number(lic.commission_rate || 0);
+        }
+      }
+    } catch (_) {}
+
+    const inZone = (p) => {
+      if (!zoneCountry) return false;
+      if (String(p.country || '').trim() !== String(zoneCountry).trim()) return false;
+      if (zoneCities && zoneCities.length) return zoneCities.map((c) => String(c).trim()).includes(String(p.city || '').trim());
+      return true;
+    };
+
+    // Base salaire (règle métier) : frais de transfert vers compte gains
+    // (commission plateforme retenue lors du transfert des gains en attente)
+    let zoneTransferFeesCoins = 0;
+    let zoneTransferredGrossCoins = 0;
+    let organizerCount = 0;
+    let platformFeeTxCoins = 0;
+    let platformFeeTxFcfa = 0;
+    let monthlyCaCoins = 0;
+    let monthlyCaFcfa = 0;
+
+    if (zoneCountry) {
+      const zoneProfiles = await dbc.profiles.findMany({
+        where: { country: zoneCountry },
+        select: { id: true, country: true, city: true },
+      });
+      const zoneProfileIds = zoneProfiles.filter(inZone).map((p) => p.id);
+      organizerCount = zoneProfileIds.length;
+
+      if (zoneProfileIds.length) {
+        const transferred = await dbc.organizer_earnings.findMany({
+          where: { organizer_id: { in: zoneProfileIds }, status: 'transferred' },
+          select: { earnings_coins: true, platform_commission: true, transferred_at: true, paid_at: true, updated_at: true, created_at: true },
+        });
+        zoneTransferredGrossCoins = transferred.reduce((s, e) => s + Number(e.earnings_coins || 0), 0);
+        zoneTransferFeesCoins = transferred.reduce(
+          (s, e) => s + Number(e.platform_commission ?? Math.floor(Number(e.earnings_coins || 0) * platformFeeRate)),
+          0,
+        );
+
+        const now = new Date();
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+        transferred.forEach((e) => {
+          const d = new Date(e.transferred_at || e.paid_at || e.updated_at || e.created_at || 0);
+          if (d < monthStart || d > monthEnd) return;
+          const coins = Number(e.platform_commission ?? Math.floor(Number(e.earnings_coins || 0) * platformFeeRate));
+          monthlyCaCoins += coins;
+          monthlyCaFcfa += coins * rate;
+        });
+
+        // Harmonisation avec la vue "Chiffres affaires (Zone)" (AdminDashboard) :
+        // inclure aussi les transactions platform_fee des utilisateurs de la zone.
+        try {
+          const feeTx = await dbc.transactions.findMany({
+            where: { user_id: { in: zoneProfileIds }, transaction_type: 'platform_fee' },
+            select: { amount_pi: true, amount_fcfa: true, created_at: true },
+          });
+          platformFeeTxCoins = feeTx.reduce((s, t) => s + Math.abs(Number(t.amount_pi || 0)), 0);
+          platformFeeTxFcfa = feeTx.reduce((s, t) => s + Math.abs(Number(t.amount_fcfa || 0)), 0);
+          feeTx.forEach((t) => {
+            const d = new Date(t.created_at || 0);
+            if (d < monthStart || d > monthEnd) return;
+            monthlyCaCoins += Math.abs(Number(t.amount_pi || 0));
+            monthlyCaFcfa += Math.abs(Number(t.amount_fcfa || 0)) || Math.abs(Number(t.amount_pi || 0)) * rate;
+          });
+        } catch (_) {}
+      }
+    }
+
+    const transferFeesFcfa = Math.round(zoneTransferFeesCoins * rate);
+    const zoneVolumeFcfa = Math.round(zoneTransferredGrossCoins * rate);
+    // CA zone affiché (harmonisé avec dashboard) = frais de transfert + frais plateforme (transactions zone)
+    const zoneRevenueFcfa = transferFeesFcfa + Math.round(platformFeeTxFcfa || platformFeeTxCoins * rate);
+    monthlyCaFcfa = Math.round(monthlyCaFcfa);
+    // Salaire admin = Chiffres affaires de la Plateforme du mois en cours × Taux de licence × Score personnel
+    const salaryBaseFcfa = monthlyCaFcfa;
+    const computedSalaryFcfa = Math.round(salaryBaseFcfa * (licenseCommissionRate / 100) * personalScore);
+    const legacySalaryFcfa = rows.reduce((s, r) => s + Number(r.total_salary || 0), 0);
+    const totalSalaryFcfa = computedSalaryFcfa > 0 || salaryBaseFcfa > 0 || monthlyCaFcfa > 0 ? computedSalaryFcfa : legacySalaryFcfa;
+
     return ok({
+      // CA zone (harmonisé)
+      zone_revenue_fcfa: zoneRevenueFcfa,
+      monthly_zone_revenue_fcfa: monthlyCaFcfa,
+      monthly_zone_revenue_coins: monthlyCaCoins,
+      zone_transfer_fees_coins: zoneTransferFeesCoins,
+      zone_transfer_fees_fcfa: transferFeesFcfa,
+      zone_platform_fee_tx_coins: platformFeeTxCoins,
+      zone_platform_fee_tx_fcfa: Math.round(platformFeeTxFcfa || platformFeeTxCoins * rate),
+      salary_base_fcfa: salaryBaseFcfa,
+      zone_volume_fcfa: zoneVolumeFcfa,
+      zone_organizers_count: organizerCount,
+      country: zoneCountry,
+      city: zoneCities && zoneCities.length === 1 ? zoneCities[0] : (admin.city || null),
+      license_name: licenseName,
+      // Compat UI existante
       total_salary_fcfa: totalSalaryFcfa,
-      total_volume_fcfa: totalVolumeFcfa,
-      platform_revenue_fcfa: Math.round(totalVolumeFcfa * (Number(latest?.license_rate || 0) / 100)),
-      license_commission_rate: Number(latest?.license_rate || 0),
-      personal_score: Number(latest?.personal_score || 1),
+      total_volume_fcfa: zoneVolumeFcfa,
+      platform_revenue_fcfa: zoneRevenueFcfa,
+      license_commission_rate: licenseCommissionRate,
+      personal_score: personalScore,
       withdrawal_status: latest?.withdrawal_status || 'closed',
       month: latest?.month || null,
       stats: rows,
@@ -2718,9 +2852,15 @@ const HANDLERS = {
     }
     let actorType = null;
     if (actorId) {
-      const actor = await dbc.profiles.findUnique({ where: { id: actorId }, select: { user_type: true } });
-      if (!actor || !['super_admin', 'admin', 'secretary'].includes(actor.user_type)) {
-        return fail('Permission non accordee', 'FORBIDDEN');
+      const actor = await dbc.profiles.findUnique({
+        where: { id: actorId },
+        select: { user_type: true, appointed_by_super_admin: true },
+      });
+      const canValidate =
+        actor?.user_type === 'super_admin' ||
+        (actor?.user_type === 'secretary' && actor?.appointed_by_super_admin === true);
+      if (!canValidate) {
+        return fail('Seul le super admin ou un secrétaire nommé par le super admin peut valider ce retrait', 'FORBIDDEN');
       }
       actorType = actor.user_type;
     }
@@ -2808,6 +2948,90 @@ const HANDLERS = {
       .catch((e) => console.error('Notification retrait non creee:', e.message));
 
     return ok({ success: true, message: 'Demande de retrait traitee.', request_id: p_request_id, status });
+  },
+
+  async escalate_organizer_withdrawal(args) {
+    const { p_request_id, p_actor_id, p_message } = args || {};
+    if (!p_request_id) return fail('p_request_id requis');
+    const dbc = db();
+    const actorId = p_actor_id || null;
+    const actor = actorId
+      ? await dbc.profiles.findUnique({
+          where: { id: actorId },
+          select: { id: true, user_type: true, appointed_by_super_admin: true, full_name: true },
+        })
+      : null;
+    if (!actor || !['super_admin', 'admin', 'secretary'].includes(actor.user_type)) {
+      return fail('Permission non accordee', 'FORBIDDEN');
+    }
+
+    const request = await dbc.organizer_withdrawal_requests.findUnique({ where: { id: p_request_id } });
+    if (!request) return fail('Demande de retrait introuvable', 'REQUEST_NOT_FOUND');
+    if (request.status !== 'pending') {
+      return fail('Seule une demande en attente peut etre transmise', 'INVALID_STATUS');
+    }
+
+    let details = {};
+    try {
+      if (request.payment_details && typeof request.payment_details === 'string') details = JSON.parse(request.payment_details);
+      else if (request.payment_details && typeof request.payment_details === 'object') details = request.payment_details;
+    } catch {
+      details = {};
+    }
+
+    const now = new Date();
+    const escalation = {
+      urgent: true,
+      escalated_at: now.toISOString(),
+      escalated_by: actorId,
+      escalated_by_name: actor.full_name || null,
+      message: (p_message && String(p_message).trim()) || 'Demande de retrait urgente a valider',
+    };
+    const nextDetails = { ...details, escalation };
+
+    const noteLine = `[ESCALADE ${now.toISOString()}] ${escalation.message}${actor.full_name ? ` (par ${actor.full_name})` : ''}`;
+    const adminNotes = request.admin_notes ? `${request.admin_notes}\n${noteLine}` : noteLine;
+
+    await dbc.organizer_withdrawal_requests.update({
+      where: { id: p_request_id },
+      data: {
+        payment_details: JSON.stringify(nextDetails),
+        admin_notes: adminNotes,
+      },
+    });
+
+    const recipients = await dbc.profiles.findMany({
+      where: {
+        OR: [
+          { user_type: 'super_admin' },
+          { user_type: 'secretary', appointed_by_super_admin: true },
+        ],
+        ...(actorId ? { NOT: { id: actorId } } : {}),
+      },
+      select: { id: true },
+    });
+
+    const amountPi = Number(request.amount_pi || 0);
+    const amountFcfa = Number(request.amount_fcfa || 0);
+    await Promise.all(
+      recipients.map((u) =>
+        dbc.notifications
+          .create({
+            data: {
+              id: uuidv4(),
+              user_id: u.id,
+              title: 'Retrait urgent a valider',
+              message: `Demande de retrait #${String(p_request_id).slice(0, 8)} (${amountPi} pieces / ${amountFcfa} FCFA) transmise pour validation urgente.${escalation.message ? ` ${escalation.message}` : ''}`,
+              type: 'warning',
+              data: JSON.stringify({ request_id: p_request_id, kind: 'withdrawal_escalation', escalated_by: actorId }),
+              created_at: now,
+            },
+          })
+          .catch((e) => console.error('Notification escalade retrait non creee:', e.message)),
+      ),
+    );
+
+    return ok({ success: true, message: 'Demande transmise au super admin et aux secretaires habilites.', escalated_to: recipients.length });
   },
 
   async approve_admin_withdrawal(args) {
@@ -2983,6 +3207,107 @@ const HANDLERS = {
         total_fcfa: Number(r._sum.amount_fcfa || 0),
         total_coins: Number(r._sum.coins_amount || 0),
       }))),
+    });
+  },
+
+  async get_super_admin_country_organizer_stats() {
+    const dbc = db();
+    const rateRow = await dbc.app_settings.findFirst({ select: { coin_to_fcfa_rate: true } });
+    const rate = Number(rateRow?.coin_to_fcfa_rate) || 10;
+
+    const organizers = await dbc.profiles.findMany({
+      where: { deleted_at: null, user_type: 'organizer' },
+      select: { id: true, full_name: true, email: true, country: true, city: true },
+    });
+    const ids = organizers.map((o) => o.id);
+
+    const earnings = ids.length
+      ? await dbc.organizer_earnings.findMany({
+          where: { organizer_id: { in: ids } },
+          select: {
+            organizer_id: true, earnings_coins: true, earnings_fcfa: true, platform_commission: true, status: true,
+            transferred_at: true, paid_at: true, updated_at: true, created_at: true,
+          },
+        })
+      : [];
+
+    // Série 12 mois (CA plateforme/frais)
+    const now = new Date();
+    const monthKeys = [];
+    const monthMap = new Map();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label = d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
+      monthKeys.push(key);
+      monthMap.set(key, { month: key, label, platform_ca_fcfa: 0 });
+    }
+    const firstMonth = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+
+    const byOrg = new Map();
+    for (const e of earnings) {
+      const st = String(e.status || '').toLowerCase();
+      if (st === 'cancelled' || st === 'canceled' || st === 'rejected' || st === 'refunded') continue;
+      const oid = e.organizer_id;
+      if (!byOrg.has(oid)) byOrg.set(oid, { organizer_earnings_fcfa: 0, platform_ca_fcfa: 0, transactions_count: 0 });
+      const agg = byOrg.get(oid);
+      const earnFcfa = Number(e.earnings_fcfa || 0) || (Number(e.earnings_coins || 0) * rate);
+      const platformFcfa = Number(e.platform_commission || 0) * rate;
+      agg.organizer_earnings_fcfa += earnFcfa;
+      agg.platform_ca_fcfa += platformFcfa;
+      agg.transactions_count += 1;
+
+      const d = new Date(e.transferred_at || e.paid_at || e.updated_at || e.created_at || 0);
+      if (d >= firstMonth) {
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (monthMap.has(key)) monthMap.get(key).platform_ca_fcfa += platformFcfa;
+      }
+    }
+
+    const byCountry = new Map();
+    for (const o of organizers) {
+      const country = String(o.country || '').trim() || 'INCONNUE';
+      if (!byCountry.has(country)) {
+        byCountry.set(country, { country, organizer_count: 0, total_organizer_earnings_fcfa: 0, total_platform_ca_fcfa: 0, organizers: [] });
+      }
+      const c = byCountry.get(country);
+      const agg = byOrg.get(o.id) || { organizer_earnings_fcfa: 0, platform_ca_fcfa: 0, transactions_count: 0 };
+      c.organizer_count += 1;
+      c.total_organizer_earnings_fcfa += agg.organizer_earnings_fcfa;
+      c.total_platform_ca_fcfa += agg.platform_ca_fcfa;
+      c.organizers.push({
+        id: o.id,
+        full_name: o.full_name || null,
+        email: o.email || null,
+        country,
+        city: o.city || null,
+        organizer_earnings_fcfa: Math.round(agg.organizer_earnings_fcfa),
+        platform_ca_fcfa: Math.round(agg.platform_ca_fcfa),
+        transactions_count: agg.transactions_count,
+      });
+    }
+
+    const countries = Array.from(byCountry.values())
+      .map((c) => ({
+        ...c,
+        total_organizer_earnings_fcfa: Math.round(c.total_organizer_earnings_fcfa),
+        total_platform_ca_fcfa: Math.round(c.total_platform_ca_fcfa),
+        organizers: c.organizers.sort((a, b) => (b.platform_ca_fcfa - a.platform_ca_fcfa) || (b.organizer_earnings_fcfa - a.organizer_earnings_fcfa)),
+      }))
+      .sort((a, b) => (b.total_platform_ca_fcfa - a.total_platform_ca_fcfa) || (b.organizer_count - a.organizer_count) || a.country.localeCompare(b.country));
+
+    const total_general_platform_ca_fcfa = countries.reduce((s, c) => s + Number(c.total_platform_ca_fcfa || 0), 0);
+    const monthly_platform_ca = monthKeys.map((k) => {
+      const m = monthMap.get(k);
+      return { month: m.month, label: m.label, platform_ca_fcfa: Math.round(m.platform_ca_fcfa) };
+    });
+
+    return ok({
+      countries,
+      total_general_platform_ca_fcfa: Math.round(total_general_platform_ca_fcfa),
+      monthly_platform_ca,
+      generated_at: new Date().toISOString(),
+      rate,
     });
   },
 

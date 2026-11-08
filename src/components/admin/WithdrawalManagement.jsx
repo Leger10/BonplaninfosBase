@@ -30,6 +30,7 @@ import {
   Eye,
   AlertTriangle,
   Calculator,
+  Send,
 } from "lucide-react";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
 import { useData } from "@/contexts/DataContext";
@@ -37,9 +38,19 @@ import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 
+const parsePaymentDetails = (raw) => {
+  if (!raw) return {};
+  if (typeof raw === "object") return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+};
+
 const WithdrawalManagement = () => {
   const { user } = useAuth();
-  const { userProfile } = useData();
+  const { userProfile, appSettings } = useData();
 
   const [requests, setRequests] = useState([]);
   const [filtered, setFiltered] = useState([]);
@@ -54,9 +65,20 @@ const WithdrawalManagement = () => {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [isRejectionDialogOpen, setIsRejectionDialogOpen] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [isEscalateDialogOpen, setIsEscalateDialogOpen] = useState(false);
+  const [escalationMessage, setEscalationMessage] = useState("");
 
+  const withdrawalFeePercent = Number(
+    appSettings?.withdrawal_fee_percentage ?? appSettings?.withdrawalFeePercentage ?? 5,
+  );
   const isSuperAdmin = userProfile?.user_type === "super_admin";
-  const canPerformActions = isSuperAdmin;
+  const isSuperAppointedSecretary =
+    userProfile?.user_type === "secretary" && userProfile?.appointed_by_super_admin === true;
+  const canValidateWithdrawals = isSuperAdmin || isSuperAppointedSecretary;
+  // Secrétaires nommés par un admin : consultation + transmission urgente uniquement (pas de validation).
+  const canEscalateWithdrawals =
+    userProfile?.user_type === "secretary" && !isSuperAppointedSecretary;
+  const showActionsColumn = canValidateWithdrawals || canEscalateWithdrawals;
 
   // Fetch Requests
   const fetchWithdrawalRequests = useCallback(async () => {
@@ -88,13 +110,13 @@ const WithdrawalManagement = () => {
       setRequests(safeData || []);
       setFiltered(safeData || []);
 
-      // Calculate fees stats
-      const totalFees = safeData
+      // Calculate fees stats (réels, en FCFA) : collectés sur retraits validés/payés, en attente sur demandes en cours
+      const totalFees = (safeData || [])
         .filter((r) => r.status === "paid" || r.status === "approved")
-        .reduce((acc, curr) => acc + (curr.fees || 0), 0);
-      const pendingFees = safeData
+        .reduce((acc, curr) => acc + Number(curr.fees || 0), 0);
+      const pendingFees = (safeData || [])
         .filter((r) => r.status === "pending")
-        .reduce((acc, curr) => acc + (curr.fees || 0), 0);
+        .reduce((acc, curr) => acc + Number(curr.fees || 0), 0);
       setFeeStats({ total_fees: totalFees, pending_fees: pendingFees });
     } catch (error) {
       console.error("Erreur chargement:", error);
@@ -131,7 +153,15 @@ const WithdrawalManagement = () => {
 
   // Actions
   const handleProcessRequest = async (requestId, status, reason = null) => {
-    if (!canPerformActions) return;
+    if (!canValidateWithdrawals) {
+      toast({
+        title: "Action non autorisée",
+        description:
+          "Seul le super admin ou un secrétaire nommé par le super admin peut valider un retrait.",
+        variant: "destructive",
+      });
+      return;
+    }
     setProcessingId(requestId);
 
     try {
@@ -167,18 +197,55 @@ const WithdrawalManagement = () => {
     }
   };
 
+  const handleEscalateRequest = async (requestId) => {
+    if (!canEscalateWithdrawals) return;
+    setProcessingId(requestId);
+    try {
+      const { data, error } = await supabase.rpc("escalate_organizer_withdrawal", {
+        p_request_id: requestId,
+        p_actor_id: user?.id || null,
+        p_message: escalationMessage?.trim() || null,
+      });
+      if (error) throw error;
+      if (data?.success === false) throw new Error(data?.message || "Transmission impossible.");
+      toast({
+        title: "Demande transmise",
+        description:
+          data?.message ||
+          "La demande urgente a été transmise au super admin et aux secrétaires habilités.",
+      });
+      await fetchWithdrawalRequests();
+    } catch (error) {
+      toast({
+        title: "Erreur",
+        description: error?.message || "Impossible de transmettre la demande.",
+        variant: "destructive",
+      });
+    } finally {
+      setProcessingId(null);
+      setIsEscalateDialogOpen(false);
+      setSelectedRequest(null);
+      setEscalationMessage("");
+    }
+  };
+
   const exportToExcel = () => {
-    const rows = filtered.map((r) => ({
-      ID: r.id,
-      Organisateur: r.organizer?.full_name,
-      Montant_Brut: r.amount_fcfa,
-      Frais_5_Pourcent: r.fees,
-      Montant_Net: r.net_amount || r.amount_fcfa - (r.fees || 0),
-      Méthode: r.payment_details?.method,
-      Compte: r.payment_details?.number,
-      Statut: r.status,
-      Date: new Date(r.requested_at).toLocaleDateString(),
-    }));
+    const rows = filtered.map((r) => {
+      const details = parsePaymentDetails(r.payment_details);
+      const escalated = !!details?.escalation?.urgent;
+      return {
+        ID: r.id,
+        Organisateur: r.organizer?.full_name,
+        Montant_Brut_FCFA: r.amount_fcfa,
+        Frais_FCFA: Number(r.fees || 0),
+        Montant_Net_FCFA: Number(r.net_amount || Number(r.amount_fcfa || 0) - Number(r.fees || 0)),
+        Methode: details?.method,
+        Compte: details?.number,
+        Statut: r.status,
+        Urgent_Transmis: escalated ? "Oui" : "Non",
+        Date: new Date(r.requested_at).toLocaleDateString(),
+      };
+    });
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Retraits");
@@ -192,28 +259,28 @@ const WithdrawalManagement = () => {
         <Card className="bg-blue-50 border-blue-100">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-blue-700 flex items-center gap-2">
-              <Calculator className="w-4 h-4" /> Collectés (5%)
+              <Calculator className="w-4 h-4" /> Frais collectés ({withdrawalFeePercent}%)
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-900">
-              {feeStats.total_fees.toLocaleString()} FCFA
+              {Number(feeStats.total_fees || 0).toLocaleString()} FCFA
             </div>
-            <p className="text-xs text-blue-600 mt-1">Sur retraits validés</p>
+            <p className="text-xs text-blue-600 mt-1">Sur retraits validés / payés</p>
           </CardContent>
         </Card>
         <Card className="bg-orange-50 border-orange-100">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-orange-700 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4" /> Frais en Attente
+              <AlertTriangle className="w-4 h-4" /> Frais en attente
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-orange-900">
-              {feeStats.pending_fees.toLocaleString()} FCFA
+              {Number(feeStats.pending_fees || 0).toLocaleString()} FCFA
             </div>
             <p className="text-xs text-orange-600 mt-1">
-              Sur demandes en cours
+              Sur demandes en cours (non validées)
             </p>
           </CardContent>
         </Card>
@@ -262,12 +329,12 @@ const WithdrawalManagement = () => {
             <TableRow>
               <TableHead>Demandeur</TableHead>
               <TableHead>Montant Brut</TableHead>
-              <TableHead className="text-red-500">Frais (5%)</TableHead>
+              <TableHead className="text-red-500">Frais ({withdrawalFeePercent}%)</TableHead>
               <TableHead className="text-emerald-600">Net à Payer</TableHead>
               <TableHead>Info Paiement</TableHead>
               <TableHead>Statut</TableHead>
               <TableHead>Date</TableHead>
-              {canPerformActions && (
+              {showActionsColumn && (
                 <TableHead className="text-right">Actions</TableHead>
               )}
             </TableRow>
@@ -275,117 +342,158 @@ const WithdrawalManagement = () => {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={8} className="h-24 text-center">
+                <TableCell colSpan={showActionsColumn ? 8 : 7} className="h-24 text-center">
                   <Loader2 className="mx-auto h-6 w-6 animate-spin" />
                 </TableCell>
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={8}
+                  colSpan={showActionsColumn ? 8 : 7}
                   className="h-24 text-center text-muted-foreground"
                 >
                   Aucune demande trouvée.
                 </TableCell>
               </TableRow>
             ) : (
-              filtered.map((req) => (
-                <TableRow key={req.id}>
-                  <TableCell>
-                    <div className="font-medium">
-                      {req.organizer?.full_name || "Inconnu"}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {req.organizer?.email}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">
-                      {req.amount_fcfa?.toLocaleString()} FCFA
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {req.amount_pi} pièces
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-red-500 font-medium">
-                    -{req.fees?.toLocaleString()} FCFA
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-bold text-emerald-600">
-                      {(
-                        req.net_amount || req.amount_fcfa - (req.fees || 0)
-                      ).toLocaleString()}{" "}
-                      FCFA
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="text-sm font-medium">
-                      {req.payment_details?.method}
-                    </div>
-                    <div className="text-xs font-mono bg-muted px-1 rounded w-fit">
-                      {req.payment_details?.number}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium border ${
-                        req.status === "approved"
-                          ? "bg-green-100 text-green-700 border-green-200"
-                          : req.status === "rejected"
-                            ? "bg-red-100 text-red-700 border-red-200"
-                            : "bg-yellow-100 text-yellow-700 border-yellow-200"
-                      }`}
-                    >
-                      {req.status === "approved"
-                        ? "Validé"
-                        : req.status === "rejected"
-                          ? "Rejeté"
-                          : "En attente"}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {format(new Date(req.requested_at), "dd MMM yyyy HH:mm", {
-                      locale: fr,
-                    })}
-                  </TableCell>
-                  {canPerformActions && (
-                    <TableCell className="text-right">
-                      {req.status === "pending" && (
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            size="sm"
-                            className="bg-green-600 hover:bg-green-700 h-8 px-2"
-                            onClick={() =>
-                              handleProcessRequest(req.id, "approved")
-                            }
-                            disabled={processingId === req.id}
-                            title="Approuver"
-                          >
-                            {processingId === req.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Check className="w-4 h-4" />
-                            )}
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="destructive"
-                            className="h-8 px-2"
-                            onClick={() => {
-                              setSelectedRequest(req);
-                              setIsRejectionDialogOpen(true);
-                            }}
-                            disabled={processingId === req.id}
-                            title="Rejeter"
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      )}
+              filtered.map((req) => {
+                const details = parsePaymentDetails(req.payment_details);
+                const escalated = !!details?.escalation?.urgent;
+                const feesValue = Number(req.fees || 0);
+                const netValue = Number(
+                  req.net_amount ?? (Number(req.amount_fcfa || 0) - feesValue),
+                );
+                return (
+                  <TableRow key={req.id}>
+                    <TableCell>
+                      <div className="font-medium">
+                        {req.organizer?.full_name || "Inconnu"}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {req.organizer?.email}
+                      </div>
                     </TableCell>
-                  )}
-                </TableRow>
-              ))
+                    <TableCell>
+                      <div className="font-medium">
+                        {Number(req.amount_fcfa || 0).toLocaleString()} FCFA
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {Number(req.amount_pi || 0)} pièces
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-red-500 font-medium">
+                      -{feesValue.toLocaleString()} FCFA
+                    </TableCell>
+                    <TableCell>
+                      <div className="font-bold text-emerald-600">
+                        {netValue.toLocaleString()} FCFA
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="text-sm font-medium">{details?.method || "—"}</div>
+                      <div className="text-xs font-mono bg-muted px-1 rounded w-fit">
+                        {details?.number || "—"}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        <span
+                          className={`px-2 py-1 rounded-full text-xs font-medium border w-fit ${
+                            req.status === "approved" || req.status === "paid"
+                              ? "bg-green-100 text-green-700 border-green-200"
+                              : req.status === "rejected"
+                                ? "bg-red-100 text-red-700 border-red-200"
+                                : "bg-yellow-100 text-yellow-700 border-yellow-200"
+                          }`}
+                        >
+                          {req.status === "approved" || req.status === "paid"
+                            ? "Validé"
+                            : req.status === "rejected"
+                              ? "Rejeté"
+                              : "En attente"}
+                        </span>
+                        {escalated && req.status === "pending" && (
+                          <span
+                            className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-100 text-amber-800 border border-amber-200 w-fit"
+                            title={details?.escalation?.message || "Transmise pour validation urgente"}
+                          >
+                            Urgent / transmis
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {req.requested_at
+                        ? format(new Date(req.requested_at), "dd MMM yyyy HH:mm", { locale: fr })
+                        : "—"}
+                    </TableCell>
+                    {showActionsColumn && (
+                      <TableCell className="text-right">
+                        {req.status === "pending" ? (
+                          <div className="flex justify-end gap-2">
+                            {canValidateWithdrawals && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  className="bg-green-600 hover:bg-green-700 h-8 px-2"
+                                  onClick={() => handleProcessRequest(req.id, "approved")}
+                                  disabled={processingId === req.id}
+                                  title="Approuver"
+                                >
+                                  {processingId === req.id ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Check className="w-4 h-4" />
+                                  )}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  className="h-8 px-2"
+                                  onClick={() => {
+                                    setSelectedRequest(req);
+                                    setIsRejectionDialogOpen(true);
+                                  }}
+                                  disabled={processingId === req.id}
+                                  title="Rejeter"
+                                >
+                                  <X className="w-4 h-4" />
+                                </Button>
+                              </>
+                            )}
+                            {canEscalateWithdrawals && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-8 px-2 border-amber-300 text-amber-800 hover:bg-amber-50"
+                                onClick={() => {
+                                  setSelectedRequest(req);
+                                  setEscalationMessage(details?.escalation?.message || "");
+                                  setIsEscalateDialogOpen(true);
+                                }}
+                                disabled={processingId === req.id}
+                                title="Transmettre en urgence au super admin et aux secrétaires habilités"
+                              >
+                                {processingId === req.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Send className="w-4 h-4" />
+                                )}
+                                <span className="ml-1 hidden sm:inline">Transmettre</span>
+                              </Button>
+                            )}
+                            {!canValidateWithdrawals && !canEscalateWithdrawals && (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    )}
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
@@ -433,6 +541,39 @@ const WithdrawalManagement = () => {
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               )}
               Confirmer Rejet
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEscalateDialogOpen} onOpenChange={setIsEscalateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Transmettre la demande en urgence</DialogTitle>
+            <DialogDescription>
+              Cette demande sera transmise au super admin et aux secrétaires nommés par le
+              super admin pour validation. Vous ne pouvez pas valider ce retrait.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={escalationMessage}
+            onChange={(e) => setEscalationMessage(e.target.value)}
+            placeholder="Message (optionnel) : motif d'urgence, informations utiles..."
+            rows={3}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEscalateDialogOpen(false)}>
+              Annuler
+            </Button>
+            <Button
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={() => handleEscalateRequest(selectedRequest?.id)}
+              disabled={!selectedRequest?.id || processingId === selectedRequest?.id}
+            >
+              {processingId === selectedRequest?.id && (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              )}
+              Transmettre
             </Button>
           </DialogFooter>
         </DialogContent>

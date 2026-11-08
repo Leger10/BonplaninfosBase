@@ -260,13 +260,19 @@ const RequestsTable = ({ status }) => {
     );
 };
 
+const toDateInputValue = (day) => {
+    const d = Math.min(28, Math.max(1, Number(day) || 5));
+    const now = new Date();
+    const dt = new Date(now.getFullYear(), now.getMonth(), d);
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+};
+
 const ConfigPanel = () => {
-    const [config, setConfig] = useState({
-        withdrawal_available_date: 5,
-        min_withdrawal_amount: 1000,
-        max_withdrawal_amount: 500000,
-        withdrawal_methods: ['Orange Money', 'Bank Transfer']
-    });
+    const [config, setConfig] = useState(null);
+    const [openingDate, setOpeningDate] = useState(toDateInputValue(5));
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
@@ -278,9 +284,22 @@ const ConfigPanel = () => {
                 .select('*')
                 .limit(1)
                 .maybeSingle();
-            
-            if (data) setConfig(data);
-        } catch(e) {
+            if (error) throw error;
+            if (data) {
+                setConfig(data);
+                setOpeningDate(toDateInputValue(data.withdrawal_available_date));
+            } else {
+                setConfig({
+                    withdrawal_available_date: 5,
+                    min_withdrawal_amount: 1000,
+                    max_withdrawal_amount: 500000,
+                    withdrawal_methods: ['Orange Money', 'Bank Transfer'],
+                    min_withdrawal_pi: 50,
+                    withdrawal_dates: [5],
+                });
+                setOpeningDate(toDateInputValue(5));
+            }
+        } catch (e) {
             console.error("Error config:", e);
         } finally {
             setLoading(false);
@@ -292,20 +311,30 @@ const ConfigPanel = () => {
     const handleSave = async () => {
         setSaving(true);
         try {
+            const day = Math.min(28, Math.max(1, new Date(openingDate).getDate() || 5));
+            const methodsRaw = config?.withdrawal_methods;
+            const methods = Array.isArray(methodsRaw)
+                ? methodsRaw
+                : String(methodsRaw || 'Orange Money, Bank Transfer').split(',').map(s => s.trim()).filter(Boolean);
             const payload = {
-                withdrawal_available_date: parseInt(config.withdrawal_available_date),
-                min_withdrawal_amount: parseInt(config.min_withdrawal_amount),
-                max_withdrawal_amount: parseInt(config.max_withdrawal_amount),
-                withdrawal_methods: Array.isArray(config.withdrawal_methods) ? config.withdrawal_methods : config.withdrawal_methods.split(',').map(s => s.trim())
+                withdrawal_available_date: day,
+                min_withdrawal_amount: Number(config?.min_withdrawal_amount ?? 1000),
+                max_withdrawal_amount: Number(config?.max_withdrawal_amount ?? 500000),
+                withdrawal_methods: methods,
+                min_withdrawal_pi: Number(config?.min_withdrawal_pi ?? 50),
+                withdrawal_dates: Array.isArray(config?.withdrawal_dates) && config.withdrawal_dates.length ? config.withdrawal_dates : [day],
             };
 
-            const { error } = await supabase
-                .from('admin_withdrawal_config')
-                .upsert(config.id ? { ...payload, id: config.id } : payload);
+            let error;
+            if (config?.id) {
+                ({ error } = await supabase.from('admin_withdrawal_config').update(payload).eq('id', config.id));
+            } else {
+                ({ error } = await supabase.from('admin_withdrawal_config').insert([payload]));
+            }
 
             if (error) throw error;
-            toast({ title: "Configuration sauvegardée", variant: "success" });
-            fetchConfig(); 
+            toast({ title: "Configuration sauvegardée", description: `Jour de retrait admin : le ${day} de chaque mois.`, variant: "success" });
+            fetchConfig();
         } catch (error) {
             toast({ title: "Erreur", description: error.message, variant: "destructive" });
         } finally {
@@ -324,36 +353,38 @@ const ConfigPanel = () => {
             <CardContent className="space-y-6">
                 <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
-                        <Label>Jour d'ouverture (du mois)</Label>
-                        <Input 
-                            type="number" 
-                            min="1" max="28" 
-                            value={config.withdrawal_available_date} 
-                            onChange={e => setConfig({...config, withdrawal_available_date: e.target.value})} 
+                        <Label htmlFor="salary-opening-date">Date / jour d'ouverture des retraits</Label>
+                        <Input
+                            id="salary-opening-date"
+                            type="date"
+                            value={openingDate}
+                            onChange={(e) => setOpeningDate(e.target.value)}
                         />
-                        <p className="text-xs text-muted-foreground">Date à partir de laquelle le retrait est possible.</p>
+                        <p className="text-xs text-muted-foreground">
+                            Sélectionnez une date dans le calendrier : le <strong>{Math.min(28, Math.max(1, new Date(openingDate).getDate() || 5))}</strong> de chaque mois sera appliqué comme jour de retrait des administrateurs.
+                        </p>
                     </div>
                     <div className="space-y-2">
                         <Label>Méthodes autorisées (virgule)</Label>
                         <Input 
-                            value={Array.isArray(config.withdrawal_methods) ? config.withdrawal_methods.join(', ') : config.withdrawal_methods} 
-                            onChange={e => setConfig({...config, withdrawal_methods: e.target.value.split(',')})} 
+                            value={Array.isArray(config?.withdrawal_methods) ? config.withdrawal_methods.join(', ') : (config?.withdrawal_methods || '')} 
+                            onChange={e => setConfig({ ...(config || {}), withdrawal_methods: e.target.value.split(',') })} 
                         />
                     </div>
                     <div className="space-y-2">
-                        <Label>Minimim (FCFA)</Label>
+                        <Label>Minimum (FCFA)</Label>
                         <Input 
                             type="number" 
-                            value={config.min_withdrawal_amount} 
-                            onChange={e => setConfig({...config, min_withdrawal_amount: e.target.value})} 
+                            value={config?.min_withdrawal_amount ?? 1000} 
+                            onChange={e => setConfig({ ...(config || {}), min_withdrawal_amount: e.target.value })} 
                         />
                     </div>
                     <div className="space-y-2">
                         <Label>Maximum (FCFA)</Label>
                         <Input 
                             type="number" 
-                            value={config.max_withdrawal_amount} 
-                            onChange={e => setConfig({...config, max_withdrawal_amount: e.target.value})} 
+                            value={config?.max_withdrawal_amount ?? 500000} 
+                            onChange={e => setConfig({ ...(config || {}), max_withdrawal_amount: e.target.value })} 
                         />
                     </div>
                 </div>

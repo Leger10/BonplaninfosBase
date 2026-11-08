@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, Plus, Trash2, Save, Loader2 } from 'lucide-react';
+import { Calendar, Trash2, Save, Loader2 } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 import { supabase } from '@/lib/customSupabaseClient';
 
 const WithdrawalScheduleSettings = () => {
   const [dates, setDates] = useState([5]);
+  const [configRow, setConfigRow] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -19,13 +20,16 @@ const WithdrawalScheduleSettings = () => {
     try {
       const { data, error } = await supabase
         .from('admin_withdrawal_config')
-        .select('withdrawal_dates')
+        .select('*')
         .limit(1)
         .maybeSingle();
 
       if (error) throw error;
-      if (data && data.withdrawal_dates) {
-        setDates(data.withdrawal_dates.sort((a, b) => a - b));
+      if (data) {
+        setConfigRow(data);
+        if (Array.isArray(data.withdrawal_dates) && data.withdrawal_dates.length) {
+          setDates([...data.withdrawal_dates].map(Number).filter(Boolean).sort((a, b) => a - b));
+        }
       }
     } catch (error) {
       console.error("Error fetching withdrawal schedule:", error);
@@ -49,30 +53,39 @@ const WithdrawalScheduleSettings = () => {
   };
 
   const handleSave = async () => {
+    if (!dates.length) {
+      toast({ title: "Attention", description: "Sélectionnez au moins un jour de retrait.", variant: "warning" });
+      return;
+    }
     setSaving(true);
     try {
-      // Get existing ID or just update blindly if there's only one row policy
-      const { data: existing } = await supabase.from('admin_withdrawal_config').select('id').limit(1).maybeSingle();
-      
+      const existing = configRow?.id
+        ? configRow
+        : (await supabase.from('admin_withdrawal_config').select('*').limit(1).maybeSingle()).data;
+
+      const sorted = [...dates].map(Number).filter((n) => n >= 1 && n <= 31).sort((a, b) => a - b);
+      const payload = {
+        withdrawal_dates: sorted,
+        withdrawal_available_date: Number(existing?.withdrawal_available_date ?? sorted[0] ?? 5),
+        min_withdrawal_amount: Number(existing?.min_withdrawal_amount ?? 1000),
+        max_withdrawal_amount: Number(existing?.max_withdrawal_amount ?? 500000),
+        min_withdrawal_pi: Number(existing?.min_withdrawal_pi ?? 50),
+        withdrawal_methods: existing?.withdrawal_methods ?? ['Orange Money', 'Bank Transfer'],
+      };
+
       let error;
-      if (existing) {
-          const { error: updateError } = await supabase
-            .from('admin_withdrawal_config')
-            .update({ withdrawal_dates: dates })
-            .eq('id', existing.id);
-          error = updateError;
+      if (existing?.id) {
+        ({ error } = await supabase.from('admin_withdrawal_config').update(payload).eq('id', existing.id));
       } else {
-          const { error: insertError } = await supabase
-            .from('admin_withdrawal_config')
-            .insert([{ withdrawal_dates: dates }]);
-          error = insertError;
+        ({ error } = await supabase.from('admin_withdrawal_config').insert([payload]));
       }
 
       if (error) throw error;
       toast({ title: "Succès", description: "Calendrier des retraits mis à jour.", variant: "success" });
+      fetchConfig();
     } catch (error) {
       console.error("Error saving schedule:", error);
-      toast({ title: "Erreur", description: "Impossible de sauvegarder le calendrier.", variant: "destructive" });
+      toast({ title: "Erreur", description: error?.message || "Impossible de sauvegarder le calendrier.", variant: "destructive" });
     } finally {
       setSaving(false);
     }

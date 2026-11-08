@@ -54,7 +54,8 @@ const WithdrawalTab = () => {
       if (config) {
           setWithdrawalConfig(config);
           const today = new Date().getDate();
-          setIsPoolWithdrawalOpen(config.withdrawal_dates?.includes(today));
+          const days = Array.isArray(config.withdrawal_dates) ? config.withdrawal_dates.map(Number) : [];
+          setIsPoolWithdrawalOpen(days.includes(today));
       }
 
       // 3. Fetch History

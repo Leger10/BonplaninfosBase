@@ -41,7 +41,10 @@ export const RPC_POLICY = {
   spend_user_coins: { selfArg: 'p_user_id' },
   increment_user_coins: { roles: ADMIN },
   reverse_credit: { roles: ADMIN, actorArg: 'p_reverser_id' },
-  process_organizer_withdrawal: { roles: ADMIN, actorArg: 'p_admin_id' },
+  // Validation retraits organisateurs : super admin ou secrétaire nommé par le super admin uniquement
+  // (la règle fine appointed_by_super_admin est appliquée dans le handler RPC).
+  process_organizer_withdrawal: { roles: ['super_admin', 'secretary'], actorArg: 'p_admin_id' },
+  escalate_organizer_withdrawal: { roles: ADMIN, actorArg: 'p_actor_id' },
   approve_admin_withdrawal: { roles: ADMIN, actorArg: 'p_processed_by' },
   clear_user_transfer_history: { roles: ADMIN },
   clear_all_user_transactions: { roles: ADMIN },
@@ -59,6 +62,7 @@ export const RPC_POLICY = {
   get_audit_log_stats: { roles: ADMIN },
   admin_list_scan_agents: { roles: ADMIN },
   get_super_admin_dashboard_stats: { roles: ADMIN },
+  get_super_admin_country_organizer_stats: { roles: ADMIN },
   get_global_analytics: { roles: ADMIN },
   send_announcement_to_users: { roles: ADMIN },
   delete_location: { roles: ADMIN },
