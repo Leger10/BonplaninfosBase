@@ -6,7 +6,7 @@ import { supabase } from '@/lib/customSupabaseClient';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Users, TrendingUp, Wallet, Percent, ArrowLeft, HeartHandshake } from 'lucide-react';
+import { Loader2, Users, TrendingUp, Wallet, Percent, ArrowLeft, HeartHandshake, WifiOff, RefreshCw } from 'lucide-react';
 
 const fmt = (n) => Number(n || 0).toLocaleString('fr-FR');
 
@@ -39,12 +39,20 @@ export default function BusinessPartnerPage() {
       if (!user?.id) { setLoading(false); return; }
       setLoading(true);
       setError('');
-      const { data: res, error: err } = await supabase.rpc('get_business_partner_dashboard', { p_user_id: user.id });
-      if (!alive) return;
-      if (err) setError(err.message || 'Erreur de chargement');
-      else if (res && res.success === false) setError(res.message || 'Erreur');
-      else setData(res?.data || res);
-      setLoading(false);
+      try {
+        const { data: res, error: err } = await supabase.rpc('get_business_partner_dashboard', { p_user_id: user.id });
+        if (!alive) return;
+        if (err) throw err;
+        if (res && res.success === false) throw new Error(res.message || 'Erreur');
+        setData(res?.data || res);
+      } catch (e) {
+        if (!alive) return;
+        const msg = String(e?.message || e || '');
+        const isNetwork = /failed to fetch|network|connexion|ERR_CONNECTION|ECONNREFUSED/i.test(msg);
+        setError(isNetwork ? "Connexion au serveur impossible. Vérifiez que le service est démarré, puis réessayez." : (msg || 'Erreur de chargement'));
+      } finally {
+        if (alive) setLoading(false);
+      }
     };
     run();
     return () => { alive = false; };
@@ -85,7 +93,18 @@ export default function BusinessPartnerPage() {
         {loading ? (
           <div className="flex items-center justify-center py-16 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mr-2" /> Chargement...</div>
         ) : error ? (
-          <Card><CardContent className="pt-6 text-red-600">{error}</CardContent></Card>
+          <Card className="border-red-100 bg-red-50/40">
+            <CardContent className="pt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center shrink-0"><WifiOff className="h-5 w-5" /></div>
+                <div>
+                  <p className="font-medium text-slate-900">Impossible de charger l’espace</p>
+                  <p className="text-sm text-slate-600 mt-0.5">{error}</p>
+                </div>
+              </div>
+              <Button variant="outline" onClick={() => window.location.reload()} className="shrink-0"><RefreshCw className="h-4 w-4 mr-2" /> Réessayer</Button>
+            </CardContent>
+          </Card>
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

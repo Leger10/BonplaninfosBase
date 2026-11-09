@@ -325,7 +325,7 @@ const handleSubmit = async (body) => {
         votePricePi,
     } = body;
 
-    if (!['credits', 'tickets', 'votes', 'stand_rental', 'raffle', 'protected'].includes(type)) {
+    if (!['credits', 'tickets', 'votes', 'stand_rental', 'raffle', 'protected', 'partner_license'].includes(type)) {
         return { statusCode: 400, body: { success: false, message: 'Type de paiement invalide' } };
     }
 
@@ -831,6 +831,118 @@ const handleSubmit = async (body) => {
         };
     }
 
+    // ---------- LICENCE PARTENAIRE (USSD) ----------
+    if (type === 'partner_license') {
+        if (!userId) {
+            return { statusCode: 400, body: { success: false, message: 'Utilisateur requis' } };
+        }
+        const licensePackId = body.license_pack_id != null ? parseInt(body.license_pack_id, 10) : null;
+        if (!licensePackId) {
+            return { statusCode: 400, body: { success: false, message: 'Pack de licence requis' } };
+        }
+        const { data: licPack, error: licPackErr } = await supabase
+            .from('partner_license_packs')
+            .select('id,name,fcfa_price,duration_days,revenue_share_percent,coverage_type,slug,level,is_active')
+            .eq('id', licensePackId)
+            .maybeSingle();
+        if (licPackErr || !licPack || licPack.is_active === false) {
+            return { statusCode: 404, body: { success: false, message: 'Pack de licence introuvable ou inactif' } };
+        }
+        const expectedFcfa = Number(licPack.fcfa_price || 0);
+        if (expectedFcfa > 0 && total < expectedFcfa) {
+            return { statusCode: 400, body: { success: false, message: `Montant insuffisant (attendu ${expectedFcfa} FCFA, reçu ${total} FCFA).` } };
+        }
+        const cov = (body.coverage && typeof body.coverage === 'object') ? body.coverage : {};
+        const covCountry = String(cov.country || '').trim();
+        if (!covCountry) {
+            return { statusCode: 400, body: { success: false, message: 'Pays de couverture requis' } };
+        }
+        let covCities = Array.isArray(cov.cities) ? cov.cities.map(c => String(c || '').trim()).filter(Boolean) : [];
+        const ctype = String(licPack.coverage_type || '').toLowerCase();
+        if (ctype === 'ville') covCities = covCities.slice(0, 1);
+        if (ctype === 'pays') covCities = [];
+
+        // Paiement USSD en attente de validation super admin
+        const { data: licPayment, error: licPayErr } = await supabase
+            .from('payments')
+            .insert({
+                user_id: userId,
+                coins_amount: 0,
+                amount_fcfa: total,
+                status: 'pending',
+                payment_method: 'ussd',
+                transaction_id: orderId,
+                pack_id: 'partner_license_payment',
+                credits_added: false
+            })
+            .select()
+            .single();
+        if (licPayErr) {
+            console.error('❌ Erreur insertion paiement licence USSD:', licPayErr);
+            return { statusCode: 500, body: { success: false, message: 'Erreur enregistrement paiement: ' + licPayErr.message } };
+        }
+
+        // Licence en attente (liée par transaction_id)
+        let userLicenseRow = null;
+        try {
+            const { data: ul } = await supabase
+                .from('user_partner_licenses')
+                .insert({
+                    user_id: userId,
+                    license_pack_id: licensePackId,
+                    transaction_id: orderId,
+                    purchase_date: now(),
+                    status: 'pending_payment',
+                    revenue_share_percent: licPack.revenue_share_percent != null ? Math.round(Number(licPack.revenue_share_percent)) : null,
+                })
+                .select()
+                .single();
+            userLicenseRow = ul;
+        } catch (e) {
+            console.error('⚠️ user_partner_licenses (pending) non créé:', e.message);
+        }
+
+        const coverage = { country: covCountry, cities: covCities };
+        await recordUssdEvidence({
+            userId,
+            transactionType: 'partner_license',
+            amountPi: 0,
+            amountFcfa: total,
+            description: `Achat licence partenaire (${licPack.name}) via USSD (capture d'écran) - en attente de validation super admin`,
+            paymentId: licPayment.id,
+            ussdMeta,
+            extra: {
+                payment_type: 'partner_license',
+                license_pack_id: licensePackId,
+                user_partner_license_id: userLicenseRow ? userLicenseRow.id : null,
+                coverage,
+                pack_snapshot: {
+                    id: licPack.id,
+                    name: licPack.name,
+                    coverage_type: licPack.coverage_type || null,
+                    revenue_share_percent: licPack.revenue_share_percent,
+                    duration_days: licPack.duration_days,
+                    fcfa_price: licPack.fcfa_price,
+                    slug: licPack.slug || null,
+                    level: licPack.level || null,
+                }
+            }
+        });
+
+        return {
+            statusCode: 200,
+            body: {
+                success: true,
+                type: 'partner_license',
+                transaction_id: orderId,
+                payment_id: licPayment.id,
+                user_partner_license_id: userLicenseRow ? userLicenseRow.id : null,
+                message: "Paiement USSD enregistré. Votre pack sera activé après validation par le super administrateur, qui pourra ensuite vous nommer administrateur/partenaire selon votre zone.",
+                pending_validation: true
+            }
+        };
+    }
+
     // ---------- ACCES EVENEMENT PROTEGE ----------
     if (type === 'protected') {
         if (!userId) {
@@ -1245,6 +1357,10 @@ const resolvePayment = async (body, targetStatus) => {
     if (!actor || !ADMIN_ROLES.includes(actor.user_type) || actor.is_active === false) {
         return { statusCode: 403, body: { success: false, message: 'Seul un administrateur (super_admin, admin ou secretaire) peut valider ou rejeter un depot USSD.' } };
     }
+    // Licence partenaire : validation/nomination réservée au super administrateur
+    if (payment.pack_id === 'partner_license_payment' && actor.user_type !== 'super_admin') {
+        return { statusCode: 403, body: { success: false, message: "Seul le super administrateur peut valider ou rejeter un paiement de licence partenaire." } };
+    }
     if (payment.status && payment.status !== 'pending') {
         return {
             statusCode: 409,
@@ -1560,7 +1676,7 @@ const resolvePayment = async (body, targetStatus) => {
         }
     }
 
-    const CREDIT_PACK_EXCLUSIONS = ['ticket_payment', 'vote_payment', 'stand_rental_payment', 'raffle_payment', 'protected_access_payment'];
+    const CREDIT_PACK_EXCLUSIONS = ['ticket_payment', 'vote_payment', 'stand_rental_payment', 'raffle_payment', 'protected_access_payment', 'partner_license_payment'];
     if (targetStatus === 'completed' && !CREDIT_PACK_EXCLUSIONS.includes(payment.pack_id)) {
         const coins = payment.coins_amount || 0;
         if (coins > 0 && !payment.credits_added) {
@@ -1943,6 +2059,110 @@ const resolvePayment = async (body, targetStatus) => {
             } catch (e) {
                 console.error('⚠️ Ouverture de l\'accès protégé USSD échouée:', e.message);
             }
+        }
+    }
+
+    if (payment.pack_id === 'partner_license_payment') {
+        try {
+            const meta = deliveryMeta || {};
+            const licensePackId = meta.license_pack_id != null ? parseInt(meta.license_pack_id, 10) : null;
+            const cov = (meta.coverage && typeof meta.coverage === 'object') ? meta.coverage : { country: '', cities: [] };
+            const snap = (meta.pack_snapshot && typeof meta.pack_snapshot === 'object') ? meta.pack_snapshot : {};
+
+            if (targetStatus === 'completed') {
+                let pack = null;
+                if (licensePackId) {
+                    const { data: p } = await supabase.from('partner_license_packs').select('*').eq('id', licensePackId).maybeSingle();
+                    pack = p;
+                }
+                const durationDays = Number((pack && pack.duration_days) || snap.duration_days || 365);
+                const revShare = Number((pack && pack.revenue_share_percent) || snap.revenue_share_percent || 0);
+                const expiry = new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+                const covJson = JSON.stringify({ country: String(cov.country || '').trim(), cities: Array.isArray(cov.cities) ? cov.cities.filter(Boolean) : [] });
+                const country = String(cov.country || '').trim();
+                const cities = Array.isArray(cov.cities) ? cov.cities.filter(Boolean) : [];
+                const cityForProfile = cities.length === 1 ? cities[0] : null;
+
+                // Activer la licence achetée
+                const licUpd = {
+                    status: 'active',
+                    expiry_date: expiry,
+                    revenue_share_percent: revShare ? Math.round(revShare) : null,
+                };
+                let licQ = supabase.from('user_partner_licenses').update(licUpd);
+                if (meta.user_partner_license_id) licQ = licQ.eq('id', meta.user_partner_license_id);
+                else licQ = licQ.eq('transaction_id', payment.transaction_id);
+                await licQ;
+
+                // Pont vers partner_licenses legacy (PartnersManagement/salaires)
+                let legacyLicenseId = null;
+                const legacySlug = `pack-${licensePackId || (pack && pack.id) || 'x'}`;
+                const { data: leg } = await supabase.from('partner_licenses').select('id').eq('slug', legacySlug).maybeSingle();
+                if (leg && leg.id) {
+                    legacyLicenseId = leg.id;
+                    await supabase.from('partner_licenses').update({
+                        name: String((pack && pack.name) || snap.name || 'Licence partenaire'),
+                        slug: legacySlug,
+                        coverage_type: String((pack && pack.coverage_type) || snap.coverage_type || 'pays'),
+                        commission_rate: revShare,
+                        duration_days: Math.round(durationDays),
+                        price_fcfa: Number((pack && pack.fcfa_price) || snap.fcfa_price || payment.amount_fcfa || 0),
+                        is_active: true,
+                    }).eq('id', legacyLicenseId);
+                } else {
+                    legacyLicenseId = uuidv4();
+                    await supabase.from('partner_licenses').insert({
+                        id: legacyLicenseId,
+                        name: String((pack && pack.name) || snap.name || 'Licence partenaire'),
+                        slug: legacySlug,
+                        coverage_type: String((pack && pack.coverage_type) || snap.coverage_type || 'pays'),
+                        commission_rate: revShare,
+                        duration_days: Math.round(durationDays),
+                        price_fcfa: Number((pack && pack.fcfa_price) || snap.fcfa_price || payment.amount_fcfa || 0),
+                        is_active: true,
+                        created_at: now(),
+                    });
+                }
+
+                // Créer/activer le partenaire (zone)
+                const { data: existingPartner } = await supabase.from('partners').select('id,status').eq('user_id', payment.user_id).order('created_at', { ascending: false }).limit(1).maybeSingle();
+                const partnerPatch = {
+                    license_id: legacyLicenseId,
+                    coverage_zone: covJson,
+                    status: 'active',
+                    activation_date: now(),
+                    expiration_date: expiry,
+                    updated_at: now(),
+                };
+                if (existingPartner && existingPartner.id) {
+                    await supabase.from('partners').update(partnerPatch).eq('id', existingPartner.id);
+                } else {
+                    await supabase.from('partners').insert({ id: uuidv4(), user_id: payment.user_id, ...partnerPatch, created_at: now() });
+                }
+
+                // Nomination admin + zone (super admin validateur)
+                await supabase.from('profiles').update({
+                    user_type: 'admin',
+                    country: country || undefined,
+                    city: cityForProfile,
+                    appointed_by: actorId,
+                    appointed_by_super_admin: true,
+                    updated_at: now(),
+                }).eq('id', payment.user_id);
+
+                console.log(`✅ Licence partenaire activée + admin nommé: user=${payment.user_id} pack=${licensePackId} zone=${covJson}`);
+            } else {
+                // Rejet : annuler la licence en attente
+                let licQ = supabase.from('user_partner_licenses').update({ status: 'cancelled' });
+                if (meta.user_partner_license_id) licQ = licQ.eq('id', meta.user_partner_license_id);
+                else licQ = licQ.eq('transaction_id', payment.transaction_id);
+                await licQ;
+                console.log(`🚫 Licence partenaire rejetée: user=${payment.user_id} tx=${payment.transaction_id}`);
+            }
+        } catch (e) {
+            console.error('⚠️ Traitement licence partenaire USSD échoué:', e && e.message ? e.message : e);
+            // On ne bloque pas le statut paiement déjà atomiquement posé, mais on signale.
+            deliveryFailure = "Activation de la licence partenaire partiellement échouée. Vérifiez le dossier du partenaire (profil/partenaire/licence). Détail: " + ((e && e.message) || e);
         }
     }
 

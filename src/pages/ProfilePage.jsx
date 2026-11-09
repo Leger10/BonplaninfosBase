@@ -14,6 +14,7 @@ import {
   LogIn,
   Lock,
   Ticket,
+  HeartHandshake,
 } from "lucide-react";
 
 import ProfileHeader from "@/components/profile/ProfileHeader";
@@ -306,7 +307,7 @@ const ProfilePage = () => {
           <ProfileHeader user={userProfile} />
           <div className="mt-4 flex justify-end">
             <Button variant="outline" size="sm" onClick={() => navigate('/partenaire-affaires')} className="gap-2">
-              < HeartHandshake className="h-4 w-4" /> Espace partenaire d'affaires
+              <HeartHandshake className="h-4 w-4" /> Espace partenaire d'affaires
             </Button>
           </div>
           <div className="mt-6">

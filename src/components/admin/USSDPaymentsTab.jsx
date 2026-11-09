@@ -27,6 +27,7 @@ import {
   Send,
   Calendar,
   MapPin,
+  Shield,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -47,7 +48,7 @@ const STATUS_LABELS = {
   cancelled: { label: "Rejeté", cls: "bg-red-500/20 text-red-400 border-red-500/40" },
 };
 
-const USSDPaymentsTab = ({ actorId }) => {
+const USSDPaymentsTab = ({ actorId, isSuperAdmin = false }) => {
   const { toast } = useToast();
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -101,7 +102,7 @@ const USSDPaymentsTab = ({ actorId }) => {
 
       if (error) throw error;
 
-      // Détails USSD (capture du dépôt) stockés dans transactions.metadata
+      // Détails USSD (capture du dépôt + métadonnées métier) stockés dans transactions.metadata
       const { data: txs, error: txsErr } = await srv
         .from("transactions")
         .select("id, created_at, user_id, metadata")
@@ -122,6 +123,7 @@ const USSDPaymentsTab = ({ actorId }) => {
             if (!proofMap[meta.payment_id]) {
               proofMap[meta.payment_id] = {
                 proof_url: u.proof_url || "",
+                meta: meta || null,
               };
             }
           }
@@ -205,8 +207,9 @@ const USSDPaymentsTab = ({ actorId }) => {
       setPayments(
         (data || []).map((p) => ({
           ...p,
-          ussd:       proofMap[p.id] || { proof_url: "" },
+          ussd:       proofMap[p.id] || { proof_url: "", meta: null },
           tickets: ticketsMap[p.transaction_id] || [],
+          meta: (proofMap[p.id] && proofMap[p.id].meta) ? proofMap[p.id].meta : null,
           validatedByName: p.validated_by ? actorNames[p.validated_by] : "",
           rejectedByName: p.rejected_by ? actorNames[p.rejected_by] : "",
         }))
@@ -518,8 +521,13 @@ const USSDPaymentsTab = ({ actorId }) => {
                 {filtered.map((p) => {
                   const st = STATUS_LABELS[p.status] || STATUS_LABELS.pending;
                   const isTickets = p.pack_id === "ticket_payment";
+                  const isPartnerLicense = p.pack_id === "partner_license_payment";
                   const proofUrl = p.ussd?.proof_url || "";
                   const depositVerified = !!verifiedDeposits[p.id];
+                  const licMeta = isPartnerLicense ? (p.meta || (p.ussd && p.ussd.meta) || {}) : null;
+                  const licCov = licMeta && licMeta.coverage ? licMeta.coverage : null;
+                  const licSnap = licMeta && licMeta.pack_snapshot ? licMeta.pack_snapshot : null;
+                  const partnerActionsAllowed = !isPartnerLicense || isSuperAdmin;
                   return (
                     <TableRow key={p.id}>
                       <TableCell>
@@ -528,15 +536,24 @@ const USSDPaymentsTab = ({ actorId }) => {
                       </TableCell>
                       <TableCell className="font-mono text-sm">{p.profiles?.phone || "—"}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className={isTickets ? "bg-blue-500/20 text-blue-400 border-blue-500/40" : "bg-purple-500/20 text-purple-400 border-purple-500/40"}>
-                          {isTickets ? <Ticket className="w-3 h-3 mr-1" /> : <Coins className="w-3 h-3 mr-1" />}
-                          {isTickets ? "Billets" : "Crédits"}
+                        <Badge variant="outline" className={isPartnerLicense ? "bg-amber-500/20 text-amber-400 border-amber-500/40" : isTickets ? "bg-blue-500/20 text-blue-400 border-blue-500/40" : "bg-purple-500/20 text-purple-400 border-purple-500/40"}>
+                          {isPartnerLicense ? <Shield className="w-3 h-3 mr-1" /> : isTickets ? <Ticket className="w-3 h-3 mr-1" /> : <Coins className="w-3 h-3 mr-1" />}
+                          {isPartnerLicense ? "Licence partenaire" : isTickets ? "Billets" : "Crédits"}
                         </Badge>
+                        {isPartnerLicense && (
+                          <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                            <div className="font-medium text-foreground/80">{licSnap?.name || "Pack"}</div>
+                            {licCov?.country ? <div>Zone : {licCov.country}{(licCov.cities||[]).length ? ` — ${(licCov.cities||[]).join(', ')}` : ' (pays entier)'}</div> : null}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="font-medium">
                         {p.amount_fcfa?.toLocaleString()} FCFA
-                        {!isTickets && (
+                        {!isTickets && !isPartnerLicense && (
                           <div className="text-xs text-muted-foreground">+{p.coins_amount} pièces</div>
+                        )}
+                        {isPartnerLicense && (
+                          <div className="text-xs text-muted-foreground">Validation → admin nommé + zone</div>
                         )}
                       </TableCell>
                       <TableCell>
@@ -613,20 +630,25 @@ const USSDPaymentsTab = ({ actorId }) => {
                             </Button>
                           )}
                           {p.status === "pending" ? (
+                            !partnerActionsAllowed ? (
+                              <span className="text-xs text-amber-600">Réservé super admin</span>
+                            ) : (
                             <>
                               <Button
                                 size="sm"
                                 onClick={() => act(p, "validate")}
                                 disabled={processingId === p.id || !depositVerified}
                                 title={
-                                  depositVerified
-                                    ? "Valider le dépôt et livrer les billets / crédits"
-                                    : "Vérifiez d'abord la capture d'écran du dépôt"
+                                  !depositVerified
+                                    ? "Vérifiez d'abord la capture d'écran du dépôt"
+                                    : isPartnerLicense
+                                      ? "Valider le dépôt, activer la licence et nommer l'administrateur/partenaire (zone du pack)"
+                                      : "Valider le dépôt et livrer les billets / crédits"
                                 }
                                 className="bg-green-600 hover:bg-green-700 text-white"
                               >
                                 {processingId === p.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 mr-1" />}
-                                Valider
+                                {isPartnerLicense ? "Valider & nommer" : "Valider"}
                               </Button>
                               <Button
                                 size="sm"
@@ -639,6 +661,7 @@ const USSDPaymentsTab = ({ actorId }) => {
                                 Rejeter
                               </Button>
                             </>
+                            )
                           ) : (
                             <span className="text-xs text-muted-foreground">{p.transaction_id}</span>
                           )}

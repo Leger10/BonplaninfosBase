@@ -1,36 +1,13 @@
 import React from 'react';
 
-const spinnerStyles = {
-  display: 'flex',
-  justifyContent: 'center',
-  alignItems: 'center',
-  height: '100vh',
-  flexDirection: 'column',
-  backgroundColor: '#f9fafb',
-};
-
-const messages = [
-  "Chargement en cours, patientez...",
-  "Nous récupérons vos informations...",
-  "Préparation de votre espace...",
-  "Plus que quelques secondes...",
-  "Finalisation en cours...",
-  "Vous allez être redirigé...",
-];
-
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { 
-      hasError: false, 
-      messageIndex: 0,
+    this.state = {
+      hasError: false,
       errorId: null,
-      countdown: 10,  // Compteur de secondes avant rechargement
-      autoStopped: false
+      copied: false,
     };
-    this.interval = null;
-    this.countdownInterval = null;
-    this.reloadTimer = null;
   }
 
   static getDerivedStateFromError() {
@@ -38,169 +15,190 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    if (process.env.NODE_ENV === 'development') {
-      console.error("ErrorBoundary caught an error:", error);
-      console.error("ErrorInfo:", errorInfo);
-    }
-    
-    const errorId = Math.random().toString(36).substring(2, 10);
+    const errorId = Math.random().toString(36).slice(2, 10);
     this.setState({ errorId });
+    try {
+      console.error('[ErrorBoundary]', errorId, error, errorInfo);
+    } catch (_) {}
   }
 
-  componentDidUpdate(prevProps, prevState) {
-    if (!prevState.hasError && this.state.hasError) {
-      // Rotation des messages toutes les 2 secondes
-      if (!this.interval) {
-        this.interval = setInterval(() => {
-          this.setState(prev => ({
-            messageIndex: (prev.messageIndex + 1) % messages.length
-          }));
-        }, 2000);
-      }
-      
-      // Compteur dégressif
-      if (!this.countdownInterval) {
-        this.countdownInterval = setInterval(() => {
-          this.setState(prev => ({
-            countdown: prev.countdown - 1
-          }));
-        }, 1000);
-      }
-      
-      // Rechargement automatique après 10 secondes (limité : anti-boucle)
-      if (!this.reloadTimer) {
-        this.reloadTimer = setTimeout(() => {
-          const KEY = "error_boundary_autoreloads";
-          let n = 0;
-          try { n = Number(sessionStorage.getItem(KEY) || 0) || 0; } catch (e) { n = 0; }
-          if (n < 3) {
-            try { sessionStorage.setItem(KEY, String(n + 1)); } catch (e) {}
-            window.location.reload();
-          } else {
-            this.setState({ autoStopped: true, countdown: 0 });
-          }
-        }, 10000);
-      }
-    }
-  }
-
-  componentWillUnmount() {
-    if (this.interval) clearInterval(this.interval);
-    if (this.countdownInterval) clearInterval(this.countdownInterval);
-    if (this.reloadTimer) clearTimeout(this.reloadTimer);
-  }
-
-  handleManualReload = () => {
-    if (this.reloadTimer) {
-      clearTimeout(this.reloadTimer);
-      this.reloadTimer = null;
-    }
-    // Un rechargement manuel relance les tentatives automatiques.
-    try { sessionStorage.removeItem("error_boundary_autoreloads"); } catch (e) {}
+  handleRetry = () => {
+    try {
+      sessionStorage.removeItem('error_boundary_autoreloads');
+    } catch (_) {}
     window.location.reload();
   };
 
+  handleHome = () => {
+    try {
+      sessionStorage.removeItem('error_boundary_autoreloads');
+    } catch (_) {}
+    window.location.assign('/');
+  };
+
+  handleCopyId = async () => {
+    const { errorId } = this.state;
+    if (!errorId) return;
+    try {
+      await navigator.clipboard?.writeText(errorId);
+      this.setState({ copied: true });
+      setTimeout(() => this.setState({ copied: false }), 1800);
+    } catch (_) {}
+  };
+
   render() {
-    if (this.state.hasError) {
-      return (
-        <div style={spinnerStyles}>
-          <style>{`
-            .error-spinner {
-              width: 80px;
-              height: 80px;
-              border-radius: 50%;
-              border: 4px solid #e5e7eb;
-              border-top-color: #3b82f6;
-              animation: spin 1s linear infinite;
-            }
-            @keyframes spin {
-              to { transform: rotate(360deg); }
-            }
-            .error-title {
-              margin-top: 24px;
-              font-size: 1.25rem;
-              font-weight: 600;
-              color: #1f2937;
-              font-family: sans-serif;
-            }
-            .error-message {
-              margin-top: 12px;
-              color: #6b7280;
-              font-family: sans-serif;
-              font-size: 0.875rem;
-              text-align: center;
-              max-width: 300px;
-              min-height: 60px;
-              transition: opacity 0.3s ease;
-            }
-            .countdown {
-              margin-top: 16px;
-              font-size: 0.875rem;
-              color: #9ca3af;
-              font-family: monospace;
-            }
-            .error-id {
-              margin-top: 8px;
-              color: #9ca3af;
-              font-size: 0.75rem;
-              font-family: monospace;
-            }
-            .reload-button {
-              margin-top: 24px;
-              padding: 10px 20px;
-              background-color: #3b82f6;
-              color: white;
-              border: none;
-              border-radius: 8px;
-              cursor: pointer;
-              font-size: 0.875rem;
-              font-weight: 500;
-              transition: background-color 0.2s;
-            }
-            .reload-button:hover {
-              background-color: #2563eb;
-            }
-            .progress-bar {
-              margin-top: 20px;
-              width: 200px;
-              height: 4px;
-              background-color: #e5e7eb;
-              border-radius: 2px;
-              overflow: hidden;
-            }
-            .progress-fill {
-              height: 100%;
-              background-color: #3b82f6;
-              width: 0%;
-              animation: progress 10s linear forwards;
-            }
-            @keyframes progress {
-              from { width: 0%; }
-              to { width: 100%; }
-            }
-          `}</style>
-          <div className="error-spinner"></div>
-          <h1 className="error-title">Récupération en cours</h1>
-          <p className="error-message">{messages[this.state.messageIndex]}</p>
-          <div className="countdown">
-            {this.state.autoStopped
-              ? "Rechargement automatique suspendu (trop de tentatives)."
-              : `Rechargement automatique dans ${this.state.countdown} secondes`}
+    if (!this.state.hasError) return this.props.children;
+
+    const { errorId, copied } = this.state;
+    return (
+      <div style={styles.page}>
+        <style>{css}</style>
+        <div style={styles.ambient} aria-hidden="true" />
+        <div style={styles.card} role="alert" aria-live="polite">
+          <div style={styles.iconWrap} aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+              <path d="M12 3.5l8.66 15H3.34L12 3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+              <path d="M12 10v4.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              <circle cx="12" cy="16.9" r="1" fill="currentColor" />
+            </svg>
           </div>
-          <div className="progress-bar">
-            <div className="progress-fill"></div>
+
+          <h1 style={styles.title}>Un imprévu est survenu</h1>
+          <p style={styles.text}>
+            Cette page n’a pas pu s’afficher correctement. Vous pouvez réessayer ou revenir à l’accueil en toute sécurité.
+          </p>
+
+          <div style={styles.actions}>
+            <button type="button" className="eb-btn eb-btn-primary" onClick={this.handleRetry}>
+              Réessayer
+            </button>
+            <button type="button" className="eb-btn eb-btn-ghost" onClick={this.handleHome}>
+              Retour à l’accueil
+            </button>
           </div>
-          {this.state.errorId && (
-            <p className="error-id">ID d'erreur : {this.state.errorId}</p>
+
+          {errorId && (
+            <div style={styles.meta}>
+              <span style={styles.metaLabel}>Référence</span>
+              <button type="button" className="eb-id" onClick={this.handleCopyId} title="Copier la référence">
+                {errorId}
+              </button>
+              <span style={styles.copied}>{copied ? 'Copié' : ''}</span>
+            </div>
           )}
-          <button className="reload-button" onClick={this.handleManualReload}>
-            Recharger maintenant
-          </button>
         </div>
-      );
-    }
-    return this.props.children;
+      </div>
+    );
   }
 }
 
+const styles = {
+  page: {
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '24px',
+    background: 'linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)',
+    fontFamily: 'Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif',
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  ambient: {
+    position: 'absolute',
+    inset: 0,
+    background:
+      'radial-gradient(600px 300px at 20% 10%, rgba(99,102,241,0.10), transparent 60%), radial-gradient(500px 260px at 85% 90%, rgba(14,165,233,0.10), transparent 60%)',
+    pointerEvents: 'none',
+  },
+  card: {
+    position: 'relative',
+    width: '100%',
+    maxWidth: '440px',
+    background: 'rgba(255,255,255,0.82)',
+    backdropFilter: 'blur(14px)',
+    WebkitBackdropFilter: 'blur(14px)',
+    border: '1px solid rgba(255,255,255,0.9)',
+    boxShadow: '0 20px 50px -20px rgba(15,23,42,0.18), 0 2px 8px -2px rgba(15,23,42,0.06)',
+    borderRadius: '20px',
+    padding: '32px 28px 24px',
+    textAlign: 'center',
+  },
+  iconWrap: {
+    width: '56px',
+    height: '56px',
+    margin: '0 auto 16px',
+    borderRadius: '16px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#4f46e5',
+    background: 'linear-gradient(180deg, rgba(99,102,241,0.12), rgba(99,102,241,0.06))',
+    border: '1px solid rgba(99,102,241,0.12)',
+  },
+  title: {
+    margin: 0,
+    fontSize: '1.375rem',
+    lineHeight: 1.25,
+    fontWeight: 650,
+    letterSpacing: '-0.02em',
+    color: '#0f172a',
+  },
+  text: {
+    margin: '10px auto 0',
+    maxWidth: '340px',
+    fontSize: '0.9375rem',
+    lineHeight: 1.55,
+    color: '#475569',
+  },
+  actions: {
+    display: 'flex',
+    gap: '10px',
+    justifyContent: 'center',
+    marginTop: '22px',
+    flexWrap: 'wrap',
+  },
+  meta: {
+    marginTop: '18px',
+    paddingTop: '14px',
+    borderTop: '1px solid rgba(15,23,42,0.06)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    fontSize: '0.75rem',
+    color: '#94a3b8',
+  },
+  metaLabel: { color: '#94a3b8' },
+  copied: { minWidth: '36px', color: '#10b981', fontWeight: 500 },
+};
+
+const css = `
+  .eb-btn{
+    appearance:none; border:1px solid transparent; border-radius:12px;
+    padding:10px 16px; font-size:0.875rem; font-weight:600; cursor:pointer;
+    transition:transform .12s ease, box-shadow .12s ease, background .12s ease, border-color .12s ease;
+    font-family:inherit;
+  }
+  .eb-btn:active{ transform:translateY(1px); }
+  .eb-btn-primary{
+    color:#fff; background:#4f46e5;
+    box-shadow:0 8px 18px -8px rgba(79,70,229,.55);
+  }
+  .eb-btn-primary:hover{ background:#4338ca; }
+  .eb-btn-ghost{
+    color:#334155; background:rgba(255,255,255,.7);
+    border-color:rgba(15,23,42,.10);
+  }
+  .eb-btn-ghost:hover{ background:#fff; border-color:rgba(15,23,42,.16); }
+  .eb-id{
+    appearance:none; background:rgba(15,23,42,.04); border:1px solid rgba(15,23,42,.06);
+    color:#64748b; border-radius:8px; padding:3px 8px; font:500 0.75rem ui-monospace, SFMono-Regular, Menlo, monospace;
+    cursor:pointer; transition:background .12s ease, color .12s ease;
+  }
+  .eb-id:hover{ background:rgba(15,23,42,.07); color:#334155; }
+  @media (prefers-color-scheme: dark){
+    .eb-btn-ghost{ color:#e2e8f0; background:rgba(15,23,42,.35); border-color:rgba(148,163,184,.18); }
+  }
+`;
 export default ErrorBoundary;

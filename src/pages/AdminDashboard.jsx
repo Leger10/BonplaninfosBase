@@ -61,12 +61,47 @@ const AdminStats = ({ userProfile, partnerZone }) => {
   const [loading, setLoading] = useState(true);
 
   const fetchStats = useCallback(async () => {
-    const country = partnerZone?.country || userProfile?.country;
-    const city = partnerZone?.cities?.length === 1 ? partnerZone.cities[0] : null;
-    if (!country) {
+    const norm = (s) => String(s || "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const rawCountry = partnerZone?.country || userProfile?.country;
+    let coverageZone = partnerZone && typeof partnerZone === "object" ? partnerZone : null;
+    if (!coverageZone && typeof partnerZone === "string") { try { coverageZone = JSON.parse(partnerZone); } catch { coverageZone = null; } }
+    const zoneCitiesRaw = Array.isArray(coverageZone?.cities)
+      ? coverageZone.cities
+      : (coverageZone?.city ? [coverageZone.city] : (userProfile?.city ? [userProfile.city] : []));
+    const singleCity = zoneCitiesRaw.length === 1 ? zoneCitiesRaw[0] : null;
+    if (!rawCountry) {
       setLoading(false);
       return;
     }
+
+    // Variantes pays (évite Cameroun/Cameroon, Cote d'Ivoire/Côte d’Ivoire, etc.)
+    const countryAliases = (c) => {
+      const n = norm(c);
+      const base = [c, String(c || "").trim()].filter(Boolean);
+      if (n === "cameroun" || n === "cameroon") base.push("Cameroun", "Cameroon");
+      if (n === "cote divoire" || n === "cote d'ivoire" || n === "ivory coast") base.push("Côte d'Ivoire", "Cote d'Ivoire", "Côte d’Ivoire");
+      return [...new Set(base)];
+    };
+    const countryCandidates = countryAliases(rawCountry);
+    const sameCountry = (a, b) => {
+      if (norm(a) === norm(b)) return true;
+      const aa = norm(a), bb = norm(b);
+      if ((aa === "cameroun" && bb === "cameroon") || (aa === "cameroon" && bb === "cameroun")) return true;
+      return false;
+    };
+    // Règle: pays sans ville = tout le pays ; pays+ville(s) = uniquement ces villes.
+    // Si la zone vient du partenaire, on respecte strictement ses villes (vide = tout le pays).
+    // Sinon (pas de coverage explicite), pas de restriction ville.
+    const hasPartnerZone = !!(coverageZone && (coverageZone.country || coverageZone.cities || coverageZone.city));
+    const effectiveCities = hasPartnerZone
+      ? (Array.isArray(coverageZone?.cities) ? coverageZone.cities : (coverageZone?.city ? [coverageZone.city] : []))
+      : [];
+    const singleEffCity = effectiveCities.length === 1 ? effectiveCities[0] : null;
+    const cityMatch = (pCity) => {
+      if (singleEffCity) return norm(pCity) === norm(singleEffCity);
+      if (effectiveCities.length > 1) return effectiveCities.map(norm).includes(norm(pCity));
+      return true; // pays entier
+    };
 
     setLoading(true);
     try {
@@ -75,33 +110,40 @@ const AdminStats = ({ userProfile, partnerZone }) => {
       const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
 
       const [txRes, settingsRes, zoneProfilesRes] = await Promise.all([
-        retrySupabaseRequest(() => {
-          let query = supabase
+        retrySupabaseRequest(() =>
+          supabase
             .from("transactions")
-            .select(`
-              amount_pi,
-              amount_fcfa,
-              user:user_id!inner(country, city)
-            `)
+            .select(`amount_pi, amount_fcfa, user:user_id(country, city)`)
             .eq("transaction_type", "platform_fee")
             .gte("created_at", firstDayOfMonth.toISOString())
             .lte("created_at", lastDayOfMonth.toISOString())
-            .eq("user.country", country);
-          if (city) query = query.eq("user.city", city);
-          return query;
-        }),
+        ),
         retrySupabaseRequest(() =>
           supabase.from("app_settings").select("key, value").in("key", ["coin_to_fcfa_rate", "platform_fee_percentage"])
         ),
-        retrySupabaseRequest(() => {
-          let q = supabase.from("profiles").select("id").eq("country", country);
-          if (city) q = q.eq("city", city);
-          return q;
-        }),
+        retrySupabaseRequest(() =>
+          supabase.from("profiles").select("id, country, city").in("country", countryCandidates)
+        ),
       ]);
 
-      if (txRes.error) throw txRes.error;
-      const feesData = txRes.data || [];
+      // Fallback si `.in` non supporté ou retourne vide (mismatch libellé)
+      let profilesPool = zoneProfilesRes?.data || [];
+      if (!profilesPool.length) {
+        const { data: profAll } = await retrySupabaseRequest(() =>
+          supabase.from("profiles").select("id, country, city").limit(5000)
+        ).catch(() => ({ data: [] }));
+        profilesPool = (profAll || []).filter((p) => sameCountry(p.country, rawCountry));
+      }
+
+      const zoneProfiles = profilesPool.filter((p) => sameCountry(p.country, rawCountry) && cityMatch(p.city));
+      const zoneOrganizerIds = zoneProfiles.map((p) => p.id).filter(Boolean);
+      const zoneIdSet = new Set(zoneOrganizerIds);
+
+      const feesData = (txRes?.data || []).filter((t) => {
+        const u = t.user || {};
+        return sameCountry(u.country, rawCountry) && cityMatch(u.city);
+      });
+
       const settingsMap = Object.fromEntries(
         (settingsRes?.data || []).map((r) => [r.key, Number(r.value)])
       );
@@ -110,16 +152,16 @@ const AdminStats = ({ userProfile, partnerZone }) => {
 
       let transferFeeCoins = 0;
       let transferFeeFcfa = 0;
-      const zoneOrganizerIds = (zoneProfilesRes?.data || []).map((p) => p.id).filter(Boolean);
       if (zoneOrganizerIds.length) {
         const { data: transferred } = await retrySupabaseRequest(() =>
           supabase
             .from("organizer_earnings")
-            .select("earnings_coins, platform_commission, transferred_at, paid_at, updated_at, created_at, status")
+            .select("earnings_coins, platform_commission, transferred_at, paid_at, updated_at, created_at, status, organizer_id")
             .eq("status", "transferred")
             .in("organizer_id", zoneOrganizerIds)
         );
         (transferred || []).forEach((row) => {
+          if (!zoneIdSet.has(row.organizer_id)) return;
           const d = new Date(row.transferred_at || row.paid_at || row.updated_at || row.created_at || 0);
           if (d < firstDayOfMonth || d > lastDayOfMonth) return;
           const coins = Number(
@@ -130,24 +172,40 @@ const AdminStats = ({ userProfile, partnerZone }) => {
         });
       }
 
-      const txRevenueFcfa = feesData.reduce((sum, item) => sum + Math.abs(item.amount_fcfa || 0), 0);
-      const txCommissionPi = feesData.reduce((sum, item) => sum + Math.abs(item.amount_pi || 0), 0);
+      const txRevenueFcfa = feesData.reduce((sum, item) => sum + Math.abs(Number(item.amount_fcfa || 0)), 0);
+      const txCommissionPi = feesData.reduce((sum, item) => sum + Math.abs(Number(item.amount_pi || 0)), 0);
       const totalRevenueFcfa = txRevenueFcfa + transferFeeFcfa;
       const totalCommissionPi = txCommissionPi + transferFeeCoins;
 
-      let usersQuery = supabase
-        .from("profiles")
-        .select("id", { count: "exact" })
-        .eq("country", country)
-        .eq("is_active", true);
-      if (city) usersQuery = usersQuery.eq("city", city);
-      const { count: activeUsers, error: usersError } = await retrySupabaseRequest(() => usersQuery);
-      if (usersError) throw usersError;
+      let activeCount = 0;
+      try {
+        const { data: activeRows } = await retrySupabaseRequest(() =>
+          supabase.from("profiles").select("id, country, city, is_active").in("country", countryCandidates).eq("is_active", true)
+        );
+        let activePool = activeRows || [];
+        if (!activePool.length) {
+          const { data: activeAll } = await retrySupabaseRequest(() =>
+            supabase.from("profiles").select("id, country, city, is_active").eq("is_active", true).limit(5000)
+          ).catch(() => ({ data: [] }));
+          activePool = (activeAll || []).filter((p) => sameCountry(p.country, rawCountry));
+        }
+        activeCount = activePool.filter((p) => sameCountry(p.country, rawCountry) && cityMatch(p.city)).length;
+      } catch (_) { activeCount = zoneProfiles.filter((p) => p.id).length; }
+
+      if (totalRevenueFcfa === 0) {
+        console.info("[AdminStats zone CA] 0", {
+          country: rawCountry, candidates: countryCandidates,
+          hasPartnerZone, effectiveCities, wholeCountry: !singleEffCity && effectiveCities.length <= 1 ? effectiveCities.length === 0 : false,
+          month: `${firstDayOfMonth.toISOString()}..${lastDayOfMonth.toISOString()}`,
+          zoneProfiles: zoneProfiles.length, zoneOrganizerIds: zoneOrganizerIds.length,
+          transferFeeFcfa, txRevenueFcfa,
+        });
+      }
 
       setStats({
         credited: totalCommissionPi,
         purchased: 0,
-        activeUsers: activeUsers || 0,
+        activeUsers: activeCount || 0,
         monthlyRevenue: totalRevenueFcfa,
       });
     } catch (error) {
@@ -379,10 +437,17 @@ const AdminDashboard = () => {
             .limit(1)
             .maybeSingle()
         );
-        if (!error && data?.coverage_zone) {
-          setPartnerZone(data.coverage_zone);
+        const parseZone = (cz) => {
+          if (!cz) return null;
+          if (typeof cz === 'string') { try { return JSON.parse(cz); } catch { return null; } }
+          return cz;
+        };
+        const parsed = parseZone(data?.coverage_zone);
+        if (!error && parsed) {
+          setPartnerZone(parsed);
         } else {
-          setPartnerZone({ country: userProfile?.country, cities: userProfile?.city ? [userProfile.city] : [] });
+          // Sans zone partenaire explicite: admin de pays = tout le pays (règle métier)
+          setPartnerZone({ country: userProfile?.country, cities: [] });
         }
       };
       fetchPartnerZone();
@@ -616,7 +681,7 @@ const AdminDashboard = () => {
             <TabsContent value="config"><ConfigTab /></TabsContent>
             <TabsContent value="zone_reset"><ZoneResetManager /></TabsContent>
             <TabsContent value="global-credits"><AdminCreditsGlobalTab /></TabsContent>
-            <TabsContent value="ussd_payments"><USSDPaymentsTab actorId={userProfile?.id} /></TabsContent>
+            <TabsContent value="ussd_payments"><USSDPaymentsTab actorId={userProfile?.id} isSuperAdmin={true} /></TabsContent>
           </>
         )}
 
@@ -643,7 +708,7 @@ const AdminDashboard = () => {
             <TabsContent value="reversed_credits"><ReversedCreditsTab isSuperAdmin={false} actorId={userProfile.id} userProfile={userProfile} /></TabsContent>
             <TabsContent value="withdrawals"><WithdrawalManagement userProfile={userProfile} /></TabsContent>
             <TabsContent value="withdrawal_history"><WithdrawalHistoryTab actorId={userProfile.id} userProfile={userProfile} /></TabsContent>
-            <TabsContent value="ussd_payments"><USSDPaymentsTab actorId={userProfile?.id} /></TabsContent>
+            <TabsContent value="ussd_payments"><USSDPaymentsTab actorId={userProfile?.id} isSuperAdmin={false} /></TabsContent>
           </>
         )}
       </Tabs>
