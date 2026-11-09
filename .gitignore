@@ -39,6 +39,10 @@ Thumbs.db
 # Local media storage (big files)
 storage/public/
 
+# Archives de synchronisation des médias (ne jamais committer : >100 Mo)
+media.tar.gz
+*.tar.gz
+
 # DB dumps
 db/
 *.backup

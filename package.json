@@ -15,6 +15,8 @@
     "test": "node --test tests/pushLogic.test.mjs",
     "postinstall": "node scripts/postinstall.mjs",
     "sitemap": "node scripts/generate-sitemap.js",
+    "media:sync": "node scripts/sync-media-to-prod.mjs",
+    "media:check": "node scripts/sync-media-to-prod.mjs --dry-run",
     "netlify-build": "npm run build",
     "prebuild": "node scripts/download-pwa-icons.js"
   },

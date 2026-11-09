@@ -226,13 +226,13 @@
         "q4": "La plateforme est-elle sécurisée ?",
         "a4": "Absolument ! Nous utilisons : <b>Tickets sécurisés avec QR codes</b>, <b>Paiements cryptés</b>, <b>Scan de vérification le jour J</b>, <b>Protection contre la fraude</b>. Les tickets invalides sont automatiquement refusés, garantissant l'authenticité de chaque participant.",
         "q5": "Comment créer un compte organisateur ?",
-        "a5": "Pour créer votre compte : <b>1) Inscrivez-vous gratuitement</b> sur la plateforme, <b>2) Complétez votre profil organisateur</b>, <b>3) Acceptez notre contrat organisateur</b>, <b>4) Commencez à créer vos événements</b>. En cas de difficulté, contactez notre support via WhatsApp : +225 0712275374.",
+        "a5": "Pour créer votre compte : <b>1) Inscrivez-vous gratuitement</b> sur la plateforme, <b>2) Complétez votre profil organisateur</b>, <b>3) Acceptez notre contrat organisateur</b>, <b>4) Commencez à créer vos événements</b>. En cas de difficulté, contactez notre support via WhatsApp : (+226) 54 32 92 99.",
         "q6": "Quelles sont les conditions générales d'utilisation ?",
         "a6": "En créant un compte, vous acceptez notre <b>Contrat Organisateur</b> qui précise : Vous êtes seul responsable de vos événements, nous sommes un prestataire technique. La commission est de 10%, les retraits sont simples, et vous gardez 90% de vos revenus. Téléchargez le contrat complet depuis votre tableau de bord.",
         "q7": "Comment fonctionnent les paiements et retraits ?",
         "a7": "<b>Paiements</b> : Collectés via moyens locaux (mobile money, cartes). <b>Retraits</b> : Disponibles sur votre compte organisateur. <b>Commission</b> : 10% prélevés sur chaque participation. <b>Exemple</b> : Pour 1 000 000 FCFA de ventes → Vous recevez 900 000 FCFA, nous prenons 100 000 FCFA.",
         "q8": "Où puis-je obtenir de l'aide ou du support ?",
-        "a8": "Plusieurs canaux : <b>1) Support WhatsApp</b> : +225 0712275374, <b>2) Email</b> : support@bonplaninfos.net, <b>3) Chat en direct</b> sur la plateforme. Réponse sous 24h."
+        "a8": "Plusieurs canaux : <b>1) Support WhatsApp</b> : (+226) 54 32 92 99, <b>2) Email</b> : bonplaninfos@gmail.com, <b>3) Chat en direct</b> sur la plateforme. Réponse sous 24h."
       },
       "features": {
         "title": "Fonctionnalités et Services",
@@ -624,7 +624,7 @@
     },
     "deletion": {
       "title": "Droit à l'Effacement",
-      "content": "Conformément aux lois africaines sur la protection des données, vous avez le droit de demander la suppression de vos données personnelles. Contactez notre DPD à support@bonplaninfos.net pour toute demande d'effacement. Nous nous engageons à répondre dans les délais légaux de chaque pays."
+      "content": "Conformément aux lois africaines sur la protection des données, vous avez le droit de demander la suppression de vos données personnelles. Contactez notre DPD à bonplaninfos@gmail.com pour toute demande d'effacement. Nous nous engageons à répondre dans les délais légaux de chaque pays."
     },
     "last_updated": "Dernière mise à jour : Novembre 2025"
   },
@@ -1546,8 +1546,8 @@
         "company": "BON PLAN INFOS (BPI)",
         "capital": "Société par actions simplifiée (SAS) au capital social compris entre 1 000 000 et 5 000 000 FCFA",
         "address": "Siège social : Abidjan (Côte d’Ivoire) et Ouagadougou (Burkina Faso)",
-        "phone": "Téléphone : (+225) 07 12 27 53 74",
-        "email": "support@bonplaninfos.net"
+        "phone": "Téléphone : (+226) 54 32 92 99",
+        "email": "bonplaninfos@gmail.com"
       },
       "director": {
         "title": "Directeur de la publication",
@@ -1562,7 +1562,7 @@
       },
       "data": {
         "title": "Protection des données personnelles",
-        "content1": "Conformément aux réglementations applicables en matière de protection des données personnelles, vous disposez d’un droit d’accès, de rectification, de suppression et d’opposition concernant vos données personnelles. Pour exercer ces droits, vous pouvez contacter notre Délégué à la Protection des Données (DPO) à l’adresse suivante : support@bonplaninfos.net.",
+        "content1": "Conformément aux réglementations applicables en matière de protection des données personnelles, vous disposez d’un droit d’accès, de rectification, de suppression et d’opposition concernant vos données personnelles. Pour exercer ces droits, vous pouvez contacter notre Délégué à la Protection des Données (DPO) à l’adresse suivante : bonplaninfos@gmail.com.",
         "content2": "Pour plus d’informations, veuillez consulter notre <1>Politique de confidentialité</1>."
       },
       "cookies": {
@@ -2035,7 +2035,7 @@
     "contact": {
       "title": "8. Contact",
       "p1": "Pour toute question relative à cette politique de confidentialité, veuillez nous contacter à :",
-      "email": "support@bonplaninfos.net"
+      "email": "bonplaninfos@gmail.com"
     }
   },
   "notificationSettings": {

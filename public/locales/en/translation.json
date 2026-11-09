@@ -226,13 +226,13 @@
         "q4": "Is the platform secure?",
         "a4": "Absolutely! We use: <b>Secure tickets with QR codes</b>, <b>Encrypted payments</b>, <b>Day-of verification scan</b>, <b>Fraud protection</b>. Invalid tickets are automatically rejected, guaranteeing the authenticity of each participant.",
         "q5": "How do I create an organizer account?",
-        "a5": "To create your account: <b>1) Register for free</b> on the platform, <b>2) Complete your organizer profile</b>, <b>3) Accept our organizer contract</b>, <b>4) Start creating your events</b>. If you have any difficulties, contact our support via WhatsApp: +225 0712275374.",
+        "a5": "To create your account: <b>1) Register for free</b> on the platform, <b>2) Complete your organizer profile</b>, <b>3) Accept our organizer contract</b>, <b>4) Start creating your events</b>. If you have any difficulties, contact our support via WhatsApp: (+226) 54 32 92 99.",
         "q6": "What are the terms and conditions?",
         "a6": "By creating an account, you accept our <b>Organizer Contract</b> which states: You are solely responsible for your events, we are a technical service provider. The commission is 10%, withdrawals are simple, and you keep 90% of your revenue. Download the full contract from your dashboard.",
         "q7": "How do payments and withdrawals work?",
         "a7": "<b>Payments</b>: Collected via local means (mobile money, cards). <b>Withdrawals</b>: Available on your organizer account. <b>Commission</b>: 10% deducted from each participation. <b>Example</b>: For 1,000,000 FCFA in sales → You receive 900,000 FCFA, we take 100,000 FCFA.",
         "q8": "Where can I get help or support?",
-        "a8": "Several channels: <b>1) WhatsApp Support</b>: +225 0712275374, <b>2) Email</b>: support@bonplaninfos.net, <b>3) Live chat</b> on the platform. Response within 24h."
+        "a8": "Several channels: <b>1) WhatsApp Support</b>:(+226) 54 32 92 99, <b>2) Email</b>: bonplaninfos@gmail.com, <b>3) Live chat</b> on the platform. Response within 24h."
       },
       "features": {
         "title": "Features and Services",
@@ -622,7 +622,7 @@
     },
     "deletion": {
       "title": "Right to Erasure",
-      "content": "In accordance with African data protection laws, you have the right to request the deletion of your personal data. Contact our DPO at support@bonplaninfos.net for any deletion request. We commit to responding within the legal deadlines of each country."
+      "content": "In accordance with African data protection laws, you have the right to request the deletion of your personal data. Contact our DPO at bonplaninfos@gmail.com for any deletion request. We commit to responding within the legal deadlines of each country."
     },
     "last_updated": "Last updated: November 2025"
   },
@@ -1527,8 +1527,8 @@
         "company": "BON PLAN INFOS (BPI)",
         "capital": "Simplified joint stock company (SAS) with share capital between 1,000,000 and 5,000,000 FCFA",
         "address": "Head office: Abidjan (Côte d'Ivoire) and Ouagadougou (Burkina Faso)",
-        "phone": "Phone: (+225) 07 12 27 53 74",
-        "email": "support@bonplaninfos.net"
+        "phone": "Phone: (+226) 54 32 92 99",
+        "email": "bonplaninfos@gmail.com"
       },
       "director": {
         "title": "Publication Director",
@@ -1543,7 +1543,7 @@
       },
       "data": {
         "title": "Personal data protection",
-        "content1": "In accordance with applicable regulations on personal data protection, you have the right to access, rectify, delete and object to your personal data. To exercise these rights, you can contact our Data Protection Officer (DPO) at the following address: support@bonplaninfos.net.",
+        "content1": "In accordance with applicable regulations on personal data protection, you have the right to access, rectify, delete and object to your personal data. To exercise these rights, you can contact our Data Protection Officer (DPO) at the following address: bonplaninfos@gmail.com.",
         "content2": "For more information, please consult our <1>Privacy Policy</1>."
       },
       "cookies": {
@@ -2016,7 +2016,7 @@
     "contact": {
       "title": "8. Contact",
       "p1": "For any questions regarding this privacy policy, please contact us at:",
-      "email": "support@bonplaninfos.net"
+      "email": "bonplaninfos@gmail.com"
     }
   },
   "notificationSettings": {
