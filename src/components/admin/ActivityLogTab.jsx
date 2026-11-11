@@ -43,7 +43,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import * as XLSX from "xlsx";
+import { exportRowsToExcel } from "@/lib/excelExport";
 
 
 const ITEMS_PER_PAGE = 10;
@@ -195,7 +195,7 @@ const ActivityLogTab = () => {
         return () => clearTimeout(timer);
     }, [fetchLogs]);
 
-    const handleExport = () => {
+    const handleExport = async () => {
         try {
             const exportData = logs.map(log => ({
                 Date: format(new Date(log.created_at), 'dd/MM/yyyy HH:mm'),
@@ -206,11 +206,12 @@ const ActivityLogTab = () => {
                 Détails: JSON.stringify(log.details || {})
             }));
 
-            const ws = XLSX.utils.json_to_sheet(exportData);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Journal Activité");
-            XLSX.writeFile(wb, `journal_activite_${format(new Date(), 'yyyyMMdd')}.xlsx`);
-            
+            await exportRowsToExcel({
+                rows: exportData,
+                name: "Journal Activité",
+                fileName: `journal_activite_${format(new Date(), 'yyyyMMdd')}.xlsx`,
+            });
+
             toast({ title: "Export réussi", description: "Le fichier a été téléchargé.", variant: "success" });
         } catch (error) {
             console.error("Export error:", error);

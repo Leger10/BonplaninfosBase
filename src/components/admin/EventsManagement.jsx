@@ -160,7 +160,7 @@ const EventsManagement = ({ events, userProfile, onRefresh }) => {
     }
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (!filteredEvents || filteredEvents.length === 0) {
       toast({ title: 'Aucune donnée', description: 'Rien à exporter.', variant: 'destructive' });
       return;
@@ -173,8 +173,13 @@ const EventsManagement = ({ events, userProfile, onRefresh }) => {
       Organisateur: e.organizer?.full_name || '',
       Ville: e.city || ''
     }));
-    exportToExcel({ data: dataToExport, fileName: `evenements.xlsx`, sheetName: 'Événements' });
-    toast({ title: "Exportation réussie" });
+    try {
+      await exportToExcel({ data: dataToExport, fileName: `evenements.xlsx`, sheetName: 'Événements' });
+      toast({ title: "Exportation réussie" });
+    } catch (error) {
+      console.error("Erreur export Excel événements:", error);
+      toast({ title: "Erreur d'export", description: "Le fichier n'a pas pu être généré.", variant: "destructive" });
+    }
   };
 
   const getTypeBadge = (type) => {

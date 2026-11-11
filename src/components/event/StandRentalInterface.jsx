@@ -99,8 +99,7 @@ import { motion } from "framer-motion";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import QRCode from "qrcode";
-import * as XLSX from "xlsx";
-import { saveAs } from "file-saver";
+import { exportRowsToExcel } from "@/lib/excelExport";
 
 // ============================================
 // UTILITAIRE DE FORMATAGE DES PRIX - VERSION ULTRA ROBUSTE
@@ -393,7 +392,7 @@ const StandRentalInterface = ({ event, isUnlocked, onRefresh, isClosed }) => {
   };
 
   // ==================== EXPORTS ====================
-const exportToExcel = () => {
+const exportToExcel = async () => {
   if (!filteredRentals.length) return;
   const data = filteredRentals.map((r) => {
     // 🔥 Nettoyer le montant avant de le formater
@@ -416,14 +415,12 @@ const exportToExcel = () => {
       "Montant (F CFA)": formatPrice(amount),
     };
   });
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Réservations");
-    const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-    saveAs(
-      new Blob([excelBuffer], { type: "application/octet-stream" }),
-      "reservations_stands.xlsx"
-    );
+
+  try {
+    await exportRowsToExcel({ rows: data, name: "Réservations", fileName: "reservations_stands.xlsx" });
+  } catch (error) {
+    console.error("Erreur export Excel réservations:", error);
+  }
   };
 
   const exportToPDF = () => {
@@ -598,7 +595,7 @@ const exportToExcel = () => {
     }
   };
 
- const exportCompanyListExcel = () => {
+ const exportCompanyListExcel = async () => {
   if (!statistics.byCompany.length) return;
   const data = statistics.byCompany.map((c) => {
     // 🔥 Nettoyer le montant avant de le formater
@@ -619,14 +616,11 @@ const exportToExcel = () => {
       "Montant total (F CFA)": formatPrice(amount)
     };
   });
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Participants");
-    const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-    saveAs(
-      new Blob([excelBuffer], { type: "application/octet-stream" }),
-      "liste_participants_stands.xlsx"
-    );
+  try {
+    await exportRowsToExcel({ rows: data, name: "Participants", fileName: "liste_participants_stands.xlsx" });
+  } catch (error) {
+    console.error("Erreur export Excel participants:", error);
+  }
   };
 
   // ==================== DONNÉES & STATISTIQUES ====================

@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import * as XLSX from "xlsx";
+import { exportRowsToExcel } from "@/lib/excelExport";
 
 
 const AdminPaymentsTab = () => {
@@ -94,7 +94,7 @@ const AdminPaymentsTab = () => {
     }
   };
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
     const dataToExport = filteredPayments.map(p => ({
       'Mois': format(new Date(p.mois), 'MMMM yyyy', { locale: fr }),
       'Administrateur': p.admin?.full_name || 'Inconnu',
@@ -107,10 +107,15 @@ const AdminPaymentsTab = () => {
       'Date Paiement': p.paye_le ? format(new Date(p.paye_le), 'dd/MM/yyyy') : '-'
     }));
 
-    const ws = XLSX.utils.json_to_sheet(dataToExport);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Paiements Admin");
-    XLSX.writeFile(wb, `paiements_admin_${format(new Date(), 'dd-MM-yyyy')}.xlsx`);
+    try {
+      await exportRowsToExcel({
+        rows: dataToExport,
+        name: "Paiements Admin",
+        fileName: `paiements_admin_${format(new Date(), 'dd-MM-yyyy')}.xlsx`,
+      });
+    } catch (error) {
+      console.error("Erreur export Excel paiements:", error);
+    }
   };
 
   const filteredPayments = payments.filter(payment => {

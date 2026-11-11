@@ -52,7 +52,7 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import { toast } from "@/components/ui/use-toast";
-import * as XLSX from 'xlsx';
+import { exportRowsToExcel } from '@/lib/excelExport';
 import { format } from "date-fns";
 
 const WithdrawalManagementDashboard = () => {
@@ -600,7 +600,7 @@ const priceInFcfa = purchase.total_amount_fcfa ||
     setSortConfig({ key, direction });
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const data = sortedEvents.map((e) => ({
       Date: format(new Date(e.event_start_at), "dd/MM/yyyy"),
       Événement: e.title,
@@ -613,13 +613,15 @@ const priceInFcfa = purchase.total_amount_fcfa ||
       "Montant Net (Pièces)": e.metrics.netAmount,
       Statut: e.metrics.status,
     }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Retraits");
-    XLSX.writeFile(wb, "rapport_retraits.xlsx");
+
+    try {
+      await exportRowsToExcel({ rows: data, name: "Retraits", fileName: "rapport_retraits.xlsx" });
+    } catch (error) {
+      console.error("Erreur export Excel rapport retraits:", error);
+    }
   };
 
-  const handleClientExport = () => {
+  const handleClientExport = async () => {
     const data = sortedClients.map((c) => ({
       "Nom": c.attendeeName,
       "Téléphone": c.phone,
@@ -639,10 +641,11 @@ const priceInFcfa = purchase.total_amount_fcfa ||
       "Ré-entrées": c.reentryCount,
       "Paiement": c.paymentMethod === 'moneyfusion_ticket' ? 'MoneyFusion' : c.paymentMethod || 'Standard',
     }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Clients");
-    XLSX.writeFile(wb, "historique_clients.xlsx");
+    try {
+      await exportRowsToExcel({ rows: data, name: "Clients", fileName: "historique_clients.xlsx" });
+    } catch (error) {
+      console.error("Erreur export Excel clients:", error);
+    }
   };
 
   const uniqueEvents = useMemo(() => {

@@ -32,7 +32,7 @@ import {
 } from 'lucide-react';
 import { toast } from '@/components/ui/use-toast';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
-import * as XLSX from 'xlsx';
+import { exportRowsToExcel } from '@/lib/excelExport';
 
 /**
  * CRITICAL CONFIGURATION NOTE:
@@ -230,10 +230,10 @@ const AdminContractManagement = () => {
     }
   };
 
-  const exportToExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(submissions.map(s => ({
+  const exportToExcel = async () => {
+    const rows = submissions.map(s => ({
       ID: s.id,
-      Date: new Date(s.submitted_at).toLocaleDateString(),
+      Date: new Date(s.submitted_at).toLocaleDateString('fr-FR'),
       Nom: s.user_name,
       Email: s.user_email,
       Téléphone: s.user_phone,
@@ -241,10 +241,13 @@ const AdminContractManagement = () => {
       Statut: s.status,
       Notes: s.admin_notes,
       Fichier: s.contract_file_url
-    })));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Contrats");
-    XLSX.writeFile(wb, "contrats_export.xlsx");
+    }));
+
+    try {
+      await exportRowsToExcel({ rows, name: "Contrats", fileName: "contrats_export.xlsx" });
+    } catch (error) {
+      console.error("Erreur export Excel contrats:", error);
+    }
   };
 
   const getStatusBadge = (status) => {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import * as XLSX from "xlsx";
+import { exportRowsToExcel } from "@/lib/excelExport";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import {
@@ -505,7 +505,7 @@ export default function TicketScannerDialog({
   };
 
   // EXPORTS
-  const exportScansToExcel = () => {
+  const exportScansToExcel = async () => {
     if (scanHistory.length === 0) return;
     const data = scanHistory.map((s, i) => ({
       "#": i + 1,
@@ -525,10 +525,15 @@ export default function TicketScannerDialog({
       "Date billet": s.ticket_date || "-",
       "Multi-jours": s.is_multi_day ? "Oui" : "Non"
     }));
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Scans');
-    XLSX.writeFile(wb, `scans_event_${eventId}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    try {
+      await exportRowsToExcel({
+        rows: data,
+        name: "Scans",
+        fileName: `scans_event_${eventId}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+      });
+    } catch (error) {
+      console.error("Erreur export Excel scans:", error);
+    }
   };
 
   // ============================================

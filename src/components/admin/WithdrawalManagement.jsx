@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
 import { useData } from "@/contexts/DataContext";
-import * as XLSX from "xlsx";
+import { exportRowsToExcel } from "@/lib/excelExport";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 
@@ -229,7 +229,7 @@ const WithdrawalManagement = () => {
     }
   };
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
     const rows = filtered.map((r) => {
       const details = parsePaymentDetails(r.payment_details);
       const escalated = !!details?.escalation?.urgent;
@@ -246,10 +246,12 @@ const WithdrawalManagement = () => {
         Date: new Date(r.requested_at).toLocaleDateString(),
       };
     });
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Retraits");
-    XLSX.writeFile(wb, "Retraits_Organisateurs.xlsx");
+
+    try {
+      await exportRowsToExcel({ rows, name: "Retraits", fileName: "Retraits_Organisateurs.xlsx" });
+    } catch (error) {
+      console.error("Erreur export Excel retraits:", error);
+    }
   };
 
   return (

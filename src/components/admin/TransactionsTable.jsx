@@ -142,7 +142,7 @@ const TransactionsTable = ({ country, initialTransactions }) => {
   }, [fetchTransactions]);
 
   // Export Function
-  const handleExport = () => {
+  const handleExport = async () => {
     if (transactions.length === 0) {
       toast({ title: 'Aucune donnée à exporter', variant: 'destructive' });
       return;
@@ -159,22 +159,27 @@ const TransactionsTable = ({ country, initialTransactions }) => {
       status: t.status,
     }));
 
-    exportToExcel({
-      data: dataToExport,
-      headers: [
-        { label: 'ID', key: 'id' },
-        { label: 'Utilisateur', key: 'user' },
-        { label: 'Email', key: 'email' },
-        { label: 'Description', key: 'description' },
-        { label: 'Montant', key: 'amount' },
-        { label: 'Type', key: 'type' },
-        { label: 'Date', key: 'date' },
-        { label: 'Statut', key: 'status' },
-      ],
-      sheetName: 'Transactions',
-      fileName: `transactions_${new Date().toISOString().split('T')[0]}.xlsx`,
-    });
-    toast({ title: "Succès", description: "Exportation terminée." });
+    try {
+      await exportToExcel({
+        data: dataToExport,
+        headers: [
+          { label: 'ID', key: 'id' },
+          { label: 'Utilisateur', key: 'user' },
+          { label: 'Email', key: 'email' },
+          { label: 'Description', key: 'description' },
+          { label: 'Montant', key: 'amount' },
+          { label: 'Type', key: 'type' },
+          { label: 'Date', key: 'date' },
+          { label: 'Statut', key: 'status' },
+        ],
+        sheetName: 'Transactions',
+        fileName: `transactions_${new Date().toISOString().split('T')[0]}.xlsx`,
+      });
+      toast({ title: "Succès", description: "Exportation terminée." });
+    } catch (error) {
+      console.error("Erreur export Excel transactions:", error);
+      toast({ title: "Erreur", description: "Exportation impossible.", variant: "destructive" });
+    }
   };
 
   const getTransactionIcon = (amount) => {
