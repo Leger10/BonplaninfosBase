@@ -70,7 +70,14 @@ const DEFAULT_WITHDRAWAL_FEE_RATE = 0.05;
 
 async function getAppSettings() {
   try {
-    const row = await db().app_settings.findFirst();
+    // Plusieurs lignes app_settings peuvent coexister (paramétrage historique).
+    // findFirst() sans tri renvoyait un taux aléatoire (0 %, 5 %, 10 %) : on
+    // prend toujours la ligne la plus récemment mise à jour.
+    const settingsRows = await db().app_settings.findMany({
+      orderBy: [{ updated_at: 'desc' }, { created_at: 'desc' }],
+      take: 1,
+    });
+    const row = settingsRows[0] || null;
     const feePercent = Number(row?.platform_fee_percentage);
     const withdrawalPercent = Number(row?.withdrawal_fee_percentage);
     const partnerPercent = Number(row?.business_partner_commission_percentage);
@@ -107,6 +114,319 @@ async function getPlatformFeeRate() {
 
 async function getMinWithdrawalPi() {
   return (await getAppSettings()).minWithdrawalPi;
+}
+
+// ---------------------------------------------------------------------------
+// Revenus d'une zone (CA plateforme) et salaire de l'admin
+// ---------------------------------------------------------------------------
+// Un gain organisateur devient du revenu plateforme (la commission retenue)
+// dès qu'il quitte l'état "pending" : transfert vers le portefeuille, paiement…
+// Les anciens flux écrivaient 'paid', les nouveaux 'transferred' ; n'en compter
+// qu'un seul laissait le CA de la zone — et donc le salaire — à zéro.
+const ACQUIRED_EARNING_STATUSES = ['transferred', 'paid', 'available', 'completed'];
+const EXCLUDED_EARNING_STATUSES = ['pending', 'cancelled', 'rejected', 'refunded'];
+
+function normalizeZoneValue(value) {
+  return String(value ?? '')
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function zoneCountryGroup(value) {
+  const key = normalizeZoneValue(value).replace(/\s+/g, '');
+  if (key === 'cameroun' || key === 'cameroon') return 'cameroun';
+  if (key === 'cotedivoire' || key === 'ivorycoast') return 'cotedivoire';
+  if (key === 'rdc' || key === 'congordc' || key === 'drcongo' || key === 'democraticrepublicofcongo') return 'rdc';
+  return key;
+}
+
+function isSameCountry(a, b) {
+  const ka = zoneCountryGroup(a);
+  const kb = zoneCountryGroup(b);
+  return !!ka && !!kb && ka === kb;
+}
+
+function isSameCity(a, b) {
+  const ka = normalizeZoneValue(a).replace(/\s+/g, '');
+  const kb = normalizeZoneValue(b).replace(/\s+/g, '');
+  return !!ka && !!kb && ka === kb;
+}
+
+function zoneCountryCandidates(country) {
+  const group = zoneCountryGroup(country);
+  if (!group) return [];
+  const variants = {
+    cameroun: ['Cameroun', 'Cameroon'],
+    cotedivoire: ["Côte d'Ivoire", "Cote d'Ivoire", "Côte d’Ivoire", "Cote d’Ivoire", 'Ivory Coast'],
+    rdc: ['RDC', 'RD Congo', 'République démocratique du Congo', 'Democratic Republic of the Congo'],
+  };
+  return [...new Set([country, ...(variants[group] || [])].filter(Boolean))];
+}
+
+function toValidDate(...values) {
+  for (const value of values) {
+    if (!value) continue;
+    const date = value instanceof Date ? value : new Date(value);
+    if (!Number.isNaN(date.getTime())) return date;
+  }
+  return null;
+}
+
+// Zone de compétence : coverage_zone du partenaire en priorité, sinon profil.
+async function resolveAdminZone(admin) {
+  let country = admin?.country || null;
+  let cities = [];
+  let source = 'profile';
+  let partner = null;
+  try {
+    partner = await db().partners.findFirst({
+      where: { user_id: admin.id },
+      orderBy: { created_at: 'desc' },
+      select: { coverage_zone: true, license_id: true, status: true },
+    });
+    if (partner?.coverage_zone) {
+      const parsed = typeof partner.coverage_zone === 'string'
+        ? JSON.parse(partner.coverage_zone)
+        : partner.coverage_zone;
+      if (parsed?.country) {
+        country = parsed.country;
+        source = 'partner';
+      }
+      if (Array.isArray(parsed?.cities)) {
+        cities = parsed.cities.map((city) => String(city || '').trim()).filter(Boolean);
+      } else if (parsed?.city) {
+        cities = [String(parsed.city).trim()].filter(Boolean);
+      }
+    }
+  } catch (_) {}
+  return { country, cities, source, partner };
+}
+
+// Taux de licence de l'admin : admin_salaries, puis licence partenaire, puis
+// licence achetée. Aucun taux n'est inventé : s'il est absent, on le signale.
+async function resolveAdminLicense(adminId, latestSalary) {
+  const fromSalary = Number(latestSalary?.license_rate || 0);
+  if (fromSalary > 0) {
+    return { rate: fromSalary, name: latestSalary?.license_name || null, source: 'admin_salaries' };
+  }
+  const dbc = db();
+  try {
+    const partner = await dbc.partners.findFirst({
+      where: { user_id: adminId },
+      orderBy: { created_at: 'desc' },
+      select: { license_id: true },
+    });
+    if (partner?.license_id) {
+      const license = await dbc.partner_licenses.findUnique({
+        where: { id: partner.license_id },
+        select: { commission_rate: true, name: true },
+      }).catch(() => null);
+      const rate = Number(license?.commission_rate || 0);
+      if (rate > 0) return { rate, name: license?.name || null, source: 'partner_license' };
+    }
+  } catch (_) {}
+  try {
+    const owned = await dbc.user_partner_licenses.findFirst({
+      where: { user_id: adminId, status: { in: ['active', 'paid', 'completed'] } },
+      orderBy: { purchase_date: 'desc' },
+      select: { license_pack_id: true, revenue_share_percent: true, expiry_date: true },
+    });
+    if (owned) {
+      const expired = owned.expiry_date && new Date(owned.expiry_date).getTime() < Date.now();
+      if (!expired) {
+        let rate = Number(owned.revenue_share_percent || 0);
+        let name = null;
+        if (rate <= 0 && owned.license_pack_id != null) {
+          const packs = await dbc.$queryRawUnsafe(
+            'SELECT name, revenue_share_percent FROM partner_license_packs WHERE id = ? LIMIT 1',
+            owned.license_pack_id,
+          ).catch(() => []);
+          const pack = Array.isArray(packs) ? packs[0] : null;
+          rate = Number(pack?.revenue_share_percent || 0);
+          name = pack?.name || null;
+        }
+        if (rate > 0) return { rate, name, source: 'user_license' };
+      }
+    }
+  } catch (_) {}
+  return { rate: 0, name: null, source: 'none' };
+}
+
+function earningFeeRate(row, fallbackRate) {
+  const percent = Number(row?.fee_percent || 0);
+  return Number.isFinite(percent) && percent > 0 ? percent / 100 : fallbackRate;
+}
+
+// Frais (en pièces) d'une ligne de gain. `platform_commission` fait foi quand
+// il est renseigné ; `??` ne suffisait pas car la colonne vaut 0 (et non NULL)
+// sur de nombreuses lignes, ce qui annulait le CA après transfert.
+function resolveEarningFeeCoins(row, fallbackRate) {
+  const commission = Number(row?.platform_commission || 0);
+  const fee = Number(row?.platform_fee || 0);
+  const gross = Number(row?.earnings_coins || 0);
+  if (commission > 0) return commission;
+  // Lignes héritées : platform_fee y est stocké en pièces.
+  if (fee > 0) return Math.round(fee * 100) / 100;
+  return Math.floor(gross * earningFeeRate(row, fallbackRate));
+}
+
+// Anciens lots 'paid' : le frais du lot est répété à l'identique sur chaque
+// ligne. On le compte une seule fois (max) et on ajoute les commissions
+// unitaires éventuelles. Sinon un lot de 34 lignes valait 34 fois le frais.
+function resolvePaidBatchFeeCoins(rows, fallbackRate, coinRate) {
+  const sumCommission = rows.reduce((sum, row) => sum + Number(row.platform_commission || 0), 0);
+  const sumGross = rows.reduce((sum, row) => sum + Number(row.earnings_coins || 0), 0);
+  const maxFee = rows.reduce((max, row) => Math.max(max, Number(row.platform_fee || 0)), 0);
+  const expectedCoins = sumGross * earningFeeRate(rows[0], fallbackRate);
+
+  let feeCoins = maxFee;
+  if (maxFee > 0 && coinRate > 0) {
+    // Certaines lignes stockent le frais du lot en FCFA : on le ramène en pièces
+    // quand cette lecture colle mieux au taux de frais attendu.
+    const asFcfaCoins = maxFee / coinRate;
+    if (Math.abs(asFcfaCoins - expectedCoins) < Math.abs(maxFee - expectedCoins)) {
+      feeCoins = asFcfaCoins;
+    }
+  }
+  let coins = Math.max(sumCommission, feeCoins);
+  if (coins <= 0) coins = expectedCoins;
+  return Math.round(coins * 100) / 100;
+}
+
+// CA plateforme d'une zone : commissions acquises (transferts inclus).
+// Le CA est TOUJOURS la commission plateforme, jamais les 90 % dus aux
+// organisateurs (cf. contrat de partenariat).
+async function computeAdminZoneRevenue(admin) {
+  const dbc = db();
+  const settings = await getAppSettings();
+  const coinRate = Number(settings.rate) || 10;
+  const platformFeeRate = Number(settings.platformFeeRate) || 0.05;
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const month = `${now.getFullYear()}-${pad(now.getMonth() + 1)}`;
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+  const zone = await resolveAdminZone(admin);
+  const result = {
+    month,
+    country: zone.country || null,
+    cities: zone.cities,
+    zone_source: zone.source,
+    organizers_count: 0,
+    coin_to_fcfa_rate: coinRate,
+    platform_fee_rate: platformFeeRate,
+    recognized_statuses: ACQUIRED_EARNING_STATUSES,
+    excluded_statuses: EXCLUDED_EARNING_STATUSES,
+    monthly_commission_coins: 0,
+    monthly_revenue_fcfa: 0,
+    monthly_gross_coins: 0,
+    monthly_gross_fcfa: 0,
+    total_commission_coins: 0,
+    total_revenue_fcfa: 0,
+    total_gross_coins: 0,
+    total_gross_fcfa: 0,
+    monthly_by_status: {},
+    entries: { monthly: 0, total: 0 },
+  };
+  if (!zone.country) return result;
+
+  const candidates = zoneCountryCandidates(zone.country);
+  const profiles = await dbc.profiles.findMany({
+    where: candidates.length ? { country: { in: candidates } } : { country: zone.country },
+    select: { id: true, country: true, city: true },
+  }).catch(() => []);
+  const zoneProfiles = profiles.filter((profile) => (
+    isSameCountry(profile.country, zone.country)
+    && (!zone.cities.length || zone.cities.some((city) => isSameCity(city, profile.city)))
+  ));
+  result.organizers_count = zoneProfiles.length;
+  const zoneProfileIds = zoneProfiles.map((profile) => profile.id).filter(Boolean);
+  if (!zoneProfileIds.length) return result;
+
+  const earnings = await dbc.organizer_earnings.findMany({
+    where: { organizer_id: { in: zoneProfileIds }, status: { in: ACQUIRED_EARNING_STATUSES } },
+    select: {
+      id: true, organizer_id: true, status: true,
+      earnings_coins: true, platform_commission: true, platform_fee: true,
+      fee_percent: true, transaction_type: true, earning_type: true,
+      transferred_at: true, paid_at: true, created_at: true, updated_at: true,
+    },
+  }).catch(() => []);
+
+  const relevant = earnings.filter((row) => {
+    const type = String(row.transaction_type || row.earning_type || '').toLowerCase();
+    return type !== 'promo_commission';
+  });
+
+  const paidBatches = new Map();
+  const singleRows = [];
+  for (const row of relevant) {
+    if (row.status === 'paid') {
+      const date = toValidDate(row.paid_at, row.created_at, row.updated_at);
+      const key = `${row.organizer_id}|${date ? date.getTime() : 'no-date'}`;
+      if (!paidBatches.has(key)) paidBatches.set(key, []);
+      paidBatches.get(key).push(row);
+    } else {
+      singleRows.push(row);
+    }
+  }
+
+  const addRevenue = ({ status, date, feeCoins, grossCoins }) => {
+    const revenueFcfa = feeCoins * coinRate;
+    const grossFcfa = grossCoins * coinRate;
+    result.total_commission_coins += feeCoins;
+    result.total_revenue_fcfa += revenueFcfa;
+    result.total_gross_coins += grossCoins;
+    result.total_gross_fcfa += grossFcfa;
+    result.entries.total += 1;
+    if (date && date >= monthStart && date <= monthEnd) {
+      result.monthly_commission_coins += feeCoins;
+      result.monthly_revenue_fcfa += revenueFcfa;
+      result.monthly_gross_coins += grossCoins;
+      result.monthly_gross_fcfa += grossFcfa;
+      result.entries.monthly += 1;
+      const bucket = result.monthly_by_status[status] || { entries: 0, commission_coins: 0, revenue_fcfa: 0 };
+      bucket.entries += 1;
+      bucket.commission_coins += feeCoins;
+      bucket.revenue_fcfa += revenueFcfa;
+      result.monthly_by_status[status] = bucket;
+    }
+  };
+
+  for (const row of singleRows) {
+    addRevenue({
+      status: row.status,
+      date: toValidDate(row.transferred_at, row.paid_at, row.created_at, row.updated_at),
+      feeCoins: resolveEarningFeeCoins(row, platformFeeRate),
+      grossCoins: Number(row.earnings_coins || 0),
+    });
+  }
+  for (const rows of paidBatches.values()) {
+    addRevenue({
+      status: 'paid',
+      date: toValidDate(rows[0]?.paid_at, rows[0]?.created_at, rows[0]?.updated_at),
+      feeCoins: resolvePaidBatchFeeCoins(rows, platformFeeRate, coinRate),
+      grossCoins: rows.reduce((sum, row) => sum + Number(row.earnings_coins || 0), 0),
+    });
+  }
+
+  const round2 = (value) => Math.round((Number(value) || 0) * 100) / 100;
+  result.monthly_commission_coins = round2(result.monthly_commission_coins);
+  result.total_commission_coins = round2(result.total_commission_coins);
+  result.monthly_revenue_fcfa = Math.round(result.monthly_revenue_fcfa);
+  result.total_revenue_fcfa = Math.round(result.total_revenue_fcfa);
+  result.monthly_gross_fcfa = Math.round(result.monthly_gross_fcfa);
+  result.total_gross_fcfa = Math.round(result.total_gross_fcfa);
+  for (const bucket of Object.values(result.monthly_by_status)) {
+    bucket.commission_coins = round2(bucket.commission_coins);
+    bucket.revenue_fcfa = Math.round(bucket.revenue_fcfa);
+  }
+  return result;
 }
 
 // Créditer la commission partenaire d'affaires sur les frais retenus (en pièces).
@@ -200,21 +520,39 @@ async function creditOrganizerEarnings(params = {}) {
   if (!coins) return { success: false, message: 'Gain nul : rien a crediter.' };
   const dbc = p_dbc || db();
   const now = p_created_at ? new Date(p_created_at) : new Date();
-  const platformFeeRate = await getPlatformFeeRate();
+  const settings = await getAppSettings();
+  const platformFeeRate = Number(settings.platformFeeRate) || DEFAULT_PLATFORM_FEE_RATE;
+  // Le taux de conversion pièce → FCFA vient des réglages (jamais un * 10 figé).
+  const coinRate = Number(settings.rate) || 10;
+  // event_id est obligatoire en base : sans identifiant fourni, on rattache le
+  // gain au dernier événement de l'organisateur plutôt que de lever une erreur
+  // Prisma 500 (l'ancien code plantait avec "event_id must not be null").
+  let eventId = p_event_id || null;
+  if (!eventId) {
+    const fallbackEvent = await dbc.events.findFirst({
+      where: { organizer_id: p_organizer_id },
+      orderBy: { created_at: 'desc' },
+      select: { id: true },
+    }).catch(() => null);
+    eventId = fallbackEvent?.id || null;
+  }
+  if (!eventId) {
+    return { success: false, message: "Aucun événement associé : impossible de créditer le gain." };
+  }
   const platformCommission = p_apply_platform_fee ? Math.floor(coins * platformFeeRate) : 0;
   const row = await dbc.organizer_earnings.create({
     data: {
       id: uuidv4(),
       organizer_id: p_organizer_id,
-      event_id: p_event_id,
+      event_id: eventId,
       transaction_id: p_transaction_id || uuidv4(),
       transaction_type: p_transaction_type,
       earnings_coins: coins,
-      earnings_fcfa: Number(p_earnings_fcfa ?? coins * 10),
+      earnings_fcfa: Number(p_earnings_fcfa ?? coins * coinRate),
       status: 'pending',
       platform_commission: platformCommission,
-      platform_fee: platformCommission * 10,
-      net_amount: (coins - platformCommission) * 10,
+      platform_fee: platformCommission * coinRate,
+      net_amount: (coins - platformCommission) * coinRate,
       fee_percent: p_apply_platform_fee ? platformFeeRate * 100 : 0,
       ticket_count: p_ticket_count || null,
       earning_type: p_earning_type || p_transaction_type,
@@ -1971,140 +2309,69 @@ const HANDLERS = {
       take: 50,
     });
     const latest = rows[0] || null;
-    const settings = await getAppSettings();
-    const rate = Number(settings.rate || 10);
-    const platformFeeRate = Number(settings.platformFeeRate || 0.05);
-    let licenseCommissionRate = Number(latest?.license_rate || 0);
-    let licenseName = null;
     const personalScore = Number(latest?.personal_score || 1);
+    const license = await resolveAdminLicense(p_admin_id, latest);
+    const licenseCommissionRate = Number(license.rate || 0);
+    // CA de la zone : commissions acquises de toutes les lignes reconnues
+    // (transferred, paid, available, completed), calculées une seule fois.
+    const zone = await computeAdminZoneRevenue(admin);
 
-    // Zone de compétence : partenaire (coverage_zone) en priorité, sinon profil admin
-    let zoneCountry = admin.country || null;
-    let zoneCities = null;
-    try {
-      const partner = await dbc.partners.findFirst({
-        where: { user_id: p_admin_id },
-        orderBy: { created_at: 'desc' },
-        select: { coverage_zone: true, license_id: true, status: true, activation_date: true, expiration_date: true },
-      });
-      if (partner?.coverage_zone) {
-        const cz = typeof partner.coverage_zone === 'string' ? JSON.parse(partner.coverage_zone) : partner.coverage_zone;
-        if (cz?.country) zoneCountry = cz.country;
-        if (Array.isArray(cz?.cities) && cz.cities.length) zoneCities = cz.cities;
-      }
-      if (partner?.license_id) {
-        const lic = await dbc.partner_licenses.findUnique({
-          where: { id: partner.license_id },
-          select: { commission_rate: true, name: true },
-        }).catch(() => null);
-        if (lic) {
-          licenseName = lic.name || null;
-          if (!licenseCommissionRate) licenseCommissionRate = Number(lic.commission_rate || 0);
-        }
-      }
-    } catch (_) {}
-
-    const inZone = (p) => {
-      if (!zoneCountry) return false;
-      if (String(p.country || '').trim() !== String(zoneCountry).trim()) return false;
-      if (zoneCities && zoneCities.length) return zoneCities.map((c) => String(c).trim()).includes(String(p.city || '').trim());
-      return true;
-    };
-
-    // Base salaire (règle métier) : frais de transfert vers compte gains
-    // (commission plateforme retenue lors du transfert des gains en attente)
-    let zoneTransferFeesCoins = 0;
-    let zoneTransferredGrossCoins = 0;
-    let organizerCount = 0;
-    let platformFeeTxCoins = 0;
-    let platformFeeTxFcfa = 0;
-    let monthlyCaCoins = 0;
-    let monthlyCaFcfa = 0;
-
-    if (zoneCountry) {
-      const zoneProfiles = await dbc.profiles.findMany({
-        where: { country: zoneCountry },
-        select: { id: true, country: true, city: true },
-      });
-      const zoneProfileIds = zoneProfiles.filter(inZone).map((p) => p.id);
-      organizerCount = zoneProfileIds.length;
-
-      if (zoneProfileIds.length) {
-        const transferred = await dbc.organizer_earnings.findMany({
-          where: { organizer_id: { in: zoneProfileIds }, status: 'transferred' },
-          select: { earnings_coins: true, platform_commission: true, transferred_at: true, paid_at: true, updated_at: true, created_at: true },
-        });
-        zoneTransferredGrossCoins = transferred.reduce((s, e) => s + Number(e.earnings_coins || 0), 0);
-        zoneTransferFeesCoins = transferred.reduce(
-          (s, e) => s + Number(e.platform_commission ?? Math.floor(Number(e.earnings_coins || 0) * platformFeeRate)),
-          0,
-        );
-
-        const now = new Date();
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-        transferred.forEach((e) => {
-          const d = new Date(e.transferred_at || e.paid_at || e.updated_at || e.created_at || 0);
-          if (d < monthStart || d > monthEnd) return;
-          const coins = Number(e.platform_commission ?? Math.floor(Number(e.earnings_coins || 0) * platformFeeRate));
-          monthlyCaCoins += coins;
-          monthlyCaFcfa += coins * rate;
-        });
-
-        // Harmonisation avec la vue "Chiffres affaires (Zone)" (AdminDashboard) :
-        // inclure aussi les transactions platform_fee des utilisateurs de la zone.
-        try {
-          const feeTx = await dbc.transactions.findMany({
-            where: { user_id: { in: zoneProfileIds }, transaction_type: 'platform_fee' },
-            select: { amount_pi: true, amount_fcfa: true, created_at: true },
-          });
-          platformFeeTxCoins = feeTx.reduce((s, t) => s + Math.abs(Number(t.amount_pi || 0)), 0);
-          platformFeeTxFcfa = feeTx.reduce((s, t) => s + Math.abs(Number(t.amount_fcfa || 0)), 0);
-          feeTx.forEach((t) => {
-            const d = new Date(t.created_at || 0);
-            if (d < monthStart || d > monthEnd) return;
-            monthlyCaCoins += Math.abs(Number(t.amount_pi || 0));
-            monthlyCaFcfa += Math.abs(Number(t.amount_fcfa || 0)) || Math.abs(Number(t.amount_pi || 0)) * rate;
-          });
-        } catch (_) {}
-      }
-    }
-
-    const transferFeesFcfa = Math.round(zoneTransferFeesCoins * rate);
-    const zoneVolumeFcfa = Math.round(zoneTransferredGrossCoins * rate);
-    // CA zone affiché (harmonisé avec dashboard) = frais de transfert + frais plateforme (transactions zone)
-    const zoneRevenueFcfa = transferFeesFcfa + Math.round(platformFeeTxFcfa || platformFeeTxCoins * rate);
-    monthlyCaFcfa = Math.round(monthlyCaFcfa);
-    // Salaire admin = Chiffres affaires de la Plateforme du mois en cours × Taux de licence × Score personnel
-    const salaryBaseFcfa = monthlyCaFcfa;
+    // Salaire admin = CA plateforme du mois en cours × Taux de licence × Score
+    const salaryBaseFcfa = Math.round(zone.monthly_revenue_fcfa);
     const computedSalaryFcfa = Math.round(salaryBaseFcfa * (licenseCommissionRate / 100) * personalScore);
     const legacySalaryFcfa = rows.reduce((s, r) => s + Number(r.total_salary || 0), 0);
-    const totalSalaryFcfa = computedSalaryFcfa > 0 || salaryBaseFcfa > 0 || monthlyCaFcfa > 0 ? computedSalaryFcfa : legacySalaryFcfa;
+    const totalSalaryFcfa = computedSalaryFcfa > 0 || salaryBaseFcfa > 0 ? computedSalaryFcfa : legacySalaryFcfa;
 
     return ok({
-      // CA zone (harmonisé)
-      zone_revenue_fcfa: zoneRevenueFcfa,
-      monthly_zone_revenue_fcfa: monthlyCaFcfa,
-      monthly_zone_revenue_coins: monthlyCaCoins,
-      zone_transfer_fees_coins: zoneTransferFeesCoins,
-      zone_transfer_fees_fcfa: transferFeesFcfa,
-      zone_platform_fee_tx_coins: platformFeeTxCoins,
-      zone_platform_fee_tx_fcfa: Math.round(platformFeeTxFcfa || platformFeeTxCoins * rate),
+      // CA zone (cumul + mois en cours)
+      zone_revenue_fcfa: Math.round(zone.total_revenue_fcfa),
+      monthly_zone_revenue_fcfa: salaryBaseFcfa,
+      monthly_zone_revenue_coins: zone.monthly_commission_coins,
+      zone_transfer_fees_coins: zone.total_commission_coins,
+      zone_transfer_fees_fcfa: Math.round(zone.total_revenue_fcfa),
+      zone_platform_fee_tx_coins: 0,
+      zone_platform_fee_tx_fcfa: 0,
       salary_base_fcfa: salaryBaseFcfa,
-      zone_volume_fcfa: zoneVolumeFcfa,
-      zone_organizers_count: organizerCount,
-      country: zoneCountry,
-      city: zoneCities && zoneCities.length === 1 ? zoneCities[0] : (admin.city || null),
-      license_name: licenseName,
+      zone_volume_fcfa: Math.round(zone.total_gross_fcfa),
+      zone_organizers_count: zone.organizers_count,
+      country: zone.country,
+      city: zone.cities.length === 1 ? zone.cities[0] : (admin.city || null),
+      license_name: license.name,
+      license_source: license.source,
+      license_missing: licenseCommissionRate <= 0,
       // Compat UI existante
       total_salary_fcfa: totalSalaryFcfa,
-      total_volume_fcfa: zoneVolumeFcfa,
-      platform_revenue_fcfa: zoneRevenueFcfa,
+      total_volume_fcfa: Math.round(zone.total_gross_fcfa),
+      platform_revenue_fcfa: Math.round(zone.total_revenue_fcfa),
       license_commission_rate: licenseCommissionRate,
       personal_score: personalScore,
       withdrawal_status: latest?.withdrawal_status || 'closed',
-      month: latest?.month || null,
+      month: zone.month,
+      monthly_by_status: zone.monthly_by_status,
+      recognized_statuses: zone.recognized_statuses,
+      excluded_statuses: zone.excluded_statuses,
+      coin_to_fcfa_rate: zone.coin_to_fcfa_rate,
       stats: rows,
+    });
+  },
+
+  // CA de la zone pour la carte du tableau de bord admin. Même calcul que le
+  // salaire (computeAdminZoneRevenue) : une seule source de vérité.
+  async get_admin_zone_stats(args = {}, actor) {
+    const adminId = args?.p_admin_id || args?.admin_id || actor?.id;
+    if (!adminId) return fail('p_admin_id requis');
+    const admin = await db().profiles.findUnique({
+      where: { id: adminId },
+      select: { id: true, country: true, city: true, user_type: true },
+    });
+    if (!admin) return fail('Admin introuvable', 'NOT_FOUND');
+    const zone = await computeAdminZoneRevenue(admin);
+    // Alias attendus par la carte du tableau de bord (AdminStats).
+    return ok({
+      ...zone,
+      monthly_zone_revenue_fcfa: zone.monthly_revenue_fcfa,
+      zone_revenue_fcfa: zone.total_revenue_fcfa,
+      total_volume_fcfa: zone.total_gross_fcfa,
     });
   },
 
@@ -2199,21 +2466,44 @@ const HANDLERS = {
     if (!profile) return fail('Profil introuvable', 'NOT_FOUND');
     const pendingRows = await db().organizer_earnings.findMany({
       where: { organizer_id: p_user_id, status: 'pending' },
-      select: { id: true, earnings_coins: true, platform_commission: true },
+      select: {
+        id: true, earnings_coins: true, platform_commission: true,
+        platform_fee: true, fee_percent: true, transaction_type: true, earning_type: true,
+      },
     });
     if (!pendingRows.length) {
       return ok({ success: true, message: 'Aucun gain en attente à transférer.', total_gross: 0, platform_fee: 0, total_net: 0, transferred_count: 0 });
     }
     const gross = pendingRows.reduce((sum, row) => sum + Number(row.earnings_coins || 0), 0);
-    const platformFeeRate = await getPlatformFeeRate();
-    const feeForRow = (row) => Number(row.platform_commission ?? Math.floor(Number(row.earnings_coins || 0) * platformFeeRate));
+    const settings = await getAppSettings();
+    const platformFeeRate = Number(settings.platformFeeRate) || DEFAULT_PLATFORM_FEE_RATE;
+    const coinRate = Number(settings.rate) || 10;
+    // Les commissions promo/influenceur sont des gains nets : pas de frais.
+    const feeForRow = (row) => {
+      const type = String(row.transaction_type || row.earning_type || '').toLowerCase();
+      if (type === 'promo_commission') return 0;
+      return resolveEarningFeeCoins(row, platformFeeRate);
+    };
     const platformFee = pendingRows.reduce((sum, row) => sum + feeForRow(row), 0);
     const net = gross - platformFee;
     const now = new Date();
-    await db().organizer_earnings.updateMany({
-      where: { id: { in: pendingRows.map((row) => row.id) } },
-      data: { status: 'transferred', paid_at: now, transferred_at: now, updated_at: now },
-    });
+    // On persiste la commission réellement retenue : sans cela, une ligne à
+    // platform_commission = 0 laissait le CA de la zone à zéro après transfert.
+    await db().$transaction(pendingRows.map((row) => {
+      const rowFee = Math.round(feeForRow(row) * 100) / 100;
+      return db().organizer_earnings.update({
+        where: { id: row.id },
+        data: {
+          status: 'transferred',
+          paid_at: now,
+          transferred_at: now,
+          updated_at: now,
+          platform_commission: Math.round(rowFee),
+          platform_fee: rowFee * coinRate,
+          net_amount: (Number(row.earnings_coins || 0) - rowFee) * coinRate,
+        },
+      });
+    }));
     await db().profiles.update({
       where: { id: p_user_id },
       data: {
@@ -3344,6 +3634,7 @@ const HANDLERS = {
       const dbc = db();
       const settings = await getAppSettings();
       const rate = Number(settings.rate) || 10;
+      const platformFeeRate = Number(settings.platformFeeRate) || 0.05;
       const now = new Date();
       const pad = (n) => String(n).padStart(2, '0');
       const monthKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
@@ -3386,26 +3677,88 @@ const HANDLERS = {
       }
 
       // --- 1. Commissions sur transactions (source : organizer_earnings) ---
-      const commissionRows = await dbc.$queryRawUnsafe(
-        `SELECT DATE_FORMAT(COALESCE(oe.transferred_at, oe.paid_at, oe.created_at), '%Y-%m') AS month_key,
+      // Le calcul est fait en JS avec les mêmes règles que le CA de zone :
+      // platform_commission fait foi ; les lots hérités 'paid' répètent le
+      // frais du lot sur chaque ligne et ne doivent être comptés qu'une fois.
+      const earningRows = await dbc.$queryRawUnsafe(
+        `SELECT oe.id, oe.organizer_id, oe.status,
                 COALESCE(oe.transaction_type, '') AS transaction_type,
+                COALESCE(oe.earning_type, '') AS earning_type,
                 COALESCE(e.event_type, oe.event_type, '') AS event_type,
-                COUNT(*) AS entries,
-                COALESCE(SUM(CASE WHEN COALESCE(oe.earnings_fcfa, 0) > 0
-                                  THEN oe.earnings_fcfa
-                                  ELSE COALESCE(oe.earnings_coins, 0) * ? END), 0) AS gross_fcfa,
-                COALESCE(SUM(CASE WHEN COALESCE(oe.platform_fee, 0) > 0
-                                  THEN oe.platform_fee
-                                  ELSE COALESCE(oe.platform_commission, 0) * ? END), 0) AS commission_fcfa
+                oe.earnings_coins, oe.earnings_fcfa,
+                oe.platform_commission, oe.platform_fee, oe.fee_percent,
+                oe.transferred_at, oe.paid_at, oe.created_at
          FROM organizer_earnings oe
          LEFT JOIN events e ON e.id = oe.event_id
          WHERE oe.status IN ('transferred', 'paid', 'available', 'completed')
            AND COALESCE(oe.transaction_type, '') <> 'promo_commission'
            AND COALESCE(oe.transferred_at, oe.paid_at, oe.created_at) >= ?
-           AND COALESCE(oe.transferred_at, oe.paid_at, oe.created_at) < ?
-         GROUP BY month_key, transaction_type, event_type`,
-        rate, rate, sqlDate(queryStart), sqlDate(queryEnd),
+           AND COALESCE(oe.transferred_at, oe.paid_at, oe.created_at) < ?`,
+        sqlDate(queryStart), sqlDate(queryEnd),
       );
+
+      const commissionBuckets = new Map();
+      const addCommission = (monthKeyValue, row, entries, grossFcfa, commissionFcfa) => {
+        if (!monthKeyValue) return;
+        const key = `${monthKeyValue}|${row.transaction_type || ''}|${row.event_type || ''}`;
+        let bucket = commissionBuckets.get(key);
+        if (!bucket) {
+          bucket = {
+            month_key: monthKeyValue,
+            transaction_type: row.transaction_type || '',
+            event_type: row.event_type || '',
+            entries: 0,
+            gross_fcfa: 0,
+            commission_fcfa: 0,
+          };
+          commissionBuckets.set(key, bucket);
+        }
+        bucket.entries += entries;
+        bucket.gross_fcfa += grossFcfa;
+        bucket.commission_fcfa += commissionFcfa;
+      };
+      const grossFcfaOf = (row) => {
+        const fcfa = Number(row.earnings_fcfa || 0);
+        return fcfa > 0 ? fcfa : Number(row.earnings_coins || 0) * rate;
+      };
+
+      const paidGroups = new Map();
+      for (const row of earningRows) {
+        if (String(row.earning_type || '').toLowerCase() === 'promo_commission') continue;
+        if (String(row.status) === 'paid') {
+          const date = toValidDate(row.paid_at, row.created_at);
+          const key = `${row.organizer_id}|${date ? date.getTime() : 'no-date'}`;
+          if (!paidGroups.has(key)) paidGroups.set(key, []);
+          paidGroups.get(key).push(row);
+        } else {
+          const date = toValidDate(row.transferred_at, row.paid_at, row.created_at);
+          addCommission(
+            date ? monthKey(date) : null,
+            row,
+            1,
+            grossFcfaOf(row),
+            resolveEarningFeeCoins(row, platformFeeRate) * rate,
+          );
+        }
+      }
+      for (const rows of paidGroups.values()) {
+        const batchGrossCoins = rows.reduce((sum, row) => sum + Number(row.earnings_coins || 0), 0);
+        const batchFeeFcfa = Math.round(resolvePaidBatchFeeCoins(rows, platformFeeRate, rate) * rate);
+        const date = toValidDate(rows[0]?.paid_at, rows[0]?.created_at);
+        const monthKeyValue = date ? monthKey(date) : null;
+        let allocated = 0;
+        rows.forEach((row, index) => {
+          const share = batchGrossCoins > 0
+            ? Number(row.earnings_coins || 0) / batchGrossCoins
+            : 1 / rows.length;
+          const amount = index === rows.length - 1
+            ? batchFeeFcfa - allocated
+            : Math.round(batchFeeFcfa * share);
+          allocated += amount;
+          addCommission(monthKeyValue, row, 1, grossFcfaOf(row), amount);
+        });
+      }
+      const commissionRows = Array.from(commissionBuckets.values());
 
       // --- 2. Commissions encore en attente de transfert (hors total) ---
       const pendingRows = await dbc.$queryRawUnsafe(

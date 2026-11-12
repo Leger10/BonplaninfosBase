@@ -103,6 +103,7 @@ export const RPC_POLICY = {
   get_withdrawable_balances: { selfArg: 'p_organizer_id' },
   credit_organizer_earnings: { roles: ADMIN },
   get_admin_salary_stats: { roles: ADMIN },
+  get_admin_zone_stats: { roles: ADMIN },
   get_secretary_salary_stats: { roles: ADMIN },
   get_today_performance: { roles: ADMIN },
   get_zones_stats: { roles: ADMIN },

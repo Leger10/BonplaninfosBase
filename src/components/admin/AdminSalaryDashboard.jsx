@@ -11,6 +11,7 @@ import {
   DollarSign,
   TrendingUp,
   Download,
+  AlertTriangle,
 } from "lucide-react";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -223,6 +224,20 @@ const AdminSalaryDashboard = () => {
           </div>
         </div>
       </div>
+
+      {salaryStats?.license_missing && monthlyZoneRevenue > 0 && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+          <div>
+            <p className="font-semibold text-amber-200">Aucune licence partenaire rattachée</p>
+            <p className="text-sm text-amber-100/80">
+              Le CA de votre zone est bien comptabilisé ({monthlyZoneRevenue.toLocaleString("fr-FR")} FCFA),
+              mais le taux de licence vaut 0 % : le salaire ne peut donc pas être calculé.
+              Contactez le super administrateur pour rattacher votre licence.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

@@ -78,19 +78,64 @@ try {
   const start = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-01 00:00:00`;
   const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   const end = `${endDate.getFullYear()}-${pad(endDate.getMonth() + 1)}-01 00:00:00`;
-  const rateRow = await prisma.app_settings.findFirst({ select: { coin_to_fcfa_rate: true } });
-  const rate = Number(rateRow?.coin_to_fcfa_rate) || 10;
-  const raw = await prisma.$queryRawUnsafe(
-    `SELECT COALESCE(SUM(CASE WHEN COALESCE(platform_fee, 0) > 0 THEN platform_fee ELSE COALESCE(platform_commission, 0) * ? END), 0) AS c
+  const settingsRows = await prisma.app_settings.findMany({
+    orderBy: [{ updated_at: 'desc' }, { created_at: 'desc' }],
+    take: 1,
+    select: { coin_to_fcfa_rate: true, platform_fee_percentage: true },
+  });
+  const rate = Number(settingsRows[0]?.coin_to_fcfa_rate) || 10;
+  const feePercent = Number(settingsRows[0]?.platform_fee_percentage);
+  const feeRate = feePercent > 0 ? feePercent / 100 : 0.05;
+  const monthRows = await prisma.$queryRawUnsafe(
+    `SELECT organizer_id, status, transaction_type, earning_type,
+            earnings_coins, earnings_fcfa, platform_commission, platform_fee, fee_percent,
+            transferred_at, paid_at, created_at
      FROM organizer_earnings
      WHERE status IN ('transferred','paid','available','completed')
        AND COALESCE(transaction_type,'') <> 'promo_commission'
        AND COALESCE(transferred_at, paid_at, created_at) >= ?
        AND COALESCE(transferred_at, paid_at, created_at) < ?`,
-    rate, start, end,
+    start, end,
   );
-  const expectedCommission = Number(raw?.[0]?.c || 0);
-  check('commissions du mois = controle SQL independant', Math.round(Number(commissionComponent?.amount_fcfa || 0)), Math.round(expectedCommission));
+  const feeCoinsOfRow = (row) => {
+    const commission = Number(row.platform_commission || 0);
+    const fee = Number(row.platform_fee || 0);
+    const gross = Number(row.earnings_coins || 0);
+    const percent = Number(row.fee_percent || 0);
+    const rowRate = percent > 0 ? percent / 100 : feeRate;
+    if (commission > 0) return commission;
+    if (fee > 0) return fee;
+    return Math.floor(gross * rowRate);
+  };
+  const paidBatches = new Map();
+  const singleRows = [];
+  for (const row of monthRows) {
+    if (String(row.earning_type || '').toLowerCase() === 'promo_commission') continue;
+    if (String(row.status) === 'paid') {
+      const key = `${row.organizer_id}|${row.paid_at ? new Date(row.paid_at).getTime() : 'no-date'}`;
+      if (!paidBatches.has(key)) paidBatches.set(key, []);
+      paidBatches.get(key).push(row);
+    } else {
+      singleRows.push(row);
+    }
+  }
+  let expectedCommission = singleRows.reduce((sum, row) => sum + feeCoinsOfRow(row) * rate, 0);
+  for (const batch of paidBatches.values()) {
+    const sumCommission = batch.reduce((sum, row) => sum + Number(row.platform_commission || 0), 0);
+    const sumGross = batch.reduce((sum, row) => sum + Number(row.earnings_coins || 0), 0);
+    const maxFee = batch.reduce((max, row) => Math.max(max, Number(row.platform_fee || 0)), 0);
+    const percent = Number(batch[0]?.fee_percent || 0);
+    const expectedCoins = sumGross * (percent > 0 ? percent / 100 : feeRate);
+    let feeCoins = maxFee;
+    if (maxFee > 0 && rate > 0) {
+      const asFcfaCoins = maxFee / rate;
+      if (Math.abs(asFcfaCoins - expectedCoins) < Math.abs(maxFee - expectedCoins)) feeCoins = asFcfaCoins;
+    }
+    let coins = Math.max(sumCommission, feeCoins);
+    if (coins <= 0) coins = expectedCoins;
+    expectedCommission += coins * rate;
+  }
+  check('commissions du mois = controle independant (lots paid dedupliques)', Math.round(Number(commissionComponent?.amount_fcfa || 0)), Math.round(expectedCommission));
 
   // Aucun paiement evenement ne doit apparaitre dans les packs : on recalcule
   // la classification des paiements du mois courant et on compare.

@@ -106,25 +106,17 @@ const AdminStats = ({ userProfile, partnerZone }) => {
 
     setLoading(true);
     try {
-      const today = new Date();
-      const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-      const lastDayOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
-
-      const [txRes, settingsRes, zoneProfilesRes] = await Promise.all([
-        retrySupabaseRequest(() =>
-          supabase
-            .from("transactions")
-            .select(`amount_pi, amount_fcfa, user:user_id(country, city)`)
-            .eq("transaction_type", "platform_fee")
-            .gte("created_at", firstDayOfMonth.toISOString())
-            .lte("created_at", lastDayOfMonth.toISOString())
-        ),
-        retrySupabaseRequest(() =>
-          supabase.from("app_settings").select("key, value").in("key", ["coin_to_fcfa_rate", "platform_fee_percentage"])
-        ),
+      // Le CA de la zone vient du même calcul serveur que le salaire admin :
+      // commissions acquises (transferred + paid + available + completed),
+      // comptées une seule fois. Évite que la carte affiche 0 après un
+      // transfert de gains en attente.
+      const [zoneProfilesRes, zoneStatsRes] = await Promise.all([
         retrySupabaseRequest(() =>
           supabase.from("profiles").select("id, country, city").in("country", countryCandidates)
         ),
+        retrySupabaseRequest(() =>
+          supabase.rpc("get_admin_zone_stats", { p_admin_id: userProfile?.id })
+        ).catch(() => ({ data: null })),
       ]);
 
       // Fallback si `.in` non supporté ou retourne vide (mismatch libellé)
@@ -137,46 +129,8 @@ const AdminStats = ({ userProfile, partnerZone }) => {
       }
 
       const zoneProfiles = profilesPool.filter((p) => sameCountry(p.country, rawCountry) && cityMatch(p.city));
-      const zoneOrganizerIds = zoneProfiles.map((p) => p.id).filter(Boolean);
-      const zoneIdSet = new Set(zoneOrganizerIds);
-
-      const feesData = (txRes?.data || []).filter((t) => {
-        const u = t.user || {};
-        return sameCountry(u.country, rawCountry) && cityMatch(u.city);
-      });
-
-      const settingsMap = Object.fromEntries(
-        (settingsRes?.data || []).map((r) => [r.key, Number(r.value)])
-      );
-      const coinToFcfaRate = Number(settingsMap.coin_to_fcfa_rate || 10);
-      const platformFeeRate = Number(settingsMap.platform_fee_percentage || 5) / 100;
-
-      let transferFeeCoins = 0;
-      let transferFeeFcfa = 0;
-      if (zoneOrganizerIds.length) {
-        const { data: transferred } = await retrySupabaseRequest(() =>
-          supabase
-            .from("organizer_earnings")
-            .select("earnings_coins, platform_commission, transferred_at, paid_at, updated_at, created_at, status, organizer_id")
-            .eq("status", "transferred")
-            .in("organizer_id", zoneOrganizerIds)
-        );
-        (transferred || []).forEach((row) => {
-          if (!zoneIdSet.has(row.organizer_id)) return;
-          const d = new Date(row.transferred_at || row.paid_at || row.updated_at || row.created_at || 0);
-          if (d < firstDayOfMonth || d > lastDayOfMonth) return;
-          const coins = Number(
-            row.platform_commission ?? Math.floor(Number(row.earnings_coins || 0) * platformFeeRate)
-          );
-          transferFeeCoins += coins;
-          transferFeeFcfa += coins * coinToFcfaRate;
-        });
-      }
-
-      const txRevenueFcfa = feesData.reduce((sum, item) => sum + Math.abs(Number(item.amount_fcfa || 0)), 0);
-      const txCommissionPi = feesData.reduce((sum, item) => sum + Math.abs(Number(item.amount_pi || 0)), 0);
-      const totalRevenueFcfa = txRevenueFcfa + transferFeeFcfa;
-      const totalCommissionPi = txCommissionPi + transferFeeCoins;
+      const monthlyRevenueFcfa = Number(zoneStatsRes?.data?.monthly_zone_revenue_fcfa || 0);
+      const monthlyCommissionCoins = Number(zoneStatsRes?.data?.monthly_commission_coins || 0);
 
       let activeCount = 0;
       try {
@@ -193,21 +147,20 @@ const AdminStats = ({ userProfile, partnerZone }) => {
         activeCount = activePool.filter((p) => sameCountry(p.country, rawCountry) && cityMatch(p.city)).length;
       } catch (_) { activeCount = zoneProfiles.filter((p) => p.id).length; }
 
-      if (totalRevenueFcfa === 0) {
+      if (monthlyRevenueFcfa === 0) {
         console.info("[AdminStats zone CA] 0", {
           country: rawCountry, candidates: countryCandidates,
           hasPartnerZone, effectiveCities, wholeCountry: !singleEffCity && effectiveCities.length <= 1 ? effectiveCities.length === 0 : false,
-          month: `${firstDayOfMonth.toISOString()}..${lastDayOfMonth.toISOString()}`,
-          zoneProfiles: zoneProfiles.length, zoneOrganizerIds: zoneOrganizerIds.length,
-          transferFeeFcfa, txRevenueFcfa,
+          zoneProfiles: zoneProfiles.length,
+          zoneStatsError: zoneStatsRes?.error?.message || null,
         });
       }
 
       setStats({
-        credited: totalCommissionPi,
+        credited: monthlyCommissionCoins,
         purchased: 0,
         activeUsers: activeCount || 0,
-        monthlyRevenue: totalRevenueFcfa,
+        monthlyRevenue: monthlyRevenueFcfa,
       });
     } catch (error) {
       console.error("Failed to fetch admin stats:", error);
