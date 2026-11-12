@@ -2,10 +2,11 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { useData } from "@/contexts/DataContext";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users, Settings, BarChart2, Video, Loader2, Briefcase, Wallet, Megaphone, Calendar, Target, Image as ImageIcon, CreditCard, ShieldCheck, Clock, RefreshCw as RefreshCwIcon, UserCheck, History, BookOpen, DollarSign, MapPin, AreaChart, RotateCcw, AlertTriangle, Database, CheckCircle2, BookmarkMinus, AlertCircle, Smartphone } from 'lucide-react';
+import { Users, Settings, BarChart2, Video, Loader2, Briefcase, Wallet, Megaphone, Calendar, Target, Image as ImageIcon, CreditCard, ShieldCheck, Clock, RefreshCw as RefreshCwIcon, UserCheck, History, BookOpen, DollarSign, MapPin, AreaChart, RotateCcw, AlertTriangle, Database, CheckCircle2, BookmarkMinus, AlertCircle, Smartphone, Banknote } from 'lucide-react';
 import UserManagement from "@/components/admin/UserManagement";
 import ConfigTab from "@/components/admin/ConfigTab";
 import AnalyticsDashboard from "@/components/admin/AnalyticsDashboard";
+import RbpDashboard from "@/components/admin/RbpDashboard";
 import VideoManager from "@/components/admin/VideoManagementTab";
 import { useAuth } from "@/contexts/SupabaseAuthContext";
 import { supabase } from "@/lib/customSupabaseClient";
@@ -599,6 +600,7 @@ const AdminDashboard = () => {
         <TabsList className="flex flex-wrap h-auto items-center justify-center rounded-md bg-muted p-1 text-muted-foreground">
           {isSuperAdmin && (
             <>
+              <TabsTrigger value="rbp"><Banknote className="w-4 h-4 mr-2" />Revenus RBP</TabsTrigger>
               <TabsTrigger value="analytics"><BarChart2 className="w-4 h-4 mr-2" />{t("admin_dashboard.tabs.analytics")}</TabsTrigger>
               <TabsTrigger value="credit_stats"><AreaChart className="w-4 h-4 mr-2" />{t("admin_dashboard.tabs.credit_stats")}</TabsTrigger>
               <TabsTrigger value="withdrawal_mgmt"><CheckCircle2 className="w-4 h-4 mr-2" />Gestion des Retraits</TabsTrigger>
@@ -657,6 +659,7 @@ const AdminDashboard = () => {
 
         {isSuperAdmin && (
           <>
+            <TabsContent value="rbp"><RbpDashboard /></TabsContent>
             <TabsContent value="analytics"><AnalyticsDashboard /></TabsContent>
             <TabsContent value="credit_stats"><CreditStatsTab /></TabsContent>
             <TabsContent value="withdrawal_mgmt"><WithdrawalManagementDashboard /></TabsContent>

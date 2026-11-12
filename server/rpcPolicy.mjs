@@ -63,6 +63,9 @@ export const RPC_POLICY = {
   admin_list_scan_agents: { roles: ADMIN },
   get_super_admin_dashboard_stats: { roles: ADMIN },
   get_super_admin_country_organizer_stats: { roles: ADMIN },
+  // RBP = assiette contractuelle du partage 20 % / 40 % / 40 % : reservee au
+  // super administrateur, qui seul presente les comptes au partenaire.
+  get_super_admin_rbp_stats: { roles: SUPER },
   get_global_analytics: { roles: ADMIN },
   send_announcement_to_users: { roles: ADMIN },
   delete_location: { roles: ADMIN },
