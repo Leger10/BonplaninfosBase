@@ -17,6 +17,7 @@
     "sitemap": "node scripts/generate-sitemap.js",
     "media:sync": "node scripts/sync-media-to-prod.mjs",
     "media:check": "node scripts/sync-media-to-prod.mjs --dry-run",
+    "contract:template": "node scripts/build-contract-template.mjs",
     "netlify-build": "npm run build",
     "prebuild": "node scripts/download-pwa-icons.js"
   },

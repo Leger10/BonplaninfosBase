@@ -49,6 +49,7 @@ const Footer = () => {
     company: [
       { to: "/about", text: t("footer.about") },
       { to: "/partner-signup", text: t("footer.partnership") },
+      { to: "/contrat-partenariat", text: "Contrat de partenariat" },
       { to: "/sponsors", text: t("footer.sponsors") },
       {
         href: "mailto:support@bonplaninfos.net",

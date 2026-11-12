@@ -1,0 +1,287 @@
+/* ============================================================
+   Contrat de partenariat — aperçu papier, impression, PDF
+   ============================================================ */
+
+.contract-paper {
+  background: #ffffff;
+  color: #1f2937;
+  border-radius: 0.5rem;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.06),
+    0 12px 32px rgba(15, 23, 42, 0.1);
+}
+
+.contract-doc {
+  font-family: "Georgia", "Times New Roman", serif;
+  font-size: 13.5px;
+  line-height: 1.68;
+  color: #1f2937;
+  word-break: break-word;
+}
+
+.contract-doc > *:first-child {
+  margin-top: 0;
+}
+
+.contract-doc .contract-title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  line-height: 1.28;
+  font-weight: 700;
+  text-align: center;
+  letter-spacing: 0.02em;
+  color: #111827;
+}
+
+/* Sous-titre « BonPlanInfos » (h2 qui suit le titre) */
+.contract-doc .contract-title + .contract-heading-2 {
+  margin-top: 0;
+  margin-bottom: 14px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+
+.contract-doc .contract-heading-1 {
+  margin: 30px 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #4f46e5;
+  font-size: 17px;
+  line-height: 1.32;
+  font-weight: 700;
+  color: #111827;
+}
+
+.contract-doc .contract-heading-2 {
+  margin: 22px 0 8px;
+  font-size: 14.5px;
+  line-height: 1.36;
+  font-weight: 700;
+  color: #4338ca;
+}
+
+.contract-doc .contract-heading-3 {
+  margin: 18px 0 6px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.contract-doc .contract-paragraph {
+  margin: 0 0 10px;
+  text-align: justify;
+}
+
+.contract-doc strong {
+  font-weight: 700;
+  color: #111827;
+}
+
+.contract-doc .contract-chip {
+  display: inline;
+  padding: 0 4px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 4px;
+  background: #f8fafc;
+  font-family: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+  font-size: 0.9em;
+  color: #475569;
+  white-space: pre-wrap;
+}
+
+.contract-doc .contract-list {
+  margin: 0 0 10px;
+  padding-left: 20px;
+  list-style: disc;
+}
+
+.contract-doc .contract-list li {
+  margin-bottom: 4px;
+  text-align: justify;
+}
+
+.contract-doc .contract-list li::marker {
+  color: #4f46e5;
+}
+
+.contract-doc .contract-quote {
+  margin: 14px 0;
+  padding: 10px 14px;
+  border-left: 3px solid #c7d2fe;
+  border-radius: 0 6px 6px 0;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12.5px;
+}
+
+.contract-doc .contract-quote p {
+  margin: 0 0 6px;
+  text-align: justify;
+}
+
+.contract-doc .contract-quote p:last-child {
+  margin-bottom: 0;
+}
+
+.contract-doc .contract-quote-warning {
+  border-left-color: #d97706;
+  background: #fffbeb;
+  color: #78350f;
+}
+
+.contract-doc .contract-table-wrapper {
+  margin: 12px 0 16px;
+  overflow-x: auto;
+}
+
+.contract-doc .contract-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.contract-doc .contract-table th,
+.contract-doc .contract-table td {
+  padding: 6px 8px;
+  border: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.contract-doc .contract-table th {
+  background: #eef2ff;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.contract-doc .contract-table tbody tr:nth-child(even) {
+  background: #fafafa;
+}
+
+.contract-doc .contract-table .contract-chip {
+  border-style: solid;
+  background: transparent;
+}
+
+.contract-doc .contract-hr {
+  margin: 22px 0;
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+}
+
+/* Le document papier est mis en page en A4 : 210mm de large, marges internes. */
+.contract-paper-inner {
+  width: 100%;
+  max-width: 210mm;
+  margin: 0 auto;
+  padding: 18mm 16mm;
+}
+
+@media (max-width: 640px) {
+  .contract-paper-inner {
+    padding: 20px 16px;
+  }
+
+  .contract-doc {
+    font-size: 13px;
+  }
+}
+
+/* ============================================================
+   Impression : seul le document est envoyé à l'imprimante.
+   ============================================================ */
+
+#contract-print-root {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  #root {
+    display: none !important;
+  }
+
+  #contract-print-root {
+    display: block !important;
+    position: static;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  #contract-print-root .contract-doc {
+    font-size: 10pt;
+    line-height: 1.5;
+  }
+
+  #contract-print-root .contract-title {
+    font-size: 17pt;
+    margin-bottom: 4pt;
+  }
+
+  #contract-print-root .contract-heading-1 {
+    font-size: 12.5pt;
+    margin-top: 16pt;
+    page-break-after: avoid;
+  }
+
+  #contract-print-root .contract-heading-2 {
+    font-size: 11pt;
+    margin-top: 12pt;
+    page-break-after: avoid;
+  }
+
+  #contract-print-root .contract-heading-3 {
+    font-size: 10.5pt;
+    margin-top: 9pt;
+    page-break-after: avoid;
+  }
+
+  #contract-print-root .contract-paragraph,
+  #contract-print-root .contract-list li {
+    orphans: 3;
+    widows: 3;
+  }
+
+  #contract-print-root .contract-table {
+    font-size: 8.5pt;
+  }
+
+  #contract-print-root .contract-table tr,
+  #contract-print-root .contract-quote {
+    page-break-inside: avoid;
+  }
+
+  #contract-print-root .contract-chip {
+    border: 0;
+    border-bottom: 1px dotted #94a3b8;
+    border-radius: 0;
+    background: transparent;
+    padding: 0 1px;
+  }
+
+  #contract-print-root .contract-hr {
+    page-break-after: avoid;
+  }
+
+  .contract-no-print {
+    display: none !important;
+  }
+}
