@@ -11,7 +11,10 @@ import {
 import {
   AlertCircle,
   Banknote,
+  CalendarDays,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   RefreshCw,
   ShieldCheck,
   TrendingUp,
@@ -42,6 +45,12 @@ const monthLabel = (key) => {
   const label = d.toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
   return label.charAt(0).toUpperCase() + label.slice(1);
 };
+// Decale une cle "AAAA-MM" de delta mois, sans dependre du fuseau horaire.
+const shiftMonth = (key, delta) => {
+  const [y, m] = String(key || currentMonthKey()).split("-").map(Number);
+  const d = new Date(y, (m - 1) + delta, 1);
+  return monthKey(d);
+};
 
 const COMPONENT_ICONS = {
   commissions: TrendingUp,
@@ -67,7 +76,12 @@ const RbpDashboard = () => {
       const id = requestId.current + 1;
       requestId.current = id;
       if (silent) setRefreshing(true);
-      else setLoading(true);
+      else {
+        setLoading(true);
+        // Changement de mois : on masque les chiffres du mois precedent pour
+        // ne jamais afficher un total sous le mauvais libelle.
+        setStats(null);
+      }
       setError(null);
       try {
         const { data, error: rpcError } = await supabase.rpc("get_super_admin_rbp_stats", { p_month: month });
@@ -117,6 +131,12 @@ const RbpDashboard = () => {
 
   const chartData = useMemo(() => series, [series]);
 
+  // Un clic sur une barre du graphique affiche le detail de ce mois.
+  const selectMonthFromChart = useCallback((state) => {
+    const key = state?.activePayload?.[0]?.payload?.month;
+    if (/^\d{4}-\d{2}$/.test(String(key || ""))) setMonth(key);
+  }, []);
+
   const maxComponent = useMemo(
     () => Math.max(1, ...components.map((c) => Number(c.amount_fcfa || 0))),
     [components],
@@ -158,18 +178,51 @@ const RbpDashboard = () => {
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <div>
-            <label htmlFor="rbp-month" className="mb-1 block text-xs font-medium text-muted-foreground">
-              Mois civil
-            </label>
-            <Input
-              id="rbp-month"
-              type="month"
-              value={month}
-              max={currentMonthKey()}
-              onChange={(e) => setMonth(e.target.value || currentMonthKey())}
-              className="w-44"
-            />
+            <span className="mb-1 block text-xs font-medium text-muted-foreground">
+              Période affichée
+            </span>
+            <div className="flex items-center gap-1 rounded-md border bg-background p-1">
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                onClick={() => setMonth((m) => shiftMonth(m, -1))}
+                disabled={loading}
+                aria-label="Mois précédent"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="relative">
+                <CalendarDays className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  id="rbp-month"
+                  type="month"
+                  value={month}
+                  max={currentMonthKey()}
+                  onChange={(e) => setMonth(e.target.value || currentMonthKey())}
+                  className="h-8 w-40 border-0 pl-8 shadow-none focus-visible:ring-0"
+                  aria-label="Mois à afficher"
+                />
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="h-8 w-8"
+                onClick={() => setMonth((m) => shiftMonth(m, 1))}
+                disabled={isCurrentMonth || loading}
+                aria-label="Mois suivant"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
+          {!isCurrentMonth && (
+            <Button variant="ghost" onClick={() => setMonth(currentMonthKey())} disabled={loading}>
+              Mois en cours
+            </Button>
+          )}
           <Button variant="outline" onClick={() => load({ silent: true })} disabled={refreshing}>
             <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
             Actualiser
@@ -412,13 +465,19 @@ const RbpDashboard = () => {
         <CardHeader>
           <CardTitle className="text-lg">Évolution du RBP sur 12 mois</CardTitle>
           <CardDescription>
-            Frais plateforme collectés chaque mois (commissions et frais de retrait).
+            Frais plateforme collectés chaque mois (commissions et frais de retrait). Cliquez sur un
+            mois pour afficher son détail.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-80 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
+              <BarChart
+                data={chartData}
+                margin={{ top: 8, right: 8, left: 8, bottom: 8 }}
+                onClick={selectMonthFromChart}
+                className="cursor-pointer"
+              >
                 <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
                 <XAxis dataKey="label" tick={{ fontSize: 12 }} interval={0} />
                 <YAxis tickFormatter={fmtCompact} tick={{ fontSize: 12 }} width={64} />
