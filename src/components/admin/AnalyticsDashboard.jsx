@@ -617,7 +617,7 @@ const AnalyticsDashboard = () => {
         <SecondaryStatCard
           title="Chiffre d'Affaires (Ventes)"
           value={formatCurrency(stats.totalSalesFcfa)}
-          subtext={`${stats.totalSalesCount || 0} encaissements packs (USSD + mobile money), retraits et dépenses exclus`}
+          subtext={`${stats.totalSalesCount || 0} achats de packs pièces (USSD + mobile money) et de licences — paiements d'événements et frais exclus`}
           icon={TrendingUp}
           colorClass="text-emerald-600"
         />

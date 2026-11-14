@@ -1,10 +1,11 @@
 // Regression : RBP (Revenus Bruts Plateforme) du super admin.
 //
-// Verifie que l'onglet RBP expose une assiette coherente avec le contrat :
-//   RBP = commissions acquises + packs + licences + publicite + abonnements
-//         + autres encaissements.
-// Les 90 % des organisateurs ne doivent jamais entrer dans le total, les
-// depenses en pieces non plus, et les commissions 'pending' restent hors total.
+// Verifie que l'onglet RBP expose uniquement les frais reellement collectes :
+//   RBP = commissions acquises + frais de retrait encaisses.
+// Les ventes (packs de pieces, depots, licences, publicite, abonnements) sont
+// exclues du RBP et comptent dans le chiffre d'affaires. Les 90 % des
+// organisateurs ne doivent jamais entrer dans le total, les depenses en pieces
+// non plus, et les commissions 'pending' restent hors total.
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
@@ -45,7 +46,9 @@ try {
   const components = d.components || [];
   const sumComponents = components.reduce((s, c) => s + Number(c.amount_fcfa || 0), 0);
   check('total RBP = somme des composantes', Math.round(sumComponents), Math.round(Number(d.total_rbp_fcfa || 0)));
-  check('six composantes contractuelles', components.length, 6);
+  check('deux composantes de frais uniquement', components.length, 2);
+  check('composantes = commissions + frais de retrait', components.map((c) => c.key).join(','), 'commissions,frais_retrait');
+  check('aucune vente (packs/licences) dans le RBP', components.every((c) => !['packs', 'licences', 'publicite', 'abonnements'].includes(c.key)), true);
   check('composantes non negatives', components.every((c) => Number(c.amount_fcfa || 0) >= 0), true);
 
   const dist = d.distribution || {};
@@ -66,11 +69,10 @@ try {
   check('la serie se termine au mois courant', series[series.length - 1]?.month, d.current_month);
   check('mois selectionne par defaut = mois courant', d.month, d.current_month);
   check('chaque mois de la serie a un total calcule', series.every((m) => {
-    const sum = Number(m.commissions_fcfa) + Number(m.packs_fcfa) + Number(m.licences_fcfa)
-      + Number(m.publicite_fcfa) + Number(m.abonnements_fcfa) + Number(m.autres_fcfa);
+    const sum = Number(m.commissions_fcfa) + Number(m.frais_retrait_fcfa);
     return near(sum, m.total_rbp_fcfa);
   }), true);
-  check('la serie ne contient pas de depenses en pieces', series.every((m) => Number(m.packs_fcfa) >= 0), true);
+  check('la serie ne contient aucune vente de packs/licences', series.every((m) => m.packs_fcfa === undefined && m.licences_fcfa === undefined), true);
 
   // Controle independant : commissions acquises du mois courant, meme regle de date.
   const now = new Date();
@@ -137,35 +139,68 @@ try {
   }
   check('commissions du mois = controle independant (lots paid dedupliques)', Math.round(Number(commissionComponent?.amount_fcfa || 0)), Math.round(expectedCommission));
 
-  // Aucun paiement evenement ne doit apparaitre dans les packs : on recalcule
-  // la classification des paiements du mois courant et on compare.
-  const packsComponent = components.find((c) => c.key === 'packs');
-  const monthPayments = await prisma.payments.findMany({
-    where: {
-      status: { in: ['completed', 'success'] },
-      payment_method: { not: 'coins' },
-      OR: [
-        { processed_at: { gte: new Date(start), lt: new Date(end) } },
-        { processed_at: null, validated_at: { gte: new Date(start), lt: new Date(end) } },
-        { processed_at: null, validated_at: null, created_at: { gte: new Date(start), lt: new Date(end) } },
-      ],
-    },
-    select: { pack_id: true, payment_method: true, amount_fcfa: true },
+  // Frais de retrait : controle independant sur le mois courant.
+  const withdrawalComponent = components.find((c) => c.key === 'frais_retrait');
+  const withdrawalRaw = await prisma.$queryRawUnsafe(
+    `SELECT COALESCE(SUM(fees), 0) AS f
+     FROM organizer_withdrawal_requests
+     WHERE status IN ('approved','paid')
+       AND COALESCE(paid_at, reviewed_at, requested_at) >= ?
+       AND COALESCE(paid_at, reviewed_at, requested_at) < ?`,
+    start, end,
+  );
+  check(
+    'frais de retrait du mois = controle independant',
+    Math.round(Number(withdrawalComponent?.amount_fcfa || 0)),
+    Math.round(Number(withdrawalRaw?.[0]?.f || 0)),
+  );
+
+  // Chiffre d'Affaires (Ventes) du Super Admin = packs de pieces + licences
+  // achetees. Les paiements d'evenements ne doivent jamais y entrer.
+  const salesRes = await post('/rpc', { name: 'get_super_admin_dashboard_stats', args: {} }, token);
+  check('la RPC CA (Ventes) repond sans erreur', salesRes.json?.error, null);
+  const sales = salesRes.json?.data || {};
+  const allPayments = await prisma.payments.groupBy({
+    by: ['pack_id', 'payment_method'],
+    where: { status: { in: ['completed', 'success'] }, payment_method: { not: 'coins' } },
+    _sum: { amount_fcfa: true, coins_amount: true },
+    _count: true,
   });
   const EVENT_PACKS = new Set(['ticket_payment', 'vote_payment', 'stand_rental_payment', 'raffle_payment', 'protected_access_payment']);
+  const classifySale = (packId, paymentMethod) => {
+    const p = String(packId || '').toLowerCase();
+    const m = String(paymentMethod || '').toLowerCase();
+    if (p.includes('license') || p.includes('licence')) return 'licences';
+    if (p.startsWith('pack_') || p === 'custom') return 'packs';
+    if (EVENT_PACKS.has(p) || m === 'moneyfusion_ticket' || p.endsWith('_payment')) return 'evenement';
+    if (!p) return 'packs';
+    return 'autres';
+  };
   let expectedPacks = 0;
-  let eventPayments = 0;
-  for (const p of monthPayments) {
-    const pack = String(p.pack_id || '').toLowerCase();
-    const method = String(p.payment_method || '').toLowerCase();
-    if (pack.startsWith('pack_') || pack === 'custom' || (!pack && method !== 'moneyfusion_ticket')) {
-      expectedPacks += Number(p.amount_fcfa || 0);
-    } else if (EVENT_PACKS.has(pack) || method === 'moneyfusion_ticket' || pack.endsWith('_payment')) {
-      eventPayments += Number(p.amount_fcfa || 0);
+  let expectedLicences = 0;
+  let expectedSalesCount = 0;
+  let expectedOther = 0;
+  for (const group of allPayments) {
+    const category = classifySale(group.pack_id, group.payment_method);
+    const amount = Number(group._sum?.amount_fcfa || 0)
+      || Number(group._sum?.coins_amount || 0) * rate;
+    const count = Number(group._count?._all ?? group._count ?? 0);
+    if (category === 'packs') {
+      expectedPacks += amount;
+      expectedSalesCount += count;
+    } else if (category === 'licences') {
+      expectedLicences += amount;
+      expectedSalesCount += count;
+    } else {
+      expectedOther += amount;
     }
   }
-  check('packs du mois = classification independante', Math.round(Number(packsComponent?.amount_fcfa || 0)), Math.round(expectedPacks));
-  check('les paiements evenements ne sont pas comptes comme packs', Math.round(Number(packsComponent?.amount_fcfa || 0)) >= Math.round(eventPayments), true);
+  check('CA packs pieces = controle independant', Math.round(Number(sales.sales_packs_fcfa || 0)), Math.round(expectedPacks));
+  check('CA licences = controle independant', Math.round(Number(sales.sales_licences_fcfa || 0)), Math.round(expectedLicences));
+  check('CA (Ventes) = packs + licences', Math.round(Number(sales.total_sales_fcfa || 0)), Math.round(expectedPacks + expectedLicences));
+  check('nombre de ventes CA = packs + licences', Number(sales.total_sales_count || 0), expectedSalesCount);
+  check('paiements evenements hors CA', Math.round(Number(sales.other_payments_fcfa || 0)), Math.round(expectedOther));
+  check('le CA exclut bien les paiements evenements', Number(sales.total_sales_fcfa || 0) <= Number(sales.total_sales_fcfa || 0) + Number(sales.other_payments_fcfa || 0), true);
 
   check('commissions en attente exposees separement', typeof d.commission_summary?.pending_commission_fcfa, 'number');
   check('les commissions en attente sont hors du total', Number(d.commission_summary?.pending_commission_fcfa || 0) >= 0, true);

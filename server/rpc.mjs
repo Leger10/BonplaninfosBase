@@ -3453,13 +3453,14 @@ const HANDLERS = {
   async get_super_admin_dashboard_stats() {
     const dbc = db();
     const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const [totalUsers, newUsers, activeEvents, totalTransactions, pendingWithdrawals, sales, rateRow] = await Promise.all([
+    const [totalUsers, newUsers, activeEvents, totalTransactions, pendingWithdrawals, paymentGroups, rateRows] = await Promise.all([
       dbc.profiles.count({ where: { deleted_at: null } }),
       dbc.profiles.count({ where: { created_at: { gte: since30 } } }),
       dbc.events.count({ where: { is_active: true, status: 'active' } }),
       dbc.transactions.count({ where: { status: 'completed' } }),
       dbc.withdrawal_requests.count({ where: { status: 'pending' } }),
-      dbc.payments.aggregate({
+      dbc.payments.groupBy({
+        by: ['pack_id', 'payment_method'],
         where: {
           status: { in: ['completed', 'success'] },
           payment_method: { not: 'coins' },
@@ -3467,36 +3468,88 @@ const HANDLERS = {
         _sum: { amount_fcfa: true, coins_amount: true },
         _count: true,
       }),
-      dbc.app_settings.findFirst({ select: { coin_to_fcfa_rate: true } }),
+      dbc.app_settings.findMany({
+        orderBy: [{ updated_at: 'desc' }, { created_at: 'desc' }],
+        take: 1,
+        select: { coin_to_fcfa_rate: true },
+      }),
     ]);
-    const rate = Number(rateRow?.coin_to_fcfa_rate) || 10;
-    const salesFcfa = Number(sales._sum.amount_fcfa || 0);
+    const rate = Number(rateRows?.[0]?.coin_to_fcfa_rate) || 10;
+
+    // Chiffre d'affaires (Ventes) = uniquement les achats de packs de pieces
+    // (USSD / mobile money) et les licences partenaires. Les paiements
+    // d'evenements (billetterie, votes, stands, tombolas, acces) sont exclus :
+    // ils appartiennent aux organisateurs, la plateforme n'y gagne que sa
+    // commission, comptee dans le RBP.
+    const EVENT_PAYMENT_PACKS = new Set([
+      'ticket_payment', 'vote_payment', 'stand_rental_payment',
+      'raffle_payment', 'protected_access_payment',
+    ]);
+    const classifySale = (packId, paymentMethod) => {
+      const p = String(packId || '').toLowerCase();
+      const m = String(paymentMethod || '').toLowerCase();
+      if (p.includes('license') || p.includes('licence')) return 'licences';
+      if (p.startsWith('pack_') || p === 'custom') return 'packs';
+      if (EVENT_PAYMENT_PACKS.has(p) || m === 'moneyfusion_ticket' || p.endsWith('_payment')) return 'evenement';
+      if (!p) return 'packs';
+      return 'autres';
+    };
+
+    let packsFcfa = 0;
+    let licencesFcfa = 0;
+    let packsCoins = 0;
+    let licencesCoins = 0;
+    let packsCount = 0;
+    let licencesCount = 0;
+    let otherPaymentsFcfa = 0;
+    const salesByMethod = new Map();
+
+    for (const group of paymentGroups) {
+      const category = classifySale(group.pack_id, group.payment_method);
+      const coins = Number(group._sum?.coins_amount || 0);
+      // amount_fcfa est la valeur reellement payee ; le taux ne sert de repli
+      // que si la colonne est absente, jamais pour "corriger" un montant nul.
+      const fcfa = Number(group._sum?.amount_fcfa || 0) || coins * rate;
+      const count = Number(group._count?._all ?? group._count ?? 0);
+      if (category === 'packs') {
+        packsFcfa += fcfa;
+        packsCoins += coins;
+        packsCount += count;
+      } else if (category === 'licences') {
+        licencesFcfa += fcfa;
+        licencesCoins += coins;
+        licencesCount += count;
+      } else {
+        otherPaymentsFcfa += fcfa;
+        continue;
+      }
+      const method = String(group.payment_method || 'inconnu');
+      const entry = salesByMethod.get(method) || {
+        payment_method: method, count: 0, total_fcfa: 0, total_coins: 0,
+      };
+      entry.count += count;
+      entry.total_fcfa += fcfa;
+      entry.total_coins += coins;
+      salesByMethod.set(method, entry);
+    }
+
     return ok({
       total_users: totalUsers,
       new_users: newUsers,
       active_events: activeEvents,
       total_transactions: totalTransactions,
       pending_withdrawals: pendingWithdrawals,
-      // amount_fcfa est la valeur reellement payee. Le repli sur le taux ne sert
-      // que si la colonne est absente, pas pour "corriger" un montant nul.
-      total_sales_fcfa: salesFcfa || Number(sales._sum.coins_amount || 0) * rate,
-      total_sales_coins: Number(sales._sum.coins_amount || 0),
-      total_sales_count: sales._count,
-      // Detail par canal, pour que le total soit explicable a l'ecran.
-      sales_by_method: await dbc.payments.groupBy({
-        by: ['payment_method'],
-        where: {
-          status: { in: ['completed', 'success'] },
-          payment_method: { not: 'coins' },
-        },
-        _sum: { amount_fcfa: true, coins_amount: true },
-        _count: true,
-      }).then((rows) => rows.map((r) => ({
-        payment_method: r.payment_method,
-        count: r._count,
-        total_fcfa: Number(r._sum.amount_fcfa || 0),
-        total_coins: Number(r._sum.coins_amount || 0),
-      }))),
+      total_sales_fcfa: packsFcfa + licencesFcfa,
+      total_sales_coins: packsCoins + licencesCoins,
+      total_sales_count: packsCount + licencesCount,
+      sales_packs_fcfa: packsFcfa,
+      sales_licences_fcfa: licencesFcfa,
+      sales_packs_count: packsCount,
+      sales_licences_count: licencesCount,
+      // Encaissements hors CA (evenements...), exposes pour controle mais
+      // jamais additionnes au chiffre d'affaires.
+      other_payments_fcfa: otherPaymentsFcfa,
+      sales_by_method: Array.from(salesByMethod.values()),
     });
   },
 
@@ -3667,11 +3720,7 @@ const HANDLERS = {
           label: d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' }),
           total_rbp_fcfa: 0,
           commissions_fcfa: 0,
-          packs_fcfa: 0,
-          licences_fcfa: 0,
-          publicite_fcfa: 0,
-          abonnements_fcfa: 0,
-          autres_fcfa: 0,
+          frais_retrait_fcfa: 0,
           pending_commission_fcfa: 0,
         });
       }
@@ -3775,23 +3824,11 @@ const HANDLERS = {
         rate, sqlDate(queryStart), sqlDate(queryEnd),
       );
 
-      // --- 3. Encaissements reels (source : payments) ---
-      const paymentRows = await dbc.$queryRawUnsafe(
-        `SELECT DATE_FORMAT(COALESCE(p.processed_at, p.validated_at, p.created_at), '%Y-%m') AS month_key,
-                COALESCE(p.pack_id, '') AS pack_id,
-                COALESCE(p.payment_method, '') AS payment_method,
-                COUNT(*) AS payment_count,
-                COALESCE(SUM(p.amount_fcfa), 0) AS amount_fcfa
-         FROM payments p
-         WHERE p.status IN ('completed', 'success')
-           AND COALESCE(p.payment_method, '') <> 'coins'
-           AND COALESCE(p.processed_at, p.validated_at, p.created_at) >= ?
-           AND COALESCE(p.processed_at, p.validated_at, p.created_at) < ?
-         GROUP BY month_key, pack_id, payment_method`,
-        sqlDate(queryStart), sqlDate(queryEnd),
-      );
-
-      // --- 4. Frais de retrait encaisses (autres revenus numeriques) ---
+      // --- 3. Frais de retrait encaisses (frais plateforme) ---
+      // Le RBP ne contient QUE des frais reellement collectes par la
+      // plateforme. Les packs de pieces, depots, licences, publicite et
+      // abonnements sont des ventes/encaissements : ils appartiennent au
+      // chiffre d'affaires (carte CA), pas au RBP.
       const withdrawalFeeRows = await dbc.$queryRawUnsafe(
         `SELECT DATE_FORMAT(COALESCE(w.paid_at, w.reviewed_at, w.requested_at), '%Y-%m') AS month_key,
                 COUNT(*) AS entries,
@@ -3803,24 +3840,6 @@ const HANDLERS = {
          GROUP BY month_key`,
         sqlDate(queryStart), sqlDate(queryEnd),
       ).catch(() => []);
-
-      const EVENT_PAYMENT_PACKS = new Set([
-        'ticket_payment', 'vote_payment', 'stand_rental_payment',
-        'raffle_payment', 'protected_access_payment',
-      ]);
-
-      const classifyPayment = (packId, paymentMethod) => {
-        const p = String(packId || '').toLowerCase();
-        const m = String(paymentMethod || '').toLowerCase();
-        if (p.startsWith('pack_') || p === 'custom') return 'packs';
-        if (p.includes('license') || p.includes('licence')) return 'licences';
-        if (p.includes('boost') || p.includes('promo') || p.includes('sponsor') || p.includes('advert') || p === 'ad') return 'publicite';
-        if (p.includes('subscr') || p.includes('abonnement') || p.includes('option')) return 'abonnements';
-        if (EVENT_PAYMENT_PACKS.has(p) || m === 'moneyfusion_ticket' || p.endsWith('_payment')) return 'evenement';
-        // Paiement en argent sans pack_id explicite : achat de credits.
-        if (!p) return 'packs';
-        return 'autres';
-      };
 
       const classifyEarning = (transactionType, eventType) => {
         const t = String(transactionType || '').toLowerCase();
@@ -3858,11 +3877,7 @@ const HANDLERS = {
             label: d.toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' }),
             total_rbp_fcfa: 0,
             commissions_fcfa: 0,
-            packs_fcfa: 0,
-            licences_fcfa: 0,
-            publicite_fcfa: 0,
-            abonnements_fcfa: 0,
-            autres_fcfa: 0,
+            frais_retrait_fcfa: 0,
             pending_commission_fcfa: 0,
           };
           monthly.set(key, entry);
@@ -3910,48 +3925,17 @@ const HANDLERS = {
         bucket.pending_commission_fcfa += Number(row.commission_fcfa || 0);
       }
 
-      let selectedPacks = 0;
-      let selectedLicences = 0;
-      let selectedPublicite = 0;
-      let selectedAbonnements = 0;
-      let selectedAutres = 0;
-
-      for (const row of paymentRows) {
-        const m = String(row.month_key || '');
-        const bucket = ensureMonth(m);
-        const category = classifyPayment(row.pack_id, row.payment_method);
-        const amount = Number(row.amount_fcfa || 0);
-        if (category === 'packs') bucket.packs_fcfa += amount;
-        else if (category === 'licences') bucket.licences_fcfa += amount;
-        else if (category === 'publicite') bucket.publicite_fcfa += amount;
-        else if (category === 'abonnements') bucket.abonnements_fcfa += amount;
-        else if (category === 'autres') {
-          bucket.autres_fcfa += amount;
-          if (m === month) selectedAutres += amount;
-        }
-        // 'evenement' : volontairement ignore (90 % organisateur + commission deja comptee)
-        if (m === month) {
-          if (category === 'packs') selectedPacks += amount;
-          else if (category === 'licences') selectedLicences += amount;
-          else if (category === 'publicite') selectedPublicite += amount;
-          else if (category === 'abonnements') selectedAbonnements += amount;
-        }
-      }
-
       let selectedWithdrawalFees = 0;
       for (const row of withdrawalFeeRows) {
         const m = String(row.month_key || '');
         const bucket = ensureMonth(m);
         const fees = Number(row.fees_fcfa || 0);
-        bucket.autres_fcfa += fees;
+        bucket.frais_retrait_fcfa += fees;
         if (m === month) selectedWithdrawalFees += fees;
       }
-      selectedAutres += selectedWithdrawalFees;
 
       for (const bucket of monthly.values()) {
-        bucket.total_rbp_fcfa = bucket.commissions_fcfa + bucket.packs_fcfa
-          + bucket.licences_fcfa + bucket.publicite_fcfa
-          + bucket.abonnements_fcfa + bucket.autres_fcfa;
+        bucket.total_rbp_fcfa = bucket.commissions_fcfa + bucket.frais_retrait_fcfa;
       }
 
       const selectedBucket = monthly.get(month) || ensureMonth(month);
@@ -3962,48 +3946,23 @@ const HANDLERS = {
       const partB = distributable - partA;
 
       const round = (n) => Math.round(Number(n) || 0);
+      // RBP = uniquement les frais reellement collectes par la plateforme.
+      // Les packs de pieces, depots, licences, publicite et abonnements sont
+      // des ventes : ils figurent dans le chiffre d'affaires, jamais ici.
       const components = [
         {
           key: 'commissions',
-          label: 'Commissions sur transactions',
+          label: 'Frais de transaction (commissions)',
           description: 'Commission retenue sur les transactions (billetterie, votes, stands, tombolas, acces) une fois acquise.',
           amount_fcfa: round(selectedCommissionFcfa),
           source: 'organizer_earnings',
         },
         {
-          key: 'packs',
-          label: 'Packs de credits',
-          description: 'Encaissements reels des achats de packs de pieces (hors depenses en pieces).',
-          amount_fcfa: round(selectedPacks),
-          source: 'payments',
-        },
-        {
-          key: 'licences',
-          label: 'Licences partenaires',
-          description: 'Encaissements reels des licences partenaires (pays / ville).',
-          amount_fcfa: round(selectedLicences),
-          source: 'payments',
-        },
-        {
-          key: 'publicite',
-          label: 'Publicite, boosts et sponsors',
-          description: 'Encaissements directs en argent. Un boost paye en pieces est deja inclus dans les packs.',
-          amount_fcfa: round(selectedPublicite),
-          source: 'payments',
-        },
-        {
-          key: 'abonnements',
-          label: 'Abonnements et options payantes',
-          description: 'Encaissements des abonnements et options numeriques payes en argent.',
-          amount_fcfa: round(selectedAbonnements),
-          source: 'payments',
-        },
-        {
-          key: 'autres',
-          label: 'Autres revenus numeriques',
-          description: 'Frais de retrait encaisses et autres paiements numeriques non classes.',
-          amount_fcfa: round(selectedAutres),
-          source: 'withdrawal_requests / payments',
+          key: 'frais_retrait',
+          label: 'Frais de retrait',
+          description: 'Frais retenus sur les retraits des organisateurs (demandes approuvees ou payees).',
+          amount_fcfa: round(selectedWithdrawalFees),
+          source: 'organizer_withdrawal_requests',
         },
       ];
 
@@ -4053,11 +4012,7 @@ const HANDLERS = {
             ...m,
             total_rbp_fcfa: round(m.total_rbp_fcfa),
             commissions_fcfa: round(m.commissions_fcfa),
-            packs_fcfa: round(m.packs_fcfa),
-            licences_fcfa: round(m.licences_fcfa),
-            publicite_fcfa: round(m.publicite_fcfa),
-            abonnements_fcfa: round(m.abonnements_fcfa),
-            autres_fcfa: round(m.autres_fcfa),
+            frais_retrait_fcfa: round(m.frais_retrait_fcfa),
             pending_commission_fcfa: round(m.pending_commission_fcfa),
           };
         }),
@@ -4066,8 +4021,8 @@ const HANDLERS = {
         generated_at: new Date().toISOString(),
         method: {
           currency: 'FCFA',
-          recognition: 'Commission a la date de transfert (ou de paiement), sinon a la date de la transaction. Paiements a la date de traitement.',
-          exclusion: 'Les 90 % dus aux organisateurs, les depenses en pieces et les paiements en attente/annules ne sont pas comptes.',
+          recognition: 'Frais a la date de transfert vers le portefeuille des gains (ou du paiement), sinon a la date de la transaction. Frais de retrait a la date de traitement.',
+          exclusion: 'RBP = frais plateforme collectes uniquement. Les packs de pieces, depots, licences, publicite, abonnements, les 90 % dus aux organisateurs, les depenses en pieces et les paiements en attente/annules ne sont jamais comptes.',
         },
       });
     } catch (e) {

@@ -9,7 +9,6 @@ import {
   YAxis,
 } from "recharts";
 import {
-  Activity,
   AlertCircle,
   Banknote,
   CheckCircle2,
@@ -17,7 +16,6 @@ import {
   ShieldCheck,
   TrendingUp,
   Users,
-  Wallet,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -47,20 +45,12 @@ const monthLabel = (key) => {
 
 const COMPONENT_ICONS = {
   commissions: TrendingUp,
-  packs: Wallet,
-  licences: ShieldCheck,
-  publicite: Activity,
-  abonnements: Users,
-  autres: Banknote,
+  frais_retrait: Banknote,
 };
 
 const COMPONENT_COLORS = {
   commissions: "bg-indigo-500",
-  packs: "bg-emerald-500",
-  licences: "bg-sky-500",
-  publicite: "bg-amber-500",
-  abonnements: "bg-fuchsia-500",
-  autres: "bg-slate-500",
+  frais_retrait: "bg-amber-500",
 };
 
 const RbpDashboard = () => {
@@ -125,18 +115,7 @@ const RbpDashboard = () => {
   const isCurrentMonth = month === currentMonthKey();
   const hasData = total > 0 || byEventType.length > 0;
 
-  const chartData = useMemo(
-    () =>
-      series.map((m) => ({
-        ...m,
-        autres_stacked:
-          Number(m.licences_fcfa || 0)
-          + Number(m.publicite_fcfa || 0)
-          + Number(m.abonnements_fcfa || 0)
-          + Number(m.autres_fcfa || 0),
-      })),
-    [series],
-  );
+  const chartData = useMemo(() => series, [series]);
 
   const maxComponent = useMemo(
     () => Math.max(1, ...components.map((c) => Number(c.amount_fcfa || 0))),
@@ -223,8 +202,8 @@ const RbpDashboard = () => {
           </CardHeader>
           <CardContent className="space-y-2 text-sm text-muted-foreground">
             <p>
-              {isCurrentMonth ? "Mois en cours" : "Mois clôturé"} · commissions acquises, packs,
-              licences, publicité et autres encaissements.
+              {isCurrentMonth ? "Mois en cours" : "Mois clôturé"} · frais de transaction et frais de
+              retrait réellement collectés par la Plateforme.
             </p>
             <p className="text-xs">
               Cumul 12 mois : <span className="font-semibold text-foreground">{fmtFcfa(stats?.total_series_fcfa || 0)}</span>
@@ -289,17 +268,18 @@ const RbpDashboard = () => {
       {!hasData && (
         <div className="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
           <AlertCircle className="h-4 w-4" />
-          Aucun encaissement enregistré pour {monthLabel(month)}. Le tableau se remplira dès le
-          premier paiement ou transfert de gains validé.
+          Aucun frais plateforme enregistré pour {monthLabel(month)}. Le tableau se remplira dès le
+          premier transfert de gains ou retrait validé.
         </div>
       )}
 
       {/* Composantes */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">Détail par source de revenu</CardTitle>
+          <CardTitle className="text-lg">Détail des frais collectés</CardTitle>
           <CardDescription>
-            Chaque ligne est un encaissement réel de la Plateforme, avec sa source de données.
+            Chaque ligne est un frais réellement retenu par la Plateforme. Les ventes de packs,
+            dépôts et licences ne figurent pas ici : elles constituent le chiffre d'affaires.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -432,7 +412,7 @@ const RbpDashboard = () => {
         <CardHeader>
           <CardTitle className="text-lg">Évolution du RBP sur 12 mois</CardTitle>
           <CardDescription>
-            Encaissements mensuels, empilés par grande famille de revenus.
+            Frais plateforme collectés chaque mois (commissions et frais de retrait).
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -448,15 +428,13 @@ const RbpDashboard = () => {
                   formatter={(value, name) => [fmtFcfa(value), name]}
                 />
                 <Bar dataKey="commissions_fcfa" name="Commissions" stackId="rbp" fill="#6366f1" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="packs_fcfa" name="Packs" stackId="rbp" fill="#10b981" radius={[0, 0, 0, 0]} />
-                <Bar dataKey="autres_stacked" name="Licences, publicité et autres" stackId="rbp" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="frais_retrait_fcfa" name="Frais de retrait" stackId="rbp" fill="#f59e0b" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
           <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-indigo-500" /> Commissions</span>
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" /> Packs de crédits</span>
-            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-500" /> Licences, publicité et autres</span>
+            <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-amber-500" /> Frais de retrait</span>
           </div>
         </CardContent>
       </Card>
@@ -475,14 +453,20 @@ const RbpDashboard = () => {
             arrondis au franc.
           </p>
           <p>
+            <span className="font-semibold text-foreground">Assiette :</span> uniquement les frais
+            de plateforme réellement collectés (commissions de transaction et frais de retrait).
+            Les ventes de packs de pièces, dépôts, licences, publicité et abonnements sont exclues :
+            elles forment le chiffre d'affaires, pas le RBP.
+          </p>
+          <p>
             <span className="font-semibold text-foreground">Date de reconnaissance :</span>{" "}
             commission à la date du transfert vers le portefeuille des gains (ou du paiement), sinon
-            à la date de la transaction ; paiements à la date de traitement.
+            à la date de la transaction ; frais de retrait à la date de traitement.
           </p>
           <p>
             <span className="font-semibold text-foreground">Jamais inclus :</span> les 90 % dus aux
             organisateurs, les dépenses en pièces, les paiements en attente, annulés, refusés ou
-            remboursés, et les boosts réglés en pièces (déjà couverts par l'achat du pack).
+            remboursés.
           </p>
           <p>
             <span className="font-semibold text-foreground">Note contractuelle :</span> le RBP net
