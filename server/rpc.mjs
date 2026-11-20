@@ -208,12 +208,22 @@ async function resolveAdminZone(admin) {
 
 // Taux de licence de l'admin : admin_salaries, puis licence partenaire, puis
 // licence achetée. Aucun taux n'est inventé : s'il est absent, on le signale.
+// On conserve l'identité de la licence trouvée même quand son taux vaut 0 :
+// l'UI doit distinguer « aucune licence » de « licence sans taux renseigné ».
 async function resolveAdminLicense(adminId, latestSalary) {
   const fromSalary = Number(latestSalary?.license_rate || 0);
   if (fromSalary > 0) {
-    return { rate: fromSalary, name: latestSalary?.license_name || null, source: 'admin_salaries' };
+    return {
+      rate: fromSalary,
+      name: latestSalary?.license_name || null,
+      source: 'admin_salaries',
+      has_license: true,
+    };
   }
+
   const dbc = db();
+  let found = { rate: 0, name: null, source: 'none', has_license: false };
+
   try {
     const partner = await dbc.partners.findFirst({
       where: { user_id: adminId },
@@ -225,10 +235,19 @@ async function resolveAdminLicense(adminId, latestSalary) {
         where: { id: partner.license_id },
         select: { commission_rate: true, name: true },
       }).catch(() => null);
-      const rate = Number(license?.commission_rate || 0);
-      if (rate > 0) return { rate, name: license?.name || null, source: 'partner_license' };
+      if (license) {
+        const rate = Number(license.commission_rate || 0);
+        found = {
+          rate,
+          name: license.name || null,
+          source: 'partner_license',
+          has_license: true,
+        };
+        if (rate > 0) return found;
+      }
     }
   } catch (_) {}
+
   try {
     const owned = await dbc.user_partner_licenses.findFirst({
       where: { user_id: adminId, status: { in: ['active', 'paid', 'completed'] } },
@@ -249,11 +268,14 @@ async function resolveAdminLicense(adminId, latestSalary) {
           rate = Number(pack?.revenue_share_percent || 0);
           name = pack?.name || null;
         }
-        if (rate > 0) return { rate, name, source: 'user_license' };
+        const candidate = { rate, name, source: 'user_license', has_license: true };
+        if (rate > 0) return candidate;
+        if (!found.has_license) found = candidate;
       }
     }
   } catch (_) {}
-  return { rate: 0, name: null, source: 'none' };
+
+  return found;
 }
 
 function earningFeeRate(row, fallbackRate) {
@@ -2342,7 +2364,10 @@ const HANDLERS = {
       city: zone.cities.length === 1 ? zone.cities[0] : (admin.city || null),
       license_name: license.name,
       license_source: license.source,
-      license_missing: licenseCommissionRate <= 0,
+      // "missing" = aucune licence trouvée ; "rate_zero" = licence trouvée
+      // mais sans taux exploitable. Les deux cas n'ont pas le même message.
+      license_missing: !license.has_license,
+      license_rate_zero: !!license.has_license && licenseCommissionRate <= 0,
       // Compat UI existante
       total_salary_fcfa: totalSalaryFcfa,
       total_volume_fcfa: Math.round(zone.total_gross_fcfa),

@@ -87,12 +87,14 @@ const LicenseConfiguration = ({ onUpdate }) => {
           coverage_type: 'ville',
           fcfa_price: 1000000,
           revenue_share_percent: 2, // 2% des 10%
-          duration_days: 2 * 365,
+          duration_days: 365,
+          duration_years: 1,
+          duration_months: 12,
           is_active: true,
-          description: 'Concession Ville - 1 ans',
+          description: 'Concession Ville - 1 an',
           level: 'starter',
           display_order: 1,
-          benefits: JSON.stringify(["Exclusivité Ville", "2% sur la commission plateforme (10%)", "Durée 1 ans", "Support standard"])
+          benefits: JSON.stringify(["Droit d'implanter un local / siège social dans la localité de l'administrateur", "Exclusivité Ville", "2% sur la commission plateforme (10%)", "Durée 1 an", "Support standard"])
         },
         {
           name: 'BUSINESS',
@@ -100,12 +102,14 @@ const LicenseConfiguration = ({ onUpdate }) => {
           coverage_type: 'region',
           fcfa_price: 3000000,
           revenue_share_percent: 3, // 3% des 10%
-          duration_days: 3 * 365,
+          duration_days: 2 * 365,
+          duration_years: 2,
+          duration_months: 24,
           is_active: true,
           description: 'Concession Régionale - 2 ans',
           level: 'business',
           display_order: 2,
-          benefits: JSON.stringify(["Exclusivité Région", "3% sur la commission plateforme (10%)", "Durée 2 ans", "Support prioritaire"])
+          benefits: JSON.stringify(["Droit d'implanter un local / siège social dans la localité de l'administrateur", "Exclusivité Région", "3% sur la commission plateforme (10%)", "Durée 2 ans", "Support prioritaire"])
         },
         {
           name: 'PREMIUM',
@@ -113,12 +117,14 @@ const LicenseConfiguration = ({ onUpdate }) => {
           coverage_type: 'pays',
           fcfa_price: 5000000,
           revenue_share_percent: 4, // 4% des 10%
-          duration_days: 5 * 365,
+          duration_days: 3 * 365,
+          duration_years: 3,
+          duration_months: 36,
           is_active: true,
           description: 'Concession Nationale - 3 ans',
           level: 'premium',
           display_order: 3,
-          benefits: JSON.stringify(["Exclusivité Pays", "4% sur la commission plateforme (10%)", "Durée 3 ans", "Support VIP"])
+          benefits: JSON.stringify(["Droit d'implanter un local / siège social dans la localité de l'administrateur", "Exclusivité Pays", "4% sur la commission plateforme (10%)", "Durée 3 ans", "Support VIP"])
         }
       ];
 
@@ -135,9 +141,11 @@ const LicenseConfiguration = ({ onUpdate }) => {
     console.log("📝 Édition de la licence:", license.name);
     setEditingId(license.id);
     // 9) Capture current values accurately
+    const durationYears = Number(license.duration_years) || Math.round(Number(license.duration_days || 0) / 365);
     setEditForm({ 
       ...license,
-      duration_years: Math.round(license.duration_days / 365)
+      duration_years: durationYears,
+      duration_months: durationYears * 12
     });
   };
 
@@ -153,15 +161,20 @@ const LicenseConfiguration = ({ onUpdate }) => {
     // Parse values to ensure correct types
     const price = parseInt(editForm.fcfa_price, 10);
     const revenueShare = parseFloat(editForm.revenue_share_percent);
-    const durationDays = parseInt(editForm.duration_years, 10) * 365;
+    const durationYears = Math.max(1, parseInt(editForm.duration_years, 10) || 1);
+    const durationDays = durationYears * 365;
 
-    // 2) Payload logging for debugging
+    // 2) Payload logging for debugging. On met à jour les trois colonnes de
+    // durée : la page publique lit duration_years/duration_months quand ils
+    // existent, et duration_days reste la source utilisée par les expirations.
     const payload = {
       name: editForm.name,
       coverage_type: editForm.coverage_type,
       fcfa_price: price,
       revenue_share_percent: revenueShare,
       duration_days: durationDays,
+      duration_years: durationYears,
+      duration_months: durationYears * 12,
       is_active: editForm.is_active,
       description: editForm.description
     };
@@ -212,6 +225,11 @@ const LicenseConfiguration = ({ onUpdate }) => {
   };
 
   const formatPrice = (p) => new Intl.NumberFormat('fr-FR').format(p) + ' FCFA';
+
+  const formatDurationLabel = (license) => {
+    const years = Number(license?.duration_years) || Math.round(Number(license?.duration_days || 0) / 365);
+    return `${years} an${years > 1 ? 's' : ''}`;
+  };
 
   // 8) Visual feedback helper
   const isChanged = (field) => {
@@ -338,7 +356,7 @@ const LicenseConfiguration = ({ onUpdate }) => {
                         <span className="text-xs">ans</span>
                       </div>
                     ) : (
-                      <span>{Math.round(license.duration_days / 365)} ans</span>
+                      <span>{formatDurationLabel(license)}</span>
                     )}
                   </TableCell>
 

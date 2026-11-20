@@ -228,6 +228,38 @@ try {
   check('gain pending exclu du CA', Number(pending?.data?.monthly_zone_revenue_fcfa || 0), paidCa);
 
   check('statuts reconnus exposés', pending?.data?.recognized_statuses, ['transferred', 'paid', 'available', 'completed']);
+
+  // 6) Licence rattachée mais taux 0 : ce n'est PAS une licence manquante.
+  // C'est le cas rencontré en production (partner_licenses à 0 %).
+  const zeroLicenseId = uuidv4();
+  created.licenseIds.push(zeroLicenseId);
+  const zeroLicense = await prisma.partner_licenses.create({
+    data: {
+      id: zeroLicenseId,
+      name: `Licence Zero ${stamp}`,
+      slug: `licence-zero-${stamp}`,
+      coverage_type: 'country',
+      commission_rate: 0,
+      price_fcfa: 0,
+    },
+  });
+  const zeroAdmin = await mkUser('zeroadmin', 'admin', zoneCountry, null);
+  const zeroPartnerId = uuidv4();
+  created.partnerIds.push(zeroPartnerId);
+  await prisma.partners.create({
+    data: {
+      id: zeroPartnerId,
+      user_id: zeroAdmin.id,
+      license_id: zeroLicense.id,
+      coverage_zone: JSON.stringify({ country: zoneCountry, cities: [] }),
+      status: 'active',
+    },
+  });
+  const zeroStats = await rpc('get_admin_salary_stats', { p_admin_id: zeroAdmin.id }, zeroAdmin.token);
+  check('licence à 0 % : taux exposé', Number(zeroStats?.data?.license_commission_rate || 0), 0);
+  check('licence à 0 % : pas "aucune licence"', zeroStats?.data?.license_missing, false);
+  check('licence à 0 % : drapeau dédié', zeroStats?.data?.license_rate_zero, true);
+  check('licence à 0 % : nom conservé', zeroStats?.data?.license_name, zeroLicense.name);
 } catch (error) {
   failures += 1;
   console.error('ERREUR TEST:', error.stack || error.message);

@@ -225,15 +225,20 @@ const AdminSalaryDashboard = () => {
         </div>
       </div>
 
-      {salaryStats?.license_missing && monthlyZoneRevenue > 0 && (
+      {(salaryStats?.license_missing || salaryStats?.license_rate_zero) && monthlyZoneRevenue > 0 && (
         <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-4">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
           <div>
-            <p className="font-semibold text-amber-200">Aucune licence partenaire rattachée</p>
+            <p className="font-semibold text-amber-200">
+              {salaryStats?.license_missing
+                ? "Aucune licence partenaire rattachée"
+                : `Licence ${licenseName} rattachée mais sans taux de commission`}
+            </p>
             <p className="text-sm text-amber-100/80">
               Le CA de votre zone est bien comptabilisé ({monthlyZoneRevenue.toLocaleString("fr-FR")} FCFA),
-              mais le taux de licence vaut 0 % : le salaire ne peut donc pas être calculé.
-              Contactez le super administrateur pour rattacher votre licence.
+              {salaryStats?.license_missing
+                ? " mais aucune licence n'est rattachée à votre compte : le salaire ne peut donc pas être calculé. Contactez le super administrateur pour rattacher votre licence."
+                : ` mais le taux de la licence ${licenseName} vaut 0 % : le salaire ne peut donc pas être calculé. Contactez le super administrateur pour appliquer le taux prévu.`}
             </p>
           </div>
         </div>

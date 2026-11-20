@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/components/ui/use-toast';
 import MultilingualSeoHead from '@/components/MultilingualSeoHead';
-import { Loader2, Download, FileText, CheckCircle2, UploadCloud, AlertTriangle, ShieldCheck, Smartphone, Upload, X, Copy } from 'lucide-react';
+import { Loader2, Download, FileText, CheckCircle2, UploadCloud, AlertTriangle, ShieldCheck, Smartphone, Upload, X, Copy, Clock } from 'lucide-react';
 import { PurchaseService } from '@/services/purchaseService';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -27,7 +27,7 @@ const coverageLabel = (t) => {
   return t || 'Zone';
 };
 
-const LicensePurchase = ({ user, userLicenses, licenses, purchaseLoading, uploading, onPurchase, onDownloadContract, onUploadContract }) => {
+const LicensePurchase = ({ user, userLicenses, licenses, licensesLoading, purchaseLoading, uploading, onPurchase, onDownloadContract, onUploadContract }) => {
   const { t } = useTranslation();
   const fileInputRef = useRef(null);
 
@@ -36,17 +36,33 @@ const LicensePurchase = ({ user, userLicenses, licenses, purchaseLoading, upload
     return new Date(dateString).toLocaleDateString('fr-FR', { year: 'numeric', month: 'long', day: 'numeric' });
   };
 
-  const formatDuration = (days) => {
-    const d = Number(days || 0);
-    const years = Math.floor(d / 365);
-    if (years > 0) return `${years} An${years > 1 ? 's' : ''}`;
-    const months = Math.floor(d / 30);
-    return `${months || 1} Mois`;
+  // Durée configurée par le super administrateur (partner_license_packs).
+  // On accepte les trois colonnes car les anciennes lignes peuvent n'avoir
+  // que duration_days, et les nouvelles aussi duration_years/duration_months.
+  const formatDuration = (pack) => {
+    const days = Number(pack?.duration_days || 0);
+    const years = Number(pack?.duration_years || 0) || Math.floor(days / 365);
+    if (years > 0) return `${years} an${years > 1 ? 's' : ''}`;
+    const months = Number(pack?.duration_months || 0) || Math.floor(days / 30);
+    if (months > 0) return `${months} mois`;
+    return 'Durée définie par le super administrateur';
   };
+
+  const formatRevenueShare = (value) => {
+    const pct = Number(value || 0);
+    return pct > 0 ? `${pct} %` : null;
+  };
+
+  const localOfficeFeature = "Droit d'implanter un local / siège social dans la localité de l'administrateur titulaire du pack";
 
   return (
     <div className="license-purchase px-2 sm:px-0">
       <AnimatePresence>
+        {licensesLoading && (
+          <div className="mb-6 flex items-center gap-2 rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3 text-sm text-gray-300">
+            <Loader2 className="h-4 w-4 animate-spin text-blue-400" /> Chargement de vos licences...
+          </div>
+        )}
         {userLicenses && userLicenses.length > 0 && (
           <motion.section className="active-licenses" initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
             <h2 className="text-white text-lg sm:text-xl md:text-2xl flex items-center gap-2 mb-4">
@@ -55,6 +71,9 @@ const LicensePurchase = ({ user, userLicenses, licenses, purchaseLoading, upload
             </h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {userLicenses.map(license => {
+                const pack = license.partner_license_packs || license.pack || null;
+                const packName = pack?.name || 'Licence partenaire';
+                const revenueShare = formatRevenueShare(license.revenue_share_percent ?? pack?.revenue_share_percent);
                 const isPendingUssd = license.status === 'pending_payment';
                 const isActive = license.status === 'active';
                 const isPending = license.submission_status === 'pending';
@@ -66,7 +85,7 @@ const LicensePurchase = ({ user, userLicenses, licenses, purchaseLoading, upload
                   <div key={license.id} className="license-card bg-gray-900 border border-gray-800 rounded-xl sm:rounded-2xl p-4 sm:p-6 text-white">
                     <div className="license-header mb-4">
                       <h3 className="text-white bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent font-bold text-base sm:text-lg truncate">
-                        {license.partner_license_packs?.name || license.pack?.name || 'Licence'}
+                        {packName}
                       </h3>
                       <span className="license-status text-xs sm:text-sm mt-1 inline-block px-2 py-1 rounded-full bg-gray-800">
                         {isPendingUssd ? '🟡 Paiement USSD en validation (super admin)' :
@@ -77,8 +96,16 @@ const LicensePurchase = ({ user, userLicenses, licenses, purchaseLoading, upload
                       </span>
                     </div>
                     <div className="license-details text-gray-300 text-sm space-y-2">
-                      <p><strong className="text-amber-300 text-xs sm:text-sm">{t('partner_signup.license_card.revenue_share', { percent: license.revenue_share_percent ?? license.partner_license_packs?.revenue_share_percent }) || `Part: ${license.revenue_share_percent ?? ''}%`}</strong></p>
+                      <p>
+                        <strong className="text-amber-300 text-xs sm:text-sm">
+                          {revenueShare
+                            ? `Part de revenus : ${revenueShare} de la commission plateforme`
+                            : 'Part de revenus : en attente de validation'}
+                        </strong>
+                      </p>
                       <p><strong className="text-cyan-300 text-xs sm:text-sm">Achetée le</strong> {formatDate(license.purchase_date)}</p>
+                      {pack && <p><strong className="text-cyan-300 text-xs sm:text-sm">Durée</strong> {formatDuration(pack)}</p>}
+                      <p className="text-emerald-300/90">{localOfficeFeature}</p>
                       {license.expiry_date && <p><strong className="text-emerald-300 text-xs sm:text-sm">Expire le</strong> {formatDate(license.expiry_date)}</p>}
                       {isPendingUssd && (
                         <Alert className="mt-3 bg-yellow-900/20 border-yellow-800 p-3">
@@ -128,11 +155,16 @@ const LicensePurchase = ({ user, userLicenses, licenses, purchaseLoading, upload
       <section className="available-licenses mt-8 sm:mt-12">
         <h2 className="text-white text-lg sm:text-xl md:text-2xl mb-2">🚀 {t('partner_signup.available_licenses_title') || 'Packs partenaires'}</h2>
         <p className="license-subtitle text-gray-400 text-sm sm:text-base mb-6">
-          Paiement par <strong className="text-white">USSD (Mobile Money)</strong>. Après validation du dépôt par le <strong className="text-white">super administrateur</strong>, votre pack est activé et vous êtes nommé administrateur/partenaire sur la <strong className="text-white">ville</strong> ou le <strong className="text-white">pays</strong> défini par votre pack.
+          Paiement par <strong className="text-white">USSD</strong>, validation par le super administrateur, puis nomination sur votre zone. Chaque pack inclut le droit d’implanter un local / siège social dans votre localité.
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {(licenses || []).map((license, index) => {
-            const benefits = Array.isArray(license?.features) ? license.features : (Array.isArray(license?.benefits) ? license.benefits : []);
+            const extraBenefits = Array.isArray(license?.benefits)
+              ? license.benefits
+              : (Array.isArray(license?.features) ? license.features : []);
+            // Chaque pack donne droit a un local / siege social dans la localite
+            // de l'administrateur qui a paye le pack (affiche en premier).
+            const benefits = [localOfficeFeature, ...extraBenefits];
             const licenseName = String(license?.name || '');
             const isPopular = licenseName.toUpperCase().includes('BUSINESS');
             const isPremium = licenseName.toUpperCase().includes('PREMIUM');
@@ -153,8 +185,9 @@ const LicensePurchase = ({ user, userLicenses, licenses, purchaseLoading, upload
                   <div className="revenue-percent text-emerald-400 font-bold text-3xl sm:text-4xl">{license.revenue_share_percent}%</div>
                   <div className="revenue-label text-emerald-300 font-medium text-sm">de la commission</div>
                 </div>
-                <div className="bg-gray-800 p-2 sm:p-3 rounded-lg border border-gray-700 mt-3">
-                  <div className="flex items-center justify-center gap-2 text-white font-medium text-sm sm:text-base">{formatDuration(license.duration_days)}</div>
+                <div className="bg-gray-800 p-2 sm:p-3 rounded-lg border border-gray-700 mt-3 flex items-center justify-center gap-2 text-white font-medium text-sm sm:text-base">
+                  <Clock className="w-4 h-4 text-cyan-300 shrink-0" />
+                  <span>Durée : {formatDuration(license)}</span>
                 </div>
                 <div className="license-features mt-4">
                   <h4 className="text-gray-300 font-semibold text-sm sm:text-base mb-2">Fonctionnalités :</h4>
@@ -202,7 +235,7 @@ const compressImageDataUrl = async (file) => {
 
 const PartnerSignupPage = () => {
   const { user } = useAuth();
-  const { userProfile, loadingProfile } = useData();
+  const { userProfile } = useData();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { t } = useTranslation();
@@ -210,7 +243,11 @@ const PartnerSignupPage = () => {
 
   const [licenses, setLicenses] = useState([]);
   const [userLicenses, setUserLicenses] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Les packs s'affichent dès qu'ils arrivent : on n'attend pas les données
+  // personnelles (licenses utilisateur, contrats) pour montrer les offres.
+  const [packsLoading, setPacksLoading] = useState(true);
+  const [licensesLoading, setLicensesLoading] = useState(true);
+  const hasPacksRef = useRef(false);
   const [purchaseLoading, setPurchaseLoading] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [ussdOpen, setUssdOpen] = useState(false);
@@ -223,10 +260,13 @@ const PartnerSignupPage = () => {
   const [ussdSubmitting, setUssdSubmitting] = useState(false);
 
   const fetchData = useCallback(async (showToast = false) => {
-    if (!showToast) setLoading(true);
+    if (!showToast && !hasPacksRef.current) setPacksLoading(true);
+    if (!showToast) setLicensesLoading(true);
     try {
       const packs = await PurchaseService.getLicensePacks();
       setLicenses(packs);
+      hasPacksRef.current = true;
+      setPacksLoading(false);
 
       if (user) {
         // Toutes les licences utilisateur (inclut pending_payment USSD), pas seulement actives
@@ -259,7 +299,8 @@ const PartnerSignupPage = () => {
       console.error('Error fetching partner data:', error);
       toast({ title: 'Erreur', description: 'Impossible de charger les données.', variant: 'destructive' });
     } finally {
-      setLoading(false);
+      setPacksLoading(false);
+      setLicensesLoading(false);
     }
   }, [user, toast]);
 
@@ -417,7 +458,7 @@ const PartnerSignupPage = () => {
     );
   }
 
-  if (loading || loadingProfile) {
+  if (packsLoading && licenses.length === 0) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center">
         <div className="text-center">
@@ -441,7 +482,7 @@ const PartnerSignupPage = () => {
           <p className="text-gray-300 max-w-2xl mx-auto text-sm sm:text-base md:text-lg px-2">Achetez votre pack par <strong>USSD</strong>. Le super administrateur valide le paiement, puis vous nomme administrateur/partenaire sur la zone (ville ou pays) prévue par votre pack.</p>
         </div>
 
-        <LicensePurchase user={userProfile} userLicenses={userLicenses} licenses={licenses} purchaseLoading={purchaseLoading} uploading={uploading} onPurchase={openUssdPurchase} onDownloadContract={handleDownloadContract} onUploadContract={handleFileUpload} />
+        <LicensePurchase user={userProfile} userLicenses={userLicenses} licenses={licenses} licensesLoading={licensesLoading} purchaseLoading={purchaseLoading} uploading={uploading} onPurchase={openUssdPurchase} onDownloadContract={handleDownloadContract} onUploadContract={handleFileUpload} />
       </motion.div>
 
       <Dialog open={ussdOpen} onOpenChange={(v) => { if (!ussdSubmitting) { setUssdOpen(v); if (!v) setSelectedPack(null); } }}>

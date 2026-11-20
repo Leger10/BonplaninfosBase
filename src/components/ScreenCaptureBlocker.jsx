@@ -39,8 +39,9 @@ const ScreenCaptureBlocker = () => {
     const text = generateText();
     const items = [];
 
-    // Nombre réduit de filigranes pour moins de gêne visuelle
-    for (let i = 0; i < 6; i++) {
+    // Nombre réduit de filigranes pour moins de gêne visuelle sur les pages
+    // qui affichent déjà beaucoup d'informations (licences, salaires, etc.).
+    for (let i = 0; i < 3; i++) {
       items.push({
         text,
         top: Math.random() * 100,
