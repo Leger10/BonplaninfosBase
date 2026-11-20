@@ -149,13 +149,23 @@ r.post('/signup', async (req, res) => {
     });
     const profile = await db.profiles.findUnique({ where: { id } });
     if (!profile) {
+      // Le formulaire d'inscription envoie pays / ville / telephone dans
+      // options.data. Sans ces champs, la colonne `profiles.country` (dont le
+      // defaut SQL est "Côte d'Ivoire") prenait le defaut : un inscrit du
+      // BurkinaFaso avait donc "Côte d'Ivoire" dans son profil.
+      // Seuls "user" et "organizer" peuvent etre choisis a l'inscription :
+      // jamais derole admin/super_admin/secretary via ce endpoint public.
+      const publicType = ['user', 'organizer'].includes(data.user_type) ? data.user_type : 'user';
       await db.profiles.create({
         data: {
           id,
           email: normalized,
           full_name: data.full_name || null,
           avatar_url: data.avatar_url || null,
-          user_type: 'user',
+          phone: data.phone || null,
+          country: data.country || null,
+          city: data.city || null,
+          user_type: publicType,
           is_active: true,
           created_at: sig,
           updated_at: sig,

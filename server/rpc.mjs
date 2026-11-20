@@ -815,18 +815,22 @@ async function upsertProtection(p_event_id, p_user_id, params = {}) {
 const HANDLERS = {
   // ---------- Profil ----------
   async ensure_user_profile_exists(args) {
-    const { p_user_id, p_email, p_full_name } = args;
+    const { p_user_id, p_email, p_full_name, p_country, p_city, p_phone } = args;
     if (!p_user_id) return fail('p_user_id requis');
     let profile = await db().profiles.findUnique({ where: { id: p_user_id } });
     if (!profile) {
+      // Fallback de creation : on reprend le pays/ville choisis a l'inscription
+      // (user_metadata) au lieu d'imposer "Côte d'Ivoire" par defaut.
       await db().profiles.create({
         data: {
           id: p_user_id,
           email: p_email || null,
           full_name: p_full_name || null,
+          country: p_country || null,
+          city: p_city || null,
+          phone: p_phone || null,
           user_type: 'user',
           is_active: true,
-          country: 'Côte d\'Ivoire',
           created_at: new Date(),
           updated_at: new Date(),
         },

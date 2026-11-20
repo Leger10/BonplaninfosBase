@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { useData } from '@/contexts/DataContext';
 import { supabase } from '@/lib/customSupabaseClient';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,19 +14,34 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 const ProfileSettings = () => {
     const { user, setForceRefresh } = useAuth();
+    const { userProfile } = useData();
     const { toast } = useToast();
     const [loading, setLoading] = useState(false);
     const [resendLoading, setResendLoading] = useState(false);
     const [cooldown, setCooldown] = useState(0);
     const [phoneError, setPhoneError] = useState("");
-    
-    // Form State
-    const [fullName, setFullName] = useState(user?.user_metadata?.full_name || '');
-    const [phone, setPhone] = useState(user?.user_metadata?.phone || '');
-    const [country, setCountry] = useState(user?.user_metadata?.country || '');
-    const [city, setCity] = useState(user?.user_metadata?.city || '');
-    const [bio, setBio] = useState(user?.user_metadata?.bio || '');
+
+    // Source de verite : le profil enregistre (affiche aussi dans l'en-tete).
+    // Les metadata d'inscription ne servent que de repli le temps du chargement.
+    const meta = user?.user_metadata || {};
+    const [fullName, setFullName] = useState(userProfile?.full_name || meta.full_name || '');
+    const [phone, setPhone] = useState(userProfile?.phone || meta.phone || '');
+    const [country, setCountry] = useState(userProfile?.country || meta.country || '');
+    const [city, setCity] = useState(userProfile?.city || meta.city || '');
+    const [bio, setBio] = useState(userProfile?.bio || meta.bio || '');
     const [cities, setCities] = useState([]);
+
+    // Le profil peut arriver apres le montage : on synchronise les champs une
+    // seule fois par utilisateur, sans ecraser une saisie en cours.
+    useEffect(() => {
+        if (!userProfile) return;
+        setFullName(userProfile.full_name || meta.full_name || '');
+        setPhone(userProfile.phone || meta.phone || '');
+        setCountry(userProfile.country || meta.country || '');
+        setCity(userProfile.city || meta.city || '');
+        setBio(userProfile.bio || meta.bio || '');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [userProfile?.id]);
 
     // Validation du téléphone
     const validatePhone = (phoneNumber) => {

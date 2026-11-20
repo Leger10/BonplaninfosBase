@@ -249,7 +249,12 @@ export const AuthProvider = ({ children }) => {
           const { data: rpcProfile, error: profileError } = await retryPromise(() => supabase.rpc('ensure_user_profile_exists', {
             p_user_id: currentUser.id,
             p_email: currentUser.email,
-            p_full_name: currentUser.user_metadata?.full_name
+            p_full_name: currentUser.user_metadata?.full_name,
+            // Transmis pour ne jamais retomber sur le pays par defaut
+            // "Côte d'Ivoire" quand le profil doit etre recrée.
+            p_country: currentUser.user_metadata?.country,
+            p_city: currentUser.user_metadata?.city,
+            p_phone: currentUser.user_metadata?.phone,
           }), 2, 500, 'Ensure Profile Exists');
 
           if (profileError) {
