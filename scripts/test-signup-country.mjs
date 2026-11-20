@@ -107,5 +107,7 @@ try {
     await prisma.auth_users.deleteMany({ where: { id } }).catch(() => {});
   }
   await prisma.$disconnect();
-  process.exit(fails === 0 ? 0 : 1);
+  // Laisser Node terminer proprement : un process.exit() force ici peut
+  // interrompre la fermeture du moteur Prisma sur Windows (assertion UV_HANDLE).
+  process.exitCode = fails === 0 ? 0 : 1;
 }

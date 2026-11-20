@@ -124,8 +124,17 @@ const CreditPacksPage = () => {
   const [ussdPack, setUssdPack] = useState(null);
   const [ussdSuccess, setUssdSuccess] = useState(false);
 
-  // Récupération des statistiques
+  // Récupération des statistiques. La table `payments` est volontairement
+  // réservée aux sessions authentifiées (queryPolicy) : l'appeler en anonyme
+  // renvoie un 401 dans la console. On n'interroge donc que si un utilisateur
+  // est connecté, et on repart de zéro à la déconnexion.
   useEffect(() => {
+    if (!user?.id) {
+      setTotalRecharges(0);
+      setRecentRecharges([]);
+      return;
+    }
+
     const fetchStats = async () => {
       try {
         const { count } = await supabase
@@ -155,7 +164,7 @@ const CreditPacksPage = () => {
     };
 
     fetchStats();
-  }, []);
+  }, [user?.id]);
 
   // Récupération du téléphone utilisateur
   useEffect(() => {
