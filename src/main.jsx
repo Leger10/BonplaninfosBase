@@ -8,9 +8,9 @@ import ErrorBoundary from "@/components/ErrorBoundary";
 import { initI18n } from "./i18n";
 import LanguageTutorial from "@/components/tutorial/LanguageTutorial";
 import { LanguageProvider } from "@/contexts/LanguageContext";
-import { ThemeProvider } from "@/contexts/ThemeContext"; 
-import { AuthProvider } from "@/contexts/SupabaseAuthContext";
-import { DataProvider } from "@/contexts/DataContext";
+// ThemeProvider / AuthProvider / DataProvider sont montes une seule fois,
+// dans App.jsx. Les monter aussi ici provoquait deux sessions, deux abonnements
+// temps reel et deux chargements de profil concurrents (courses critiques).
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
@@ -30,16 +30,10 @@ if ("serviceWorker" in navigator) {
     <React.StrictMode>
       <HelmetProvider>
         <ErrorBoundary>
-          <ThemeProvider>
-            <LanguageProvider>
-              <AuthProvider>
-                <DataProvider>
-                  <LanguageTutorial />
-                  <App /> {/* 🔥 App contient déjà BrowserRouter */}
-                </DataProvider>
-              </AuthProvider>
-            </LanguageProvider>
-          </ThemeProvider>
+          <LanguageProvider>
+            <LanguageTutorial />
+            <App /> {/* 🔥 App contient BrowserRouter + Theme/Auth/Data providers */}
+          </LanguageProvider>
         </ErrorBoundary>
       </HelmetProvider>
     </React.StrictMode>

@@ -77,7 +77,11 @@ const PromotionalBanner = ({ userProfile, onClose }) => {
 
   if (!isVisible || filteredMessages.length === 0 || userDismissed) return null;
 
-  const currentMsg = filteredMessages[currentMessageIndex];
+  // currentMessageIndex peut etre superieur au nombre de messages de la route
+  // courante apres une navigation (la banniere reste montee). Sans ce module,
+  // currentMsg vaut undefined et currentMsg.icon fait planter le rendu.
+  const currentMsg = filteredMessages[currentMessageIndex % filteredMessages.length];
+  if (!currentMsg || !currentMsg.icon) return null;
 
   return (
     <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-40 w-[95vw] max-w-md">

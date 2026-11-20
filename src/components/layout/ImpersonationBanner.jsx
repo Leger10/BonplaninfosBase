@@ -10,7 +10,14 @@ const ImpersonationBanner = () => {
     return null;
   }
 
-  const impersonationData = JSON.parse(localStorage.getItem('impersonating') || '{}');
+  // Ne jamais faire de JSON.parse direct pendant le rendu : une valeur
+  // corrompue dans localStorage ferait planter TOUTES les pages.
+  let impersonationData = {};
+  try {
+    impersonationData = JSON.parse(localStorage.getItem('impersonating') || '{}') || {};
+  } catch (_) {
+    impersonationData = {};
+  }
 
   return (
     <div className="fixed top-0 left-0 w-full bg-yellow-500 text-black p-2 text-center text-sm z-50 flex items-center justify-center gap-4">
